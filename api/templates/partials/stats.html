@@ -1,0 +1,48 @@
+<div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
+    <!-- Total Audits -->
+    <div class="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
+        <div class="px-4 py-5 sm:p-6">
+            <dt class="text-sm font-medium text-slate-500 truncate">Total Audits</dt>
+            <dd class="mt-1 text-3xl font-semibold text-slate-900">{{ stats.total_audits }}</dd>
+        </div>
+    </div>
+    
+    <!-- Running -->
+    <div class="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
+        <div class="px-4 py-5 sm:p-6">
+            <dt class="text-sm font-medium text-slate-500 truncate">Running</dt>
+            <dd class="mt-1 text-3xl font-semibold {% if stats.running_audits > 0 %}text-yellow-600{% else %}text-slate-900{% endif %}">
+                {{ stats.running_audits }}
+                {% if stats.running_audits > 0 %}
+                <span class="inline-block ml-2 w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></span>
+                {% endif %}
+            </dd>
+        </div>
+    </div>
+    
+    <!-- Completed -->
+    <div class="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
+        <div class="px-4 py-5 sm:p-6">
+            <dt class="text-sm font-medium text-slate-500 truncate">Completed</dt>
+            <dd class="mt-1 text-3xl font-semibold text-green-600">{{ stats.completed_audits }}</dd>
+        </div>
+    </div>
+    
+    <!-- Pages Analyzed -->
+    <div class="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
+        <div class="px-4 py-5 sm:p-6">
+            <dt class="text-sm font-medium text-slate-500 truncate">Pages Analyzed</dt>
+            <dd class="mt-1 text-3xl font-semibold text-slate-900">{{ stats.total_pages }}</dd>
+        </div>
+    </div>
+    
+    <!-- Average Score -->
+    <div class="bg-white overflow-hidden shadow-sm rounded-lg border border-slate-200">
+        <div class="px-4 py-5 sm:p-6">
+            <dt class="text-sm font-medium text-slate-500 truncate">Avg. Score</dt>
+            <dd class="mt-1 text-3xl font-semibold {% if stats.average_score %}{% if stats.average_score >= 70 %}text-green-600{% elif stats.average_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}{% else %}text-slate-400{% endif %}">
+                {% if stats.average_score %}{{ stats.average_score }}{% else %}—{% endif %}
+            </dd>
+        </div>
+    </div>
+</div>

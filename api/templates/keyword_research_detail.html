@@ -1,0 +1,502 @@
+{% extends "base.html" %}
+{% block title %}{{ session.name }} — Keyword Research{% endblock %}
+
+{% block content %}
+<div class="space-y-5" x-data="kwDetail()" x-init="init()">
+
+    <!-- Header -->
+    <div>
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm">
+                <li><a href="/keyword-research" class="text-slate-400 hover:text-slate-600">Keyword Research</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li class="text-slate-700 font-medium truncate max-w-xs">{{ session.name }}</li>
+            </ol>
+        </nav>
+        <div class="flex items-start justify-between gap-4">
+            <div>
+                <div class="flex items-center gap-3">
+                    <h1 class="text-2xl font-bold text-slate-900">{{ session.name }}</h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
+                        {% if session.status == 'completed' %}bg-emerald-100 text-emerald-700
+                        {% elif session.status == 'running' %}bg-sky-100 text-sky-700
+                        {% elif session.status == 'failed' %}bg-red-100 text-red-700
+                        {% else %}bg-amber-100 text-amber-700{% endif %}">
+                        {{ session.status }}
+                    </span>
+                </div>
+                <p class="mt-1 text-sm text-slate-500">
+                    {{ session.language_name }} ({{ session.location_key }}) &bull;
+                    Seeds:
+                    {% for kw in session.seed_keywords %}
+                    <span class="font-medium text-slate-700">{{ kw }}</span>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                    &bull; LLM: {{ session.llm_provider }}
+                </p>
+            </div>
+            <div class="flex gap-2 flex-shrink-0">
+                <button @click="exportAllCsv()"
+                        x-show="allKeywords.length > 0"
+                        class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-lg text-slate-600 bg-white hover:bg-slate-50">
+                    ↓ All CSV
+                </button>
+                <button @click="exportQuestionsCsv()"
+                        x-show="questions.length > 0"
+                        class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded-lg text-slate-600 bg-white hover:bg-slate-50">
+                    ↓ Questions CSV
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress bar (shown while running) -->
+    {% if session.status in ('pending', 'running') %}
+    <div class="bg-white rounded-xl shadow-sm border border-sky-200 p-5" x-show="isRunning">
+        <div class="flex items-center justify-between mb-3">
+            <span class="text-sm font-semibold text-sky-800">Processing…</span>
+            <span class="text-sm font-mono text-sky-600" x-text="progress + '%'"></span>
+        </div>
+        <div class="w-full bg-sky-100 rounded-full h-2.5">
+            <div class="bg-sky-500 h-2.5 rounded-full transition-all duration-700"
+                 :style="`width: ${progress}%`"></div>
+        </div>
+        <p class="text-xs text-slate-500 mt-2" x-text="progressMsg"></p>
+    </div>
+    {% endif %}
+
+    <!-- Error -->
+    {% if session.status == 'failed' %}
+    <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        <strong>Processing failed:</strong> {{ session.error or 'Unknown error' }}
+    </div>
+    {% endif %}
+
+    <!-- Stats bar -->
+    <div x-show="allKeywords.length > 0"
+         class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-white rounded-lg border border-slate-200 px-4 py-3 text-center">
+            <div class="text-2xl font-bold text-slate-900" x-text="allKeywords.length.toLocaleString()"></div>
+            <div class="text-xs text-slate-500 mt-0.5">Total keywords</div>
+        </div>
+        <div class="bg-white rounded-lg border border-emerald-200 px-4 py-3 text-center">
+            <div class="text-2xl font-bold text-emerald-700" x-text="questions.length.toLocaleString()"></div>
+            <div class="text-xs text-slate-500 mt-0.5">Questions</div>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 px-4 py-3 text-center">
+            <div class="text-2xl font-bold text-slate-900" x-text="selectedQuestions.size.toLocaleString()"></div>
+            <div class="text-xs text-slate-500 mt-0.5">Selected</div>
+        </div>
+        <div class="bg-white rounded-lg border border-slate-200 px-4 py-3 text-center">
+            <div class="text-2xl font-bold text-slate-700" x-text="topVolume"></div>
+            <div class="text-xs text-slate-500 mt-0.5">Highest volume</div>
+        </div>
+    </div>
+
+    <!-- Two-panel layout -->
+    <div x-show="allKeywords.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        <!-- ── LEFT: ALL KEYWORDS ─────────────────────────────────────── -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col" style="max-height: 75vh;">
+            <!-- Panel header -->
+            <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-slate-700">All Keywords</span>
+                    <span class="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full"
+                          x-text="filteredKeywords.length.toLocaleString()"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <select x-model="kwSort"
+                            class="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600 bg-slate-50">
+                        <option value="volume_desc">↓ Volume</option>
+                        <option value="volume_asc">↑ Volume</option>
+                        <option value="alpha">A–Z</option>
+                        <option value="pass">Pass #</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Search bar -->
+            <div class="px-4 py-2.5 border-b border-slate-100 flex-shrink-0">
+                <input type="text" x-model="kwSearch" placeholder="Filter keywords…"
+                       class="w-full border border-slate-200 rounded-md px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+            </div>
+
+            <!-- Keywords table -->
+            <div class="overflow-y-auto flex-1">
+                <table class="min-w-full text-xs">
+                    <thead class="bg-slate-50 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wider">Keyword</th>
+                            <th class="px-3 py-2 text-right font-medium text-slate-500 uppercase tracking-wider w-20">Volume</th>
+                            <th class="px-3 py-2 text-right font-medium text-slate-500 uppercase tracking-wider w-16">CPC</th>
+                            <th class="px-3 py-2 text-center font-medium text-slate-500 uppercase tracking-wider w-12">P</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="kw in pagedKeywords" :key="kw.id">
+                            <tr class="hover:bg-slate-50 transition-colors"
+                                :class="kw.is_question ? 'bg-emerald-50/40' : ''">
+                                <td class="px-4 py-2">
+                                    <span x-text="kw.keyword" class="text-slate-800"></span>
+                                    <span x-show="kw.is_question"
+                                          class="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-600 bg-emerald-100 px-1 py-0.5 rounded">Q</span>
+                                </td>
+                                <td class="px-3 py-2 text-right font-mono text-slate-700"
+                                    x-text="kw.search_volume ? kw.search_volume.toLocaleString() : '—'"></td>
+                                <td class="px-3 py-2 text-right font-mono text-slate-500"
+                                    x-text="kw.cpc ? '$' + kw.cpc : '—'"></td>
+                                <td class="px-3 py-2 text-center">
+                                    <span class="text-[10px] px-1 py-0.5 rounded"
+                                          :class="kw.pass_number === 0 ? 'bg-violet-100 text-violet-700' :
+                                                  kw.pass_number === 1 ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'"
+                                          x-text="kw.pass_number === 0 ? 'seed' : 'P' + kw.pass_number"></span>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="filteredKeywords.length === 0">
+                            <td colspan="4" class="px-4 py-6 text-center text-slate-400">No keywords match the filter.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Left pagination -->
+            <div class="px-4 py-2.5 border-t border-slate-100 flex items-center justify-between flex-shrink-0 bg-slate-50">
+                <span class="text-xs text-slate-500"
+                      x-text="`${kwPage * kwPageSize + 1}–${Math.min((kwPage+1)*kwPageSize, filteredKeywords.length)} of ${filteredKeywords.length}`"></span>
+                <div class="flex gap-1">
+                    <button @click="kwPage = Math.max(0, kwPage-1)" :disabled="kwPage === 0"
+                            class="px-2 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-100">‹</button>
+                    <button @click="kwPage = Math.min(kwMaxPage, kwPage+1)" :disabled="kwPage >= kwMaxPage"
+                            class="px-2 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-slate-100">›</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── RIGHT: QUESTIONS ───────────────────────────────────────── -->
+        <div class="bg-white rounded-xl shadow-sm border border-emerald-200 flex flex-col" style="max-height: 75vh;">
+            <!-- Panel header -->
+            <div class="px-4 py-3 border-b border-emerald-100 bg-emerald-50/60 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-semibold text-emerald-800">Questions</span>
+                    <span class="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full"
+                          x-text="filteredQuestions.length.toLocaleString()"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- Copy selected -->
+                    <button @click="copySelectedQuestions()"
+                            x-show="selectedQuestions.size > 0"
+                            class="text-xs px-2.5 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors font-medium">
+                        Copy <span x-text="selectedQuestions.size"></span>
+                    </button>
+                    <!-- Select all on page -->
+                    <button @click="selectAllVisible()"
+                            class="text-xs text-emerald-600 hover:text-emerald-800 underline">All</button>
+                    <button @click="clearSelection()"
+                            x-show="selectedQuestions.size > 0"
+                            class="text-xs text-slate-400 hover:text-slate-600 underline">Clear</button>
+                </div>
+            </div>
+
+            <!-- Question filters -->
+            <div class="px-4 py-2.5 border-b border-emerald-100 flex gap-2 flex-shrink-0 flex-wrap">
+                <input type="text" x-model="qSearch" placeholder="Filter questions…"
+                       class="flex-1 min-w-[140px] border border-slate-200 rounded-md px-3 py-1.5 text-xs text-slate-700 focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                <select x-model="qPrefixFilter"
+                        class="text-xs border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
+                    <option value="">All prefixes</option>
+                    <option value="ce ">ce (what/which)</option>
+                    <option value="cum ">cum (how)</option>
+                    <option value="de ce ">de ce (why)</option>
+                    <option value="când ">când (when)</option>
+                    <option value="unde ">unde (where)</option>
+                    <option value="cine ">cine (who)</option>
+                    <option value="care ">care (which)</option>
+                    <option value="este ">este (is)</option>
+                    <option value="sunt ">sunt (are)</option>
+                    <option value="poate ">poate (can)</option>
+                    <option value="what ">what</option>
+                    <option value="how ">how</option>
+                    <option value="why ">why</option>
+                    <option value="when ">when</option>
+                    <option value="where ">where</option>
+                    <option value="who ">who</option>
+                    <option value="which ">which</option>
+                    <option value="is ">is</option>
+                    <option value="can ">can</option>
+                </select>
+            </div>
+
+            <!-- Questions list -->
+            <div class="overflow-y-auto flex-1">
+                <table class="min-w-full text-xs">
+                    <thead class="bg-emerald-50 sticky top-0 z-10">
+                        <tr>
+                            <th class="px-3 py-2 w-8">
+                                <input type="checkbox"
+                                       :checked="allVisibleSelected"
+                                       :indeterminate="someVisibleSelected && !allVisibleSelected"
+                                       @change="toggleAllVisible($event.target.checked)"
+                                       class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                            </th>
+                            <th class="px-3 py-2 text-left font-medium text-emerald-700 uppercase tracking-wider">Question</th>
+                            <th class="px-3 py-2 text-right font-medium text-emerald-700 uppercase tracking-wider w-20">Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-emerald-50">
+                        <template x-for="q in pagedQuestions" :key="q.id">
+                            <tr class="hover:bg-emerald-50 transition-colors cursor-pointer"
+                                :class="selectedQuestions.has(q.id) ? 'bg-emerald-50 ring-1 ring-emerald-200 ring-inset' : ''"
+                                @click="toggleQuestion(q.id)">
+                                <td class="px-3 py-2.5">
+                                    <input type="checkbox"
+                                           :checked="selectedQuestions.has(q.id)"
+                                           @click.stop
+                                           @change="toggleQuestion(q.id)"
+                                           class="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer">
+                                </td>
+                                <td class="px-3 py-2.5 text-slate-800" x-text="q.keyword"></td>
+                                <td class="px-3 py-2.5 text-right font-mono text-slate-600"
+                                    x-text="q.search_volume ? q.search_volume.toLocaleString() : '—'"></td>
+                            </tr>
+                        </template>
+                        <tr x-show="filteredQuestions.length === 0">
+                            <td colspan="3" class="px-4 py-8 text-center text-slate-400">
+                                <template x-if="questions.length === 0">
+                                    <span>No questions detected in this session.</span>
+                                </template>
+                                <template x-if="questions.length > 0 && filteredQuestions.length === 0">
+                                    <span>No questions match the current filter.</span>
+                                </template>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Right pagination + copy bar -->
+            <div class="px-4 py-2.5 border-t border-emerald-100 flex items-center justify-between flex-shrink-0 bg-emerald-50/40">
+                <span class="text-xs text-slate-500"
+                      x-text="filteredQuestions.length > 0 ? `${qPage * qPageSize + 1}–${Math.min((qPage+1)*qPageSize, filteredQuestions.length)} of ${filteredQuestions.length}` : '0 results'"></span>
+                <div class="flex gap-1">
+                    <button @click="qPage = Math.max(0, qPage-1)" :disabled="qPage === 0"
+                            class="px-2 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-white">‹</button>
+                    <button @click="qPage = Math.min(qMaxPage, qPage+1)" :disabled="qPage >= qMaxPage"
+                            class="px-2 py-1 text-xs rounded border border-slate-200 disabled:opacity-40 hover:bg-white">›</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Copy confirmation toast -->
+    <div x-show="copyToast" x-transition
+         class="fixed bottom-6 right-6 z-50 bg-emerald-700 text-white px-5 py-3 rounded-xl shadow-xl text-sm font-medium">
+        ✓ <span x-text="copyToast"></span>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _KW_DATA = {{ keywords_json | safe }};
+
+function kwDetail() {
+    return {
+        // ── State ────────────────────────────────────────────────────────
+        allKeywords:       _KW_DATA,
+        isRunning:         {{ 'true' if session.status in ('pending', 'running') else 'false' }},
+        progress:          {{ session.progress }},
+        progressMsg:       '{{ session.progress_message or "" }}',
+        copyToast:         '',
+
+        // Left panel
+        kwSearch:          '',
+        kwSort:            'volume_desc',
+        kwPage:            0,
+        kwPageSize:        50,
+
+        // Right panel
+        qSearch:           '',
+        qPrefixFilter:     '',
+        qPage:             0,
+        qPageSize:         50,
+        selectedQuestions: new Set(),
+
+        // ── Lifecycle ────────────────────────────────────────────────────
+        init() {
+            if (this.isRunning) this._poll();
+        },
+
+        async _poll() {
+            const resp = await fetch('/api/keyword-research/sessions/{{ session.id }}/status');
+            const data = await resp.json();
+            this.progress    = data.progress;
+            this.progressMsg = data.progress_message || '';
+            if (data.status === 'completed') {
+                window.location.reload();
+            } else if (data.status === 'failed') {
+                this.isRunning = false;
+            } else {
+                setTimeout(() => this._poll(), 3000);
+            }
+        },
+
+        // ── Computed — keywords ──────────────────────────────────────────
+        get questions() {
+            return this.allKeywords.filter(k => k.is_question);
+        },
+
+        get topVolume() {
+            const vols = this.allKeywords.map(k => k.search_volume || 0);
+            const max  = Math.max(...vols, 0);
+            return max > 0 ? max.toLocaleString() : '—';
+        },
+
+        get filteredKeywords() {
+            let kws = this.allKeywords;
+            if (this.kwSearch.trim()) {
+                const q = this.kwSearch.toLowerCase();
+                kws = kws.filter(k => k.keyword.toLowerCase().includes(q));
+            }
+            // Sort
+            if (this.kwSort === 'volume_desc')
+                kws = [...kws].sort((a, b) => (b.search_volume || 0) - (a.search_volume || 0));
+            else if (this.kwSort === 'volume_asc')
+                kws = [...kws].sort((a, b) => (a.search_volume || 0) - (b.search_volume || 0));
+            else if (this.kwSort === 'alpha')
+                kws = [...kws].sort((a, b) => a.keyword.localeCompare(b.keyword));
+            else if (this.kwSort === 'pass')
+                kws = [...kws].sort((a, b) => a.pass_number - b.pass_number);
+            return kws;
+        },
+
+        get kwMaxPage() {
+            return Math.max(0, Math.ceil(this.filteredKeywords.length / this.kwPageSize) - 1);
+        },
+
+        get pagedKeywords() {
+            const start = this.kwPage * this.kwPageSize;
+            return this.filteredKeywords.slice(start, start + this.kwPageSize);
+        },
+
+        // ── Computed — questions ─────────────────────────────────────────
+        get filteredQuestions() {
+            let qs = this.questions;
+            if (this.qSearch.trim()) {
+                const q = this.qSearch.toLowerCase();
+                qs = qs.filter(k => k.keyword.toLowerCase().includes(q));
+            }
+            if (this.qPrefixFilter) {
+                const pf = this.qPrefixFilter.toLowerCase();
+                qs = qs.filter(k => k.keyword.toLowerCase().startsWith(pf));
+            }
+            return [...qs].sort((a, b) => (b.search_volume || 0) - (a.search_volume || 0));
+        },
+
+        get qMaxPage() {
+            return Math.max(0, Math.ceil(this.filteredQuestions.length / this.qPageSize) - 1);
+        },
+
+        get pagedQuestions() {
+            const start = this.qPage * this.qPageSize;
+            return this.filteredQuestions.slice(start, start + this.qPageSize);
+        },
+
+        get allVisibleSelected() {
+            return this.pagedQuestions.length > 0 &&
+                   this.pagedQuestions.every(q => this.selectedQuestions.has(q.id));
+        },
+
+        get someVisibleSelected() {
+            return this.pagedQuestions.some(q => this.selectedQuestions.has(q.id));
+        },
+
+        // ── Actions — selection ──────────────────────────────────────────
+        toggleQuestion(id) {
+            const s = new Set(this.selectedQuestions);
+            if (s.has(id)) s.delete(id); else s.add(id);
+            this.selectedQuestions = s;
+        },
+
+        toggleAllVisible(checked) {
+            const s = new Set(this.selectedQuestions);
+            this.pagedQuestions.forEach(q => checked ? s.add(q.id) : s.delete(q.id));
+            this.selectedQuestions = s;
+        },
+
+        selectAllVisible() {
+            const s = new Set(this.selectedQuestions);
+            this.filteredQuestions.forEach(q => s.add(q.id));
+            this.selectedQuestions = s;
+        },
+
+        clearSelection() { this.selectedQuestions = new Set(); },
+
+        // ── Actions — copy / export ──────────────────────────────────────
+        copySelectedQuestions() {
+            const sel  = this.allKeywords.filter(k => this.selectedQuestions.has(k.id));
+            const text = sel.map(k => k.keyword).join('\n');
+            this._copyText(text, `${sel.length} question${sel.length !== 1 ? 's' : ''} copied to clipboard`);
+        },
+
+        _copyText(text, toastMsg) {
+            if (navigator.clipboard) {
+                navigator.clipboard.writeText(text).then(() => this._showToast(toastMsg));
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                this._showToast(toastMsg);
+            }
+        },
+
+        _showToast(msg) {
+            this.copyToast = msg;
+            setTimeout(() => { this.copyToast = ''; }, 2500);
+        },
+
+        _buildCsv(rows) {
+            const header = 'keyword,search_volume,cpc,competition,is_question,pass\n';
+            const lines  = rows.map(r =>
+                [
+                    `"${(r.keyword || '').replace(/"/g, '""')}"`,
+                    r.search_volume ?? '',
+                    r.cpc           ?? '',
+                    r.competition   ?? '',
+                    r.is_question ? 'yes' : 'no',
+                    r.pass_number === 0 ? 'seed' : `pass${r.pass_number}`,
+                ].join(',')
+            );
+            return header + lines.join('\n');
+        },
+
+        _downloadCsv(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        exportAllCsv() {
+            const sorted = [...this.allKeywords].sort(
+                (a, b) => (b.search_volume || 0) - (a.search_volume || 0)
+            );
+            this._downloadCsv(this._buildCsv(sorted), 'keywords_all.csv');
+        },
+
+        exportQuestionsCsv() {
+            const sorted = [...this.questions].sort(
+                (a, b) => (b.search_volume || 0) - (a.search_volume || 0)
+            );
+            this._downloadCsv(this._buildCsv(sorted), 'keywords_questions.csv');
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,753 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Audits - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="compareApp({{ audits | tojson | safe }})" class="space-y-6">
+
+    <!-- ================================================================
+         PAGE HEADER
+    ================================================================ -->
+    <div class="flex justify-between items-start">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Compare Audits</h1>
+            <p class="mt-1 text-sm text-slate-500">Select two or more completed audits to compare side by side</p>
+        </div>
+        <!-- Export buttons — only visible when results are shown -->
+        <div x-show="!!comparisonData" x-cloak class="print:hidden flex items-center gap-2">
+            <button @click="exportCSV()"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                </svg>
+                CSV
+            </button>
+            <button @click="exportPDF()"
+                    class="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                </svg>
+                PDF
+            </button>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         AUDIT SELECTOR  (hidden when printing)
+    ================================================================ -->
+    <div class="print:hidden bg-white shadow-sm rounded-lg border border-slate-200 p-6 space-y-4">
+
+        <!-- Audit-type filter row -->
+        <div class="flex flex-wrap items-center gap-3">
+            <label class="text-sm font-medium text-slate-700 whitespace-nowrap">Filter by type:</label>
+            <select x-model="typeFilter"
+                    @change="clearSlots()"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 sm:text-sm border-slate-300 rounded-lg">
+                <option value="">All Audit Types</option>
+                <template x-for="t in availableTypes" :key="t">
+                    <option :value="t" x-text="t.replace(/_/g, ' ')"></option>
+                </template>
+            </select>
+            <span class="text-xs text-slate-400"
+                  x-text="filteredAudits.length + ' audit' + (filteredAudits.length !== 1 ? 's' : '') + ' available'">
+            </span>
+        </div>
+
+        <!-- Slot selectors -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <template x-for="(slot, index) in slots" :key="index">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1"
+                           x-text="'Audit ' + (index + 1)"></label>
+                    <select x-model="slots[index]"
+                            class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                        <option value="">— Select audit —</option>
+                        <template x-for="audit in filteredAudits" :key="audit.id">
+                            <option :value="audit.id"
+                                    x-text="audit.website + ' · ' + audit.audit_type.replace(/_AUDIT$/i,'').replace(/_/g,' ') + ' · ' + (audit.average_score != null ? audit.average_score.toFixed(1) : '—') + ' avg (' + fmtDate(audit.completed_at) + ')'">
+                            </option>
+                        </template>
+                    </select>
+                </div>
+            </template>
+        </div>
+
+        <!-- Cross-type warning -->
+        <div x-show="crossTypeWarning" x-cloak
+             class="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+            </svg>
+            <span x-text="crossTypeWarning"></span>
+        </div>
+
+        <!-- Inline error banner -->
+        <div x-show="errorMessage" x-cloak
+             class="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800">
+            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"/>
+            </svg>
+            <span x-text="errorMessage"></span>
+        </div>
+
+        <!-- Action row -->
+        <div class="flex items-center gap-3">
+            <button @click="runComparison()"
+                    :disabled="selectedCount < 2 || loading"
+                    class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <svg x-show="loading" class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="loading ? 'Comparing…' : 'Compare Selected'"></span>
+            </button>
+            <span class="text-sm text-slate-500" x-show="selectedCount < 2 && !loading">Select at least 2 audits</span>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         COMPARISON RESULTS
+    ================================================================ -->
+    <template x-if="comparisonData">
+        <div class="space-y-6">
+
+            <!-- ---- API warnings ---- -->
+            <template x-if="comparisonData.warnings && comparisonData.warnings.length > 0">
+                <div class="space-y-2">
+                    <template x-for="(w, wi) in comparisonData.warnings" :key="wi">
+                        <div class="flex items-start gap-2 px-4 py-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                            <svg class="w-4 h-4 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                            </svg>
+                            <span x-text="w"></span>
+                        </div>
+                    </template>
+                </div>
+            </template>
+
+            <!-- ---- Summary Cards ---- -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <template x-for="(audit, i) in comparisonData.audits" :key="audit.id">
+                    <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-5">
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="inline-flex items-center justify-center w-8 h-8 rounded-full text-white text-sm font-bold"
+                                  :class="['bg-blue-500','bg-purple-500','bg-amber-500','bg-teal-500'][i]"
+                                  x-text="String.fromCharCode(65 + i)"></span>
+                            <span class="text-2xl font-bold"
+                                  :class="scoreClass(audit.average_score)"
+                                  x-text="audit.average_score != null ? audit.average_score.toFixed(1) : '—'"></span>
+                        </div>
+                        <h3 class="text-sm font-semibold text-slate-900 truncate" x-text="audit.website"></h3>
+                        <p class="text-xs text-slate-500 mt-1">
+                            <span x-text="audit.audit_type.replace(/_/g,' ')"></span> ·
+                            <span x-text="audit.total_pages + ' pages'"></span> ·
+                            <span x-text="audit.provider"></span>
+                        </p>
+                        <!-- Mini distribution bar -->
+                        <div class="mt-3 flex h-2 rounded-full overflow-hidden bg-slate-100">
+                            <div class="bg-green-500" :style="`width:${barWidth(audit,'excellent')}%`"></div>
+                            <div class="bg-blue-500"  :style="`width:${barWidth(audit,'good')}%`"></div>
+                            <div class="bg-yellow-500":style="`width:${barWidth(audit,'needs_work')}%`"></div>
+                            <div class="bg-red-500"   :style="`width:${barWidth(audit,'poor')}%`"></div>
+                        </div>
+                        <div class="mt-1 flex text-[10px] text-slate-500 justify-between">
+                            <span x-text="audit.distribution.excellent + ' exc'"></span>
+                            <span x-text="audit.distribution.good + ' good'"></span>
+                            <span x-text="audit.distribution.needs_work + ' med'"></span>
+                            <span x-text="audit.distribution.poor + ' poor'"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <!-- ---- Distribution Chart (screen only) ---- -->
+            <div class="print:hidden bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+                <h3 class="text-sm font-semibold text-slate-900 mb-4">Score Distribution Comparison</h3>
+                <div class="relative" style="height:300px">
+                    <canvas id="compareDistChart"></canvas>
+                </div>
+            </div>
+
+            <!-- ---- Per-Criterion Comparison ---- -->
+            <template x-if="criteriaEntries.length > 0">
+                <div class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900">Per-Criterion Score Comparison</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">Averaged across all pages · sorted by biggest gap · ★ = winner</p>
+                        </div>
+                        <span class="text-xs text-slate-500" x-text="criteriaEntries.length + ' criteria'"></span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-slate-200">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Criterion</th>
+                                    <template x-for="(audit, i) in comparisonData.audits" :key="'cth-'+audit.id">
+                                        <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">
+                                            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold mr-1"
+                                                  :class="['bg-blue-500','bg-purple-500','bg-amber-500','bg-teal-500'][i]"
+                                                  x-text="String.fromCharCode(65 + i)"></span>
+                                            Score
+                                        </th>
+                                    </template>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider">Gap</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-slate-200">
+                                <template x-for="[crit, critObj] in criteriaEntries" :key="'cr-'+crit">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-3 text-sm text-slate-800 font-medium" x-text="formatCriterion(crit)"></td>
+                                        <template x-for="(score, si) in critObj.scores" :key="'cs-'+crit+'-'+si">
+                                            <td class="px-4 py-3 text-center">
+                                                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                                                      :class="scoreClass(score)">
+                                                    <span x-text="score != null ? score.toFixed(1) : '—'"></span>
+                                                    <!-- winner star -->
+                                                    <span x-show="critObj.winner === si && critObj.delta > 0"
+                                                          class="text-yellow-500" title="Best score">★</span>
+                                                </span>
+                                            </td>
+                                        </template>
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="text-xs font-medium"
+                                                  :class="critObj.delta > 15 ? 'text-red-600' : critObj.delta > 5 ? 'text-yellow-600' : 'text-slate-400'"
+                                                  x-text="'±' + critObj.delta"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </template>
+
+            <!-- ---- No common criteria empty state ---- -->
+            <template x-if="comparisonData && criteriaEntries.length === 0 && comparisonData.common_pages_count > 0">
+                <div class="bg-white shadow-sm rounded-lg border border-slate-200 px-6 py-8 text-center text-sm text-slate-500">
+                    <svg class="w-8 h-8 text-slate-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/>
+                    </svg>
+                    <p class="font-medium text-slate-600 mb-1">No common criteria found</p>
+                    <p>The selected audits produced different criterion keys — this usually happens when comparing different audit types. Try selecting audits of the same type.</p>
+                </div>
+            </template>
+
+            <!-- ---- Page-by-Page Comparison ---- -->
+            <div class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
+
+                <!-- Header: title + anomaly badge + search/limit controls -->
+                <div class="px-6 py-4 border-b border-slate-200">
+                    <div class="flex flex-wrap justify-between items-start gap-3">
+                        <div>
+                            <h3 class="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                                Page-by-Page Comparison
+                                <!-- Anomaly count badge -->
+                                <template x-if="comparisonData.anomaly_count > 0">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800"
+                                          :title="comparisonData.anomaly_count + ' pages with score delta ≥ 30'">
+                                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                                        </svg>
+                                        <span x-text="comparisonData.anomaly_count + ' anomal' + (comparisonData.anomaly_count !== 1 ? 'ies' : 'y')"></span>
+                                    </span>
+                                </template>
+                            </h3>
+                            <p class="text-xs text-slate-500 mt-0.5"
+                               x-text="comparisonData.common_pages_count + ' common pages · Avg. delta: ' + comparisonData.summary.avg_delta + ' pts'"></p>
+                        </div>
+
+                        <!-- Search + per-page controls (hidden when printing) -->
+                        <div class="flex items-center gap-2 print:hidden">
+                            <div class="relative">
+                                <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
+                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                                </svg>
+                                <input type="text" x-model.debounce.300ms="pageSearch"
+                                       placeholder="Filter pages…"
+                                       class="pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 w-44">
+                            </div>
+                            <select x-model="pageLimit"
+                                    class="text-xs border border-slate-300 rounded-lg py-1.5 px-2 focus:ring-primary-500 focus:border-primary-500">
+                                <option value="50">Show 50</option>
+                                <option value="100">Show 100</option>
+                                <option value="0">Show all</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-slate-200">
+                        <thead class="bg-slate-50">
+                            <tr>
+                                <!-- Sortable: URL -->
+                                <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer select-none"
+                                    @click="setSort('url')">
+                                    <span class="flex items-center gap-1">
+                                        Page URL
+                                        <span class="text-slate-400" x-html="sortIndicator('url')"></span>
+                                    </span>
+                                </th>
+                                <!-- Sortable: per-audit score columns -->
+                                <template x-for="(audit, i) in comparisonData.audits" :key="'th-'+audit.id">
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer select-none"
+                                        @click="setSort('score_' + i)">
+                                        <span class="flex items-center justify-center gap-1">
+                                            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold"
+                                                  :class="['bg-blue-500','bg-purple-500','bg-amber-500','bg-teal-500'][i]"
+                                                  x-text="String.fromCharCode(65 + i)"></span>
+                                            Score
+                                            <span class="text-slate-400" x-html="sortIndicator('score_' + i)"></span>
+                                        </span>
+                                    </th>
+                                </template>
+                                <!-- Sortable: delta -->
+                                <th class="px-4 py-3 text-center text-xs font-medium text-slate-500 uppercase tracking-wider cursor-pointer select-none"
+                                    @click="setSort('delta')">
+                                    <span class="flex items-center justify-center gap-1">
+                                        Delta
+                                        <span class="text-slate-400" x-html="sortIndicator('delta')"></span>
+                                    </span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-slate-200">
+
+                            <!-- No-search-match empty state -->
+                            <template x-if="filteredPages.length === 0 && pageSearch">
+                                <tr>
+                                    <td :colspan="2 + comparisonData.audits.length"
+                                        class="px-6 py-8 text-center text-sm text-slate-400">
+                                        No pages match "<span x-text="pageSearch"></span>"
+                                    </td>
+                                </tr>
+                            </template>
+
+                            <!-- Data rows — anomaly rows get amber background -->
+                            <template x-for="(comp, idx) in filteredPages" :key="comp.page_url + idx">
+                                <tr :class="comp.anomaly ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-slate-50'">
+                                    <td class="px-6 py-3">
+                                        <div class="flex items-center gap-1.5">
+                                            <!-- Anomaly warning icon -->
+                                            <template x-if="comp.anomaly">
+                                                <svg class="w-3.5 h-3.5 text-amber-500 shrink-0"
+                                                     fill="currentColor" viewBox="0 0 20 20"
+                                                     title="Score anomaly (delta ≥ 30)">
+                                                    <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>
+                                                </svg>
+                                            </template>
+                                            <div class="text-sm text-slate-900 max-w-xs truncate"
+                                                 x-text="comp.page_url" :title="comp.page_url"></div>
+                                        </div>
+                                    </td>
+                                    <template x-for="(score, si) in comp.scores" :key="'s-'+idx+'-'+si">
+                                        <td class="px-4 py-3 text-center">
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                                  :class="scoreClass(score)"
+                                                  x-text="score !== null ? score : '—'"></span>
+                                        </td>
+                                    </template>
+                                    <td class="px-4 py-3 text-center">
+                                        <span class="text-xs font-medium"
+                                              :class="comp.delta > 15 ? 'text-red-600' : comp.delta > 5 ? 'text-yellow-600' : 'text-slate-400'"
+                                              x-text="'±' + (comp.delta != null ? comp.delta.toFixed(1) : '0')"></span>
+                                    </td>
+                                </tr>
+                            </template>
+
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Pagination footer -->
+                <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 print:hidden">
+                    <span x-text="pageFooterText()"></span>
+                    <!-- Prev / Next controls — hidden when searching or showing all -->
+                    <div class="flex items-center gap-1"
+                         x-show="!pageSearch && parseInt(pageLimit) > 0 && comparisonData.page_comparisons.length > parseInt(pageLimit)">
+                        <button @click="prevPage()"
+                                :disabled="!hasPrevPage"
+                                class="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            ← Prev
+                        </button>
+                        <span x-text="'Page ' + (Math.floor(pageOffset / parseInt(pageLimit)) + 1) + ' of ' + Math.ceil(comparisonData.page_comparisons.length / parseInt(pageLimit))"></span>
+                        <button @click="nextPage()"
+                                :disabled="!hasNextPage"
+                                class="px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                            Next →
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </template>
+
+    <!-- ================================================================
+         EMPTY STATE
+    ================================================================ -->
+    <div x-show="!comparisonData && !loading" class="print:hidden text-center py-12">
+        <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+        </svg>
+        <p class="mt-2 text-sm text-slate-500">Select audits above and click Compare to see results</p>
+    </div>
+
+</div><!-- /x-data -->
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+function compareApp(auditsList) {
+    return {
+        // ── State ──────────────────────────────────────────────────────────────
+        allAudits:      auditsList || [],
+        typeFilter:     '',
+        slots:          ['', '', '', ''],
+        loading:        false,
+        comparisonData: null,
+        errorMessage:   '',
+
+        // page-table state
+        pageSearch: '',
+        pageLimit:  '50',   // string to match <select> option values
+        pageOffset: 0,
+        sortCol:    'delta',
+        sortDir:    'desc',
+
+        // ── Lifecycle ──────────────────────────────────────────────────────────
+        init() {
+            // Reset page position whenever slots, search term, or page size changes
+            this.$watch('slots',      () => { this.pageOffset = 0; });
+            this.$watch('pageSearch', () => { this.pageOffset = 0; });
+            this.$watch('pageLimit',  () => { this.pageOffset = 0; });
+        },
+
+        // ── Computed ──────────────────────────────────────────────────────────
+
+        get availableTypes() {
+            return [...new Set(this.allAudits.map(a => a.audit_type))].sort();
+        },
+
+        get filteredAudits() {
+            if (!this.typeFilter) return this.allAudits;
+            return this.allAudits.filter(a => a.audit_type === this.typeFilter);
+        },
+
+        get selectedCount() {
+            return this.slots.filter(s => s !== '').length;
+        },
+
+        /** Live cross-type warning shown beneath the slot selectors. */
+        get crossTypeWarning() {
+            const selected = this.slots.filter(s => s !== '');
+            if (selected.length < 2) return '';
+            const types = selected
+                .map(id => { const a = this.allAudits.find(x => x.id === id); return a ? a.audit_type : null; })
+                .filter(Boolean);
+            const uniq = [...new Set(types)];
+            if (uniq.length > 1) {
+                return `Comparing different audit types (${uniq.map(t => t.replace(/_/g, ' ')).join(' vs ')}) — criteria scores may not be comparable.`;
+            }
+            return '';
+        },
+
+        /**
+         * Sorted Object.entries of common_criteria, biggest delta first.
+         * API structure: { key: { scores: number[], winner: number|null, delta: number } }
+         */
+        get criteriaEntries() {
+            const cc = this.comparisonData?.criteria?.common_criteria;
+            if (!cc || typeof cc !== 'object') return [];
+            const entries = Object.entries(cc);
+            if (entries.length === 0) return [];
+            entries.sort((a, b) => (b[1].delta || 0) - (a[1].delta || 0));
+            return entries;
+        },
+
+        /**
+         * Filtered (by search), sorted (by column), and paginated page comparisons.
+         * When pageSearch is active all matches are shown and pagination is bypassed.
+         */
+        get filteredPages() {
+            if (!this.comparisonData) return [];
+            let pages = this.comparisonData.page_comparisons;
+
+            // Search filter — show every match, skip pagination
+            if (this.pageSearch) {
+                const q = this.pageSearch.toLowerCase();
+                return pages.filter(p => p.page_url.toLowerCase().includes(q));
+            }
+
+            // Sort a shallow copy so the original API order is preserved
+            const col = this.sortCol;
+            const dir = this.sortDir === 'asc' ? 1 : -1;
+            pages = [...pages].sort((a, b) => {
+                if (col === 'url')   return dir * a.page_url.localeCompare(b.page_url);
+                if (col === 'delta') return dir * ((a.delta || 0) - (b.delta || 0));
+                // score_N columns
+                const idx = parseInt(col.replace('score_', ''), 10);
+                return dir * ((a.scores[idx] ?? -1) - (b.scores[idx] ?? -1));
+            });
+
+            // Pagination
+            const limit = parseInt(this.pageLimit, 10) || 0;
+            return limit > 0 ? pages.slice(this.pageOffset, this.pageOffset + limit) : pages;
+        },
+
+        get hasPrevPage() {
+            return this.pageOffset > 0;
+        },
+
+        get hasNextPage() {
+            const limit = parseInt(this.pageLimit, 10) || 0;
+            if (!limit || !this.comparisonData) return false;
+            return this.pageOffset + limit < this.comparisonData.page_comparisons.length;
+        },
+
+        // ── Helpers ───────────────────────────────────────────────────────────
+
+        clearSlots() {
+            this.slots        = ['', '', '', ''];
+            this.errorMessage = '';
+        },
+
+        fmtDate(iso) {
+            if (!iso) return '?';
+            try { return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+            catch { return iso.slice(0, 10); }
+        },
+
+        formatCriterion(key) {
+            return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        },
+
+        barWidth(audit, cls) {
+            const total = Object.values(audit.distribution).reduce((a, b) => a + b, 0);
+            return total > 0 ? (audit.distribution[cls] / total) * 100 : 0;
+        },
+
+        scoreClass(score) {
+            if (score == null) return 'bg-slate-100 text-slate-400';
+            if (score >= 85)   return 'bg-green-100 text-green-800';
+            if (score >= 70)   return 'bg-blue-100 text-blue-800';
+            if (score >= 50)   return 'bg-yellow-100 text-yellow-800';
+            return 'bg-red-100 text-red-800';
+        },
+
+        /**
+         * Returns an HTML sort indicator for a column header.
+         * Uses x-html so the ↕ dim-span renders correctly.
+         */
+        sortIndicator(col) {
+            if (this.sortCol !== col) return '<span class="opacity-30">↕</span>';
+            return this.sortDir === 'asc' ? '↑' : '↓';
+        },
+
+        setSort(col) {
+            if (this.sortCol === col) {
+                this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortCol = col;
+                this.sortDir = 'desc';   // descending is most useful for all columns
+            }
+            this.pageOffset = 0;
+        },
+
+        prevPage() {
+            const limit = parseInt(this.pageLimit, 10) || 0;
+            this.pageOffset = Math.max(0, this.pageOffset - limit);
+        },
+
+        nextPage() {
+            const limit = parseInt(this.pageLimit, 10) || 0;
+            if (this.comparisonData && this.pageOffset + limit < this.comparisonData.page_comparisons.length) {
+                this.pageOffset += limit;
+            }
+        },
+
+        /** Human-readable footer text for the page table. */
+        pageFooterText() {
+            if (!this.comparisonData) return '';
+            const total = this.comparisonData.page_comparisons.length;
+            if (this.pageSearch) {
+                const shown = this.filteredPages.length;
+                return `${shown} of ${total} page${total !== 1 ? 's' : ''} match filter`;
+            }
+            const limit = parseInt(this.pageLimit, 10) || 0;
+            if (limit > 0 && total > limit) {
+                const start = this.pageOffset + 1;
+                const end   = Math.min(this.pageOffset + limit, total);
+                return `Showing ${start}–${end} of ${total} pages`;
+            }
+            return `${total} page${total !== 1 ? 's' : ''}`;
+        },
+
+        /**
+         * Returns the numeric delta for a criterion object.
+         * Handles new API structure {scores, winner, delta} and legacy plain arrays.
+         */
+        getCritDelta(critObj) {
+            if (critObj && typeof critObj === 'object' && 'delta' in critObj) return critObj.delta || 0;
+            const s = Array.isArray(critObj) ? critObj.filter(v => v != null) : [];
+            return s.length >= 2 ? Math.round(Math.max(...s) - Math.min(...s)) : 0;
+        },
+
+        // ── Actions ───────────────────────────────────────────────────────────
+
+        async runComparison() {
+            const selected = this.slots.filter(s => s !== '');
+            if (selected.length < 2) return;
+
+            // Client-side duplicate guard
+            if (new Set(selected).size < selected.length) {
+                this.errorMessage = 'Duplicate audit selected — each slot must contain a different audit.';
+                return;
+            }
+
+            this.errorMessage   = '';
+            this.loading        = true;
+            this.comparisonData = null;
+            this.pageOffset     = 0;
+            this.pageSearch     = '';
+            this.sortCol        = 'delta';
+            this.sortDir        = 'desc';
+
+            try {
+                const resp = await fetch(`/api/compare?audit_ids=${selected.join(',')}`);
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    this.errorMessage = err.detail || `Comparison failed (HTTP ${resp.status})`;
+                    return;
+                }
+                this.comparisonData = await resp.json();
+                this.$nextTick(() => this.renderDistChart());
+            } catch (err) {
+                this.errorMessage = 'Network error: ' + err.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        /** Client-side CSV export — no server round-trip required. */
+        exportCSV() {
+            if (!this.comparisonData) return;
+            const audits  = this.comparisonData.audits;
+            const headers = [
+                'Page URL',
+                ...audits.map((a, i) => `${String.fromCharCode(65 + i)}: ${a.website} Score`),
+                'Delta',
+                'Anomaly',
+            ];
+            const rows = [headers];
+            for (const comp of this.comparisonData.page_comparisons) {
+                rows.push([
+                    comp.page_url,
+                    ...comp.scores.map(s => (s !== null ? s : '')),
+                    comp.delta != null ? comp.delta.toFixed(1) : '',
+                    comp.anomaly ? 'Yes' : 'No',
+                ]);
+            }
+            const esc  = v => { const s = String(v); return /[,"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+            const csv  = rows.map(r => r.map(esc).join(',')).join('\n');
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const url  = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            const date  = new Date().toISOString().slice(0, 10);
+            const sites = audits.map(a => a.website.replace(/[^a-z0-9]/gi, '_')).slice(0, 3).join('-vs-');
+            link.href     = url;
+            link.download = `compare_${sites}_${date}.csv`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        },
+
+        exportPDF() {
+            const prev  = document.title;
+            const first = this.comparisonData?.audits?.[0];
+            if (first) {
+                document.title = `Audit Comparison — ${first.website} — ${new Date().toLocaleDateString()}`;
+            }
+            window.print();
+            document.title = prev;
+        },
+
+        renderDistChart() {
+            const ctx = document.getElementById('compareDistChart');
+            if (!ctx || !this.comparisonData) return;
+            if (this._chart) { this._chart.destroy(); this._chart = null; }
+
+            const colors = [
+                { bg: 'rgba(59,130,246,0.7)',  border: '#3b82f6' },
+                { bg: 'rgba(168,85,247,0.7)',  border: '#a855f7' },
+                { bg: 'rgba(245,158,11,0.7)',  border: '#f59e0b' },
+                { bg: 'rgba(20,184,166,0.7)',  border: '#14b8a6' },
+            ];
+
+            const datasets = this.comparisonData.audits.map((audit, i) => ({
+                label:           `${audit.website} (${audit.audit_type.replace(/_/g, ' ')})`,
+                data:            [audit.distribution.excellent, audit.distribution.good,
+                                  audit.distribution.needs_work, audit.distribution.poor],
+                backgroundColor: colors[i].bg,
+                borderColor:     colors[i].border,
+                borderWidth:     1,
+            }));
+
+            this._chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels:   ['Excellent (85-100)', 'Good (70-84)', 'Needs Work (50-69)', 'Poor (0-49)'],
+                    datasets,
+                },
+                options: {
+                    responsive:          true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { usePointStyle: true } },
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } },
+                    },
+                },
+            });
+        },
+    };
+}
+</script>
+
+<style>
+/* ── Print styles ──────────────────────────────────────────────── */
+@media print {
+    /* Tailwind's print:hidden doesn't need a JS compiler pass when using CDN,
+       but we duplicate the rule here as a safe fallback. */
+    .print\:hidden { display: none !important; }
+
+    /* Remove shadows and ensure borders print */
+    .shadow-sm  { box-shadow: none !important; }
+    .rounded-lg { border-radius: 4px !important; }
+
+    /* Keep cards together */
+    .bg-white { page-break-inside: avoid; }
+
+    /* Tighten spacing */
+    body, .space-y-6 > * + * { margin-top: 12pt !important; }
+
+    /* Full-width layout */
+    .container, .max-w-7xl { max-width: 100% !important; padding: 0 !important; }
+
+    /* Make tables readable */
+    table { font-size: 9pt; }
+    th, td { padding: 4pt 6pt !important; }
+}
+</style>
+{% endblock %}

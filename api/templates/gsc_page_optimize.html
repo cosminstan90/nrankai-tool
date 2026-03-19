@@ -1,0 +1,936 @@
+{% extends "base.html" %}
+{% block title %}Optimize — {{ page_url }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6"
+     x-data='pageOptimize("{{ property.id }}", {{ page_url | tojson }})'
+     x-init="init()">
+
+    <!-- Header -->
+    <div>
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm">
+                <li><a href="/gsc" class="text-slate-400 hover:text-slate-600">GSC Data</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li><a href="/gsc/{{ property.id }}" class="text-slate-400 hover:text-slate-600">{{ property.name }}</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li class="text-slate-700 font-medium">Optimize</li>
+            </ol>
+        </nav>
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="min-w-0">
+                <h1 class="text-xl font-bold text-slate-900">Page Optimization</h1>
+                <div class="mt-1 flex items-center gap-2 flex-wrap">
+                    <span class="font-mono text-xs text-sky-700 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded break-all">{{ page_url }}</span>
+                    <a href="{{ page_url }}" target="_blank"
+                       class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-sky-600 transition-colors flex-shrink-0">
+                        Open ↗
+                    </a>
+                </div>
+            </div>
+            <a href="/gsc/{{ property.id }}"
+               class="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex-shrink-0">
+                ← {{ property.name }}
+            </a>
+        </div>
+
+        <!-- GSC metrics bar -->
+        {% if page_row %}
+        <div class="mt-4 flex flex-wrap gap-3">
+            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm">
+                <span class="text-slate-500 text-xs">Clicks</span>
+                <span class="font-semibold text-slate-800 tabular-nums">{{ "{:,}".format(page_row.clicks or 0) }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm">
+                <span class="text-slate-500 text-xs">Impressions</span>
+                <span class="font-semibold text-slate-800 tabular-nums">{{ "{:,}".format(page_row.impressions or 0) }}</span>
+            </div>
+            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm">
+                <span class="text-slate-500 text-xs">CTR</span>
+                {% set ctr_pct = (page_row.ctr * 100) | round(2) if page_row.ctr is not none else none %}
+                <span class="font-semibold tabular-nums
+                    {% if ctr_pct is not none and ctr_pct < 2 %}text-amber-600{% else %}text-slate-800{% endif %}">
+                    {% if ctr_pct is not none %}{{ ctr_pct }}%{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm shadow-sm">
+                <span class="text-slate-500 text-xs">Avg. Position</span>
+                <span class="font-semibold tabular-nums
+                    {% if page_row.position is not none %}
+                        {% if page_row.position <= 3 %}text-emerald-700
+                        {% elif page_row.position <= 10 %}text-sky-700
+                        {% elif page_row.position <= 20 %}text-amber-600
+                        {% else %}text-slate-400{% endif %}
+                    {% else %}text-slate-400{% endif %}">
+                    {% if page_row.position is not none %}{{ page_row.position | round(1) }}{% else %}—{% endif %}
+                </span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- GSC Queries card -->
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-800">Search Queries from GSC</h2>
+            <span x-show="!queriesLoading && queries.length > 0"
+                  class="text-xs text-slate-400 tabular-nums"
+                  x-text="queries.length + ' queries'"></span>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="queriesLoading" class="px-5 py-6 flex items-center gap-2 text-slate-400 text-sm">
+            <div class="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin"></div>
+            <span>Loading queries…</span>
+        </div>
+
+        <!-- Error / no-oauth fallback -->
+        <div x-show="!queriesLoading && queriesError"
+             class="px-5 py-4 text-sm text-red-600" x-text="queriesError"></div>
+
+        <!-- No queries (no OAuth) -->
+        <div x-show="!queriesLoading && !queriesError && queries.length === 0"
+             class="px-5 py-6 text-sm text-slate-400 italic">
+            No query data available. Connect a Google account in GSC settings to see per-page queries.
+        </div>
+
+        <!-- Queries table -->
+        <div x-show="!queriesLoading && !queriesError && queries.length > 0" class="overflow-x-auto">
+            <!-- Selection controls -->
+            <div class="px-5 py-2 border-b border-slate-100 flex items-center gap-3 text-xs text-slate-500">
+                <span x-text="selectedQueries.length + ' of ' + queries.length + ' selected'"></span>
+                <button @click="selectAll()" class="text-violet-600 hover:underline">Select all</button>
+                <button @click="selectTop(10)" class="text-violet-600 hover:underline">Top 10</button>
+                <button @click="selectedQueries = []" class="text-slate-400 hover:underline">Clear</button>
+            </div>
+            <table class="w-full text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="px-4 py-2.5 w-8">
+                            <input type="checkbox"
+                                   :checked="selectedQueries.length === queries.length && queries.length > 0"
+                                   @change="$event.target.checked ? selectAll() : selectedQueries = []"
+                                   class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                        </th>
+                        <th class="text-left px-3 py-2.5 font-semibold text-slate-600">Query</th>
+                        <th class="text-right px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap">Clicks</th>
+                        <th class="text-right px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap">Impr.</th>
+                        <th class="text-right px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap">CTR%</th>
+                        <th class="text-right px-4 py-2.5 font-semibold text-slate-600 whitespace-nowrap">Pos.</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="q in queries" :key="q.query">
+                        <tr class="hover:bg-slate-50 cursor-pointer"
+                            @click="toggleQuery(q)">
+                            <td class="px-4 py-2" @click.stop>
+                                <input type="checkbox"
+                                       :checked="isQuerySelected(q)"
+                                       @change="toggleQuery(q)"
+                                       class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                            </td>
+                            <td class="px-3 py-2 text-slate-700 font-medium" x-text="q.query"></td>
+                            <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="q.clicks.toLocaleString()"></td>
+                            <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="q.impressions.toLocaleString()"></td>
+                            <td class="px-4 py-2 text-right tabular-nums"
+                                :class="q.ctr < 2 ? 'text-amber-600' : 'text-slate-700'"
+                                x-text="q.ctr + '%'"></td>
+                            <td class="px-4 py-2 text-right tabular-nums">
+                                <span :class="{
+                                    'text-emerald-700 font-semibold': q.position <= 3,
+                                    'text-sky-700':   q.position > 3  && q.position <= 10,
+                                    'text-amber-600': q.position > 10 && q.position <= 20,
+                                    'text-slate-400': q.position > 20,
+                                }" x-text="q.position"></span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- LLM Optimization card -->
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-slate-800 mb-4">LLM Optimization</h2>
+        <p class="text-xs text-slate-500 mb-4">
+            Fetches the page content and runs it through the SEO and GEO audit prompts,
+            augmented with the known GSC queries above as target keywords.
+        </p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <!-- Provider -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Provider</label>
+                <select x-model="form.provider" @change="updateDefaultModel()"
+                        :disabled="optimizing"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:opacity-50">
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="mistral">Mistral</option>
+                </select>
+            </div>
+
+            <!-- Model -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <select x-model="form.model"
+                        :disabled="optimizing"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 disabled:opacity-50">
+                    <template x-for="m in modelOptions()" :key="m.value">
+                        <option :value="m.value" x-text="m.label"></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Audit types -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Audit Types</label>
+                <div class="flex gap-2 mt-1">
+                    <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                        <input type="checkbox"
+                               :checked="hasAuditType('SEO_AUDIT')"
+                               @change="toggleAuditType('SEO_AUDIT')"
+                               :disabled="optimizing"
+                               class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                        SEO
+                    </label>
+                    <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                        <input type="checkbox"
+                               :checked="hasAuditType('GEO_AUDIT')"
+                               @change="toggleAuditType('GEO_AUDIT')"
+                               :disabled="optimizing"
+                               class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                        GEO
+                    </label>
+                    <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                        <input type="checkbox"
+                               :checked="hasAuditType('FAQ_KEYWORDS')"
+                               @change="toggleAuditType('FAQ_KEYWORDS')"
+                               :disabled="optimizing"
+                               class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                        FAQ &amp; Keywords
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <button @click="optimize()"
+                    :disabled="optimizing || !form.audit_types.length"
+                    class="px-5 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <span x-show="!optimizing">✨ Optimize Page</span>
+                <span x-show="optimizing" class="inline-flex items-center gap-2">
+                    <span class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                    <span x-text="jobStatus === 'running' ? 'Running LLM…' : 'Starting…'"></span>
+                </span>
+            </button>
+            <span x-show="optimizing && jobStatus === 'running'" class="text-xs text-slate-400">
+                Fetching page content &amp; running audit prompts…
+            </span>
+        </div>
+
+        <!-- Error -->
+        <p x-show="jobError" x-text="jobError" class="mt-3 text-sm text-red-600"></p>
+    </div>
+
+    <!-- Results: spinner while pending/running -->
+    <div x-show="optimizing"
+         class="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
+        <div class="flex flex-col items-center gap-3">
+            <div class="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin"></div>
+            <p class="text-sm font-medium text-slate-700">
+                <span x-text="jobStatus === 'running' ? 'LLM is analysing the page…' : 'Queued…'"></span>
+            </p>
+            <p class="text-xs text-slate-400">Usually takes 15–45 seconds per audit type.</p>
+        </div>
+    </div>
+
+    <!-- Results panel (shown when we have results from polling OR from history) -->
+    <template x-if="activeGuide && !optimizing">
+        <div class="space-y-5">
+
+            <!-- Report header bar -->
+            <div class="bg-white border rounded-xl shadow-sm px-5 py-4 flex flex-wrap items-center justify-between gap-3"
+                 :class="activeGuide.reviewed ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'">
+                <div class="flex flex-wrap items-center gap-3 text-sm">
+                    <!-- reviewed badge -->
+                    <template x-if="activeGuide.reviewed">
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold">
+                            ✓ Done
+                        </span>
+                    </template>
+                    <!-- queries used -->
+                    <span x-show="queriesUsed > 0"
+                          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-sky-50 border border-sky-100 text-sky-700 text-xs">
+                        🎯 <span x-text="queriesUsed + ' quer' + (queriesUsed === 1 ? 'y' : 'ies') + ' as keywords'"></span>
+                    </span>
+                    <span x-show="queriesUsed === 0"
+                          class="text-xs text-slate-400 italic">No keyword context</span>
+                    <!-- metadata -->
+                    <span class="text-xs text-slate-400" x-text="activeGuide.created_at"></span>
+                    <span x-show="activeGuide.model" class="text-xs text-slate-400 font-mono" x-text="activeGuide.model"></span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <!-- history selector -->
+                    <template x-if="pastGuides.length > 1">
+                        <select x-model.number="activeGuideIdx"
+                                @change="loadGuideByIdx(activeGuideIdx)"
+                                class="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-400">
+                            <template x-for="(g, i) in pastGuides" :key="g.id">
+                                <option :value="i" x-text="(i === 0 ? 'Latest — ' : '') + g.created_at + (g.reviewed ? ' ✓' : '')"></option>
+                            </template>
+                        </select>
+                    </template>
+                    <!-- mark as done / undo -->
+                    <button @click="toggleReviewed()"
+                            :class="activeGuide.reviewed
+                                ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-700'"
+                            class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                        <span x-text="activeGuide.reviewed ? 'Mark undone' : '✓ Mark as done'"></span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Per-audit-type result card -->
+            <template x-for="[auditType, result] in Object.entries(activeGuide.results)" :key="auditType">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+
+                    <!-- Card header -->
+                    <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+                        <div class="flex items-center gap-3 flex-wrap">
+                            <h3 class="font-semibold text-slate-800" x-text="auditTypeLabel(auditType)"></h3>
+                            <template x-if="getAuditBlock(auditType, result).overall_score !== undefined">
+                                <span class="inline-flex items-baseline gap-0.5 px-3 py-1 rounded-full text-base font-bold"
+                                      :class="scoreBg(getAuditBlock(auditType, result).overall_score)">
+                                    <span x-text="getAuditBlock(auditType, result).overall_score"></span>
+                                    <span class="text-xs font-normal opacity-70">/100</span>
+                                </span>
+                            </template>
+                            <template x-if="getAuditBlock(auditType, result).classification">
+                                <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 capitalize"
+                                      x-text="getAuditBlock(auditType, result).classification"></span>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Sub-scores -->
+                    <template x-if="auditType === 'SEO_AUDIT' && result.seo_audit">
+                        <div class="border-b border-slate-100 bg-slate-50/60">
+                            <!-- Score pills row -->
+                            <div class="px-5 py-3 flex flex-wrap gap-3">
+                                <template x-if="result.seo_audit.content_depth_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Content</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.content_depth_score)"
+                                              x-text="result.seo_audit.content_depth_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.eeat_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">E-E-A-T</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.eeat_score)"
+                                              x-text="result.seo_audit.eeat_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.keyword_optimization_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Keywords</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.keyword_optimization_score)"
+                                              x-text="result.seo_audit.keyword_optimization_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.technical_onpage_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Technical</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.technical_onpage_score)"
+                                              x-text="result.seo_audit.technical_onpage_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.featured_snippet_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Snippet</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.featured_snippet_score)"
+                                              x-text="result.seo_audit.featured_snippet_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.topical_authority_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Authority</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.topical_authority_score)"
+                                              x-text="result.seo_audit.topical_authority_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.seo_audit.image_seo_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Images</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.seo_audit.image_seo_score)"
+                                              x-text="result.seo_audit.image_seo_score"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- Meta row -->
+                            <div class="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1">
+                                <template x-if="result.seo_audit.primary_keyword_detected">
+                                    <span class="text-xs text-slate-500">Primary keyword: <b class="text-slate-700" x-text="result.seo_audit.primary_keyword_detected"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.search_intent">
+                                    <span class="text-xs text-slate-500">Intent: <b class="text-slate-700" x-text="result.seo_audit.search_intent"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.helpful_content_assessment">
+                                    <span class="text-xs text-slate-500">Helpful content: <b class="text-slate-700" x-text="result.seo_audit.helpful_content_assessment"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.featured_snippet_potential">
+                                    <span class="text-xs text-slate-500">Snippet potential: <b class="text-slate-700" x-text="result.seo_audit.featured_snippet_potential"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.cannibalization_risk">
+                                    <span class="text-xs text-slate-500">Cannibalization: <b class="text-slate-700" x-text="result.seo_audit.cannibalization_risk"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.estimated_useful_word_count">
+                                    <span class="text-xs text-slate-500">Useful words: <b class="text-slate-700" x-text="result.seo_audit.estimated_useful_word_count"></b></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="auditType === 'GEO_AUDIT' && result.geo_audit">
+                        <div class="border-b border-slate-100 bg-slate-50/60">
+                            <!-- Score pills row -->
+                            <div class="px-5 py-3 flex flex-wrap gap-3">
+                                <template x-if="result.geo_audit.citation_probability !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Citation</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.citation_probability)"
+                                              x-text="result.geo_audit.citation_probability"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.geo_audit.information_gain_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Info Gain</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.information_gain_score)"
+                                              x-text="result.geo_audit.information_gain_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.geo_audit.authority_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Authority</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.authority_score)"
+                                              x-text="result.geo_audit.authority_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.geo_audit.structure_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Structure</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.structure_score)"
+                                              x-text="result.geo_audit.structure_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.geo_audit.factual_density_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Factual</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.factual_density_score)"
+                                              x-text="result.geo_audit.factual_density_score"></span>
+                                    </div>
+                                </template>
+                                <template x-if="result.geo_audit.anti_hallucination_score !== undefined">
+                                    <div class="flex items-center gap-1.5 text-xs">
+                                        <span class="text-slate-400">Anti-Halluc.</span>
+                                        <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                              :class="scoreBg(result.geo_audit.anti_hallucination_score)"
+                                              x-text="result.geo_audit.anti_hallucination_score"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- Meta row -->
+                            <div class="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1">
+                                <template x-if="result.geo_audit.would_perplexity_cite">
+                                    <span class="text-xs text-slate-500">Perplexity cite: <b class="text-slate-700" x-text="result.geo_audit.would_perplexity_cite"></b></span>
+                                </template>
+                                <template x-if="result.geo_audit.information_gain">
+                                    <span class="text-xs text-slate-500">Info gain: <b class="text-slate-700" x-text="result.geo_audit.information_gain"></b></span>
+                                </template>
+                                <template x-if="result.geo_audit.content_type">
+                                    <span class="text-xs text-slate-500">Content type: <b class="text-slate-700" x-text="result.geo_audit.content_type"></b></span>
+                                </template>
+                                <template x-if="result.geo_audit.detected_language">
+                                    <span class="text-xs text-slate-500">Language: <b class="text-slate-700" x-text="result.geo_audit.detected_language"></b></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Score justification -->
+                    <template x-if="result.seo_score_justification || result.geo_score_justification">
+                        <div class="px-5 py-3 border-b border-slate-100 bg-amber-50/40">
+                            <p class="text-sm text-slate-600 leading-relaxed"
+                               x-text="result.seo_score_justification || result.geo_score_justification"></p>
+                        </div>
+                    </template>
+
+                    <!-- Issues -->
+                    <template x-if="result.issues && result.issues.length > 0">
+                        <div class="px-5 py-5 border-b border-slate-100">
+                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                Issues
+                                <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal"
+                                      x-text="result.issues.length"></span>
+                            </h4>
+                            <div class="space-y-3">
+                                <template x-for="(issue, idx) in result.issues" :key="idx">
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 mt-0.5"
+                                              x-text="idx + 1"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                      :class="severityBg(issue.severity)"
+                                                      x-text="issue.severity"></span>
+                                                <p class="text-sm font-medium text-slate-800" x-text="issue.finding"></p>
+                                            </div>
+                                            <p x-show="issue.evidence || issue.impact"
+                                               class="text-xs text-slate-500 leading-relaxed"
+                                               x-text="issue.evidence || issue.impact"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Recommendations -->
+                    <template x-if="result.recommendations && result.recommendations.length > 0">
+                        <div class="px-5 py-5">
+                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                Recommendations
+                                <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal"
+                                      x-text="result.recommendations.length"></span>
+                            </h4>
+                            <div class="space-y-3">
+                                <template x-for="(rec, idx) in result.recommendations" :key="idx">
+                                    <div class="border border-slate-100 rounded-xl p-4 hover:border-slate-200 transition-colors">
+                                        <div class="flex items-start gap-3 mb-2">
+                                            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 mt-0.5"
+                                                  x-text="idx + 1"></span>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                          :class="priorityBg(rec.priority)"
+                                                          x-text="rec.priority"></span>
+                                                    <p class="text-sm font-semibold text-slate-800" x-text="rec.recommendation"></p>
+                                                </div>
+                                                <template x-if="rec.expected_impact">
+                                                    <p class="text-xs text-slate-500" x-text="rec.expected_impact"></p>
+                                                </template>
+                                            </div>
+                                        </div>
+                                        <template x-if="rec.before_example || rec.after_example">
+                                            <div class="ml-8 mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <template x-if="rec.before_example">
+                                                    <div class="bg-red-50 border border-red-100 rounded-lg p-3">
+                                                        <p class="text-[10px] font-semibold text-red-500 uppercase mb-1.5">Before</p>
+                                                        <p class="text-xs text-slate-600 leading-relaxed" x-text="rec.before_example"></p>
+                                                    </div>
+                                                </template>
+                                                <template x-if="rec.after_example">
+                                                    <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                                                        <p class="text-[10px] font-semibold text-emerald-600 uppercase mb-1.5">After</p>
+                                                        <p class="text-xs text-slate-600 leading-relaxed" x-text="rec.after_example"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- FAQ & Keywords result card (custom layout, no issues/recs loop) -->
+                    <template x-if="auditType === 'FAQ_KEYWORDS'">
+                        <div>
+                            <!-- Related Keywords -->
+                            <template x-if="result.related_keywords && result.related_keywords.length > 0">
+                                <div class="px-5 py-5 border-b border-slate-100">
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                        Related Keywords
+                                        <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal"
+                                              x-text="result.related_keywords.length"></span>
+                                    </h4>
+                                    <div class="flex flex-wrap gap-2">
+                                        <template x-for="(kw, i) in result.related_keywords" :key="i">
+                                            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs"
+                                                 :class="{
+                                                     'bg-purple-50 border-purple-200 text-purple-800': kw.type === 'lsi',
+                                                     'bg-sky-50 border-sky-200 text-sky-800': kw.type === 'long_tail',
+                                                     'bg-amber-50 border-amber-200 text-amber-800': kw.type === 'synonym',
+                                                     'bg-teal-50 border-teal-200 text-teal-800': kw.type === 'semantic',
+                                                     'bg-slate-50 border-slate-200 text-slate-700': !['lsi','long_tail','synonym','semantic'].includes(kw.type),
+                                                 }">
+                                                <span x-text="kw.keyword" class="font-medium"></span>
+                                                <span class="opacity-60 text-[10px]" x-text="kw.type"></span>
+                                                <template x-if="kw.priority === 'high'">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0"></span>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                    <p class="mt-3 text-[11px] text-slate-400">
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-400"></span> LSI</span>&nbsp;
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-400"></span> Long-tail</span>&nbsp;
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Synonym</span>&nbsp;
+                                        <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-teal-400"></span> Semantic</span>&nbsp;
+                                        <span class="inline-flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> High priority</span>
+                                    </p>
+                                </div>
+                            </template>
+
+                            <!-- FAQ Questions -->
+                            <template x-if="result.faq_questions && result.faq_questions.length > 0">
+                                <div class="px-5 py-5">
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                        FAQ Questions
+                                        <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal"
+                                              x-text="result.faq_questions.length"></span>
+                                        <span class="ml-2 text-[10px] font-normal text-slate-400 normal-case tracking-normal">Ready for schema.org FAQPage markup</span>
+                                    </h4>
+                                    <div class="space-y-3">
+                                        <template x-for="(faq, i) in result.faq_questions" :key="i">
+                                            <div class="border border-slate-100 rounded-xl p-4 hover:border-slate-200 transition-colors">
+                                                <div class="flex items-start gap-3">
+                                                    <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 mt-0.5"
+                                                          x-text="i + 1"></span>
+                                                    <div class="flex-1 min-w-0">
+                                                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                                  :class="priorityBg(faq.priority)"
+                                                                  x-text="faq.priority"></span>
+                                                            <p class="text-sm font-semibold text-slate-800" x-text="faq.question"></p>
+                                                        </div>
+                                                        <p class="text-xs text-slate-500 leading-relaxed" x-text="faq.answer_hint"></p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Raw fallback (parse failed) -->
+                    <template x-if="result.raw && auditType !== 'FAQ_KEYWORDS'">
+                        <div class="px-5 py-4 bg-amber-50 border-t border-amber-100">
+                            <p class="text-xs font-medium text-amber-700 mb-2">⚠ LLM response could not be parsed as structured JSON. Raw output:</p>
+                            <pre class="text-xs text-slate-600 whitespace-pre-wrap break-all" x-text="result.raw"></pre>
+                        </div>
+                    </template>
+
+                </div>
+            </template>
+
+        </div>
+    </template>
+
+</div>
+
+<script>
+function pageOptimize(propertyId, pageUrl) {
+    return {
+        propertyId,
+        pageUrl,
+
+        // Queries state
+        queries:         [],
+        selectedQueries: [],
+        queriesLoading:  false,
+        queriesError:    '',
+
+        // Form
+        form: {
+            provider:    'anthropic',
+            model:       'claude-haiku-4-5-20251001',
+            audit_types: ['SEO_AUDIT', 'GEO_AUDIT'],
+        },
+
+        // Past guides loaded from server
+        pastGuides:    {{ past_guides | tojson }},
+        activeGuideIdx: 0,
+        activeGuide:   null,   // {id, results, reviewed, created_at, model, queries_used}
+
+        // Job state
+        optimizing:  false,
+        guideId:     null,
+        jobStatus:   null,
+        jobError:    '',
+        queriesUsed: 0,
+        pollTimer:   null,
+
+        async init() {
+            await this.loadQueries();
+            // Load most recent saved result if available
+            if (this.pastGuides.length > 0) {
+                this.loadGuideByIdx(0);
+            }
+        },
+
+        // Try to re-parse stored results where JSON parsing failed at write time
+        // (old reports stored {raw: "..."} instead of structured data)
+        _tryParseRaw(r) {
+            if (!r || typeof r !== 'object' || !r.raw || typeof r.raw !== 'string') return r;
+            try {
+                const s     = r.raw;
+                const start = s.indexOf('{');
+                const end   = s.lastIndexOf('}');
+                if (start !== -1 && end > start) return JSON.parse(s.slice(start, end + 1));
+            } catch(e) {}
+            return r;
+        },
+
+        _processResults(rawResults) {
+            const out = {};
+            for (const [type, r] of Object.entries(rawResults || {})) {
+                out[type] = this._tryParseRaw(r);
+            }
+            return out;
+        },
+
+        loadGuideByIdx(idx) {
+            const g = this.pastGuides[idx];
+            if (!g || !g.guide_json) return;
+            const gj = g.guide_json;
+            this.activeGuide = {
+                id:         g.id,
+                reviewed:   g.reviewed,
+                created_at: g.created_at,
+                model:      g.model,
+                results:    this._processResults(gj.results),
+            };
+            this.queriesUsed = gj.queries_used || 0;
+            this.activeGuideIdx = idx;
+        },
+
+        async toggleReviewed() {
+            if (!this.activeGuide) return;
+            const newVal = !this.activeGuide.reviewed;
+            try {
+                await fetch(`/api/guide/${this.activeGuide.id}/reviewed?reviewed=${newVal}`, {
+                    method: 'PATCH',
+                });
+                this.activeGuide.reviewed = newVal;
+                // Sync into pastGuides so dropdown reflects change
+                const g = this.pastGuides[this.activeGuideIdx];
+                if (g) g.reviewed = newVal;
+            } catch(e) {
+                // ignore
+            }
+        },
+
+        async loadQueries() {
+            this.queriesLoading = true;
+            this.queriesError   = '';
+            try {
+                const res  = await fetch(`/api/gsc/properties/${this.propertyId}/page-queries?url=${encodeURIComponent(this.pageUrl)}`);
+                const data = await res.json();
+                if (!res.ok) {
+                    this.queriesError = data.detail || 'Failed to load queries';
+                } else {
+                    this.queries = data.queries || [];
+                    this.selectTop(10);  // pre-select top 10 by default
+                }
+            } catch(e) {
+                this.queriesError = 'Network error';
+            } finally {
+                this.queriesLoading = false;
+            }
+        },
+
+        isQuerySelected(q) {
+            return this.selectedQueries.some(s => s.query === q.query);
+        },
+
+        toggleQuery(q) {
+            const idx = this.selectedQueries.findIndex(s => s.query === q.query);
+            if (idx >= 0) {
+                this.selectedQueries.splice(idx, 1);
+            } else {
+                this.selectedQueries.push(q);
+            }
+        },
+
+        selectAll() {
+            this.selectedQueries = [...this.queries];
+        },
+
+        selectTop(n) {
+            this.selectedQueries = this.queries.slice(0, n);
+        },
+
+        toggleAuditType(type) {
+            const idx = this.form.audit_types.indexOf(type);
+            if (idx >= 0) {
+                this.form.audit_types.splice(idx, 1);
+            } else {
+                this.form.audit_types.push(type);
+            }
+        },
+
+        hasAuditType(type) {
+            return this.form.audit_types.includes(type);
+        },
+
+        modelOptions() {
+            const opts = {
+                anthropic: [
+                    { value: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5 (fast)' },
+                    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+                    { value: 'claude-sonnet-4-20250514',   label: 'Claude Sonnet 4' },
+                ],
+                openai: [
+                    { value: 'gpt-4o-mini', label: 'GPT-4o Mini (fast)' },
+                    { value: 'gpt-4o',      label: 'GPT-4o' },
+                ],
+                mistral: [
+                    { value: 'mistral-small-latest', label: 'Mistral Small (fast)' },
+                    { value: 'mistral-large-latest', label: 'Mistral Large' },
+                ],
+            };
+            return opts[this.form.provider] || [];
+        },
+
+        updateDefaultModel() {
+            const defaults = {
+                anthropic: 'claude-haiku-4-5-20251001',
+                openai:    'gpt-4o-mini',
+                mistral:   'mistral-small-latest',
+            };
+            this.form.model = defaults[this.form.provider] || '';
+        },
+
+        async optimize() {
+            if (this.optimizing || !this.form.audit_types.length) return;
+            this.optimizing  = true;
+            this.jobStatus   = null;
+            this.activeGuide = null;
+            this.jobError    = '';
+            this.queriesUsed = this.selectedQueries.length;
+            if (this.pollTimer) clearInterval(this.pollTimer);
+
+            try {
+                const res = await fetch(`/api/gsc/properties/${this.propertyId}/page-optimize`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        url:              this.pageUrl,
+                        provider:         this.form.provider,
+                        model:            this.form.model,
+                        audit_types:      this.form.audit_types,
+                        selected_queries: this.selectedQueries.length > 0 ? this.selectedQueries : null,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.jobError   = data.detail || 'Failed to start optimization';
+                    this.optimizing = false;
+                    return;
+                }
+                this.guideId   = data.guide_id;
+                this.jobStatus = 'pending';
+                this.startPolling();
+            } catch(e) {
+                this.jobError   = 'Network error';
+                this.optimizing = false;
+            }
+        },
+
+        startPolling() {
+            this.pollTimer = setInterval(async () => {
+                try {
+                    const res  = await fetch(`/api/guide/${this.guideId}`);
+                    const data = await res.json();
+                    this.jobStatus = data.status;
+
+                    if (data.status === 'completed') {
+                        clearInterval(this.pollTimer);
+                        this.optimizing = false;
+                        const gj = data.guide_json;
+                        if (gj && gj.type === 'optimization') {
+                            if (!this.queriesUsed) this.queriesUsed = gj.queries_used || 0;
+                            const newGuide = {
+                                id:         data.id,
+                                reviewed:   data.reviewed || false,
+                                created_at: data.updated_at ? data.updated_at.replace('T', ' ').slice(0, 16) : '',
+                                model:      data.model,
+                                results:    this._processResults(gj.results),
+                            };
+                            this.pastGuides.unshift({
+                                id:         data.id,
+                                reviewed:   false,
+                                created_at: newGuide.created_at,
+                                model:      data.model,
+                                guide_json: gj,
+                            });
+                            this.activeGuideIdx = 0;
+                            this.activeGuide = newGuide;
+                        }
+                    } else if (data.status === 'failed') {
+                        clearInterval(this.pollTimer);
+                        this.optimizing = false;
+                        this.jobError   = data.error_message || 'Optimization failed';
+                    }
+                } catch(e) {
+                    // ignore transient network errors during polling
+                }
+            }, 2000);
+        },
+
+        // ── Utilities ──────────────────────────────────────────────────────────
+
+        scoreBg(score) {
+            if (score == null) return 'bg-slate-100 text-slate-500';
+            if (score >= 81)   return 'bg-emerald-100 text-emerald-800';
+            if (score >= 61)   return 'bg-sky-100 text-sky-800';
+            if (score >= 41)   return 'bg-amber-100 text-amber-800';
+            if (score >= 21)   return 'bg-orange-100 text-orange-800';
+            return 'bg-red-100 text-red-800';
+        },
+
+        severityBg(severity) {
+            if (severity === 'critical') return 'bg-red-100 text-red-700';
+            if (severity === 'major')    return 'bg-orange-100 text-orange-700';
+            return 'bg-slate-100 text-slate-600';
+        },
+
+        priorityBg(priority) {
+            if (priority === 'high')   return 'bg-red-100 text-red-700';
+            if (priority === 'medium') return 'bg-amber-100 text-amber-700';
+            return 'bg-slate-100 text-slate-600';
+        },
+
+        getAuditBlock(auditType, result) {
+            if (auditType === 'SEO_AUDIT') return result.seo_audit || {};
+            if (auditType === 'GEO_AUDIT') return result.geo_audit || {};
+            // FAQ_KEYWORDS has no overall_score — return empty so header shows no score badge
+            if (auditType === 'FAQ_KEYWORDS') return {};
+            return result;
+        },
+
+        auditTypeLabel(auditType) {
+            const labels = { SEO_AUDIT: 'SEO Audit', GEO_AUDIT: 'GEO Audit', FAQ_KEYWORDS: 'FAQ & Keywords' };
+            return labels[auditType] || auditType;
+        },
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+
+{% block title %}Cross-Reference Analysis{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="crossRefApp()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg class="w-6 h-6 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                Cross-Reference Analysis
+            </h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Site-wide pattern detection across all pages of a completed audit — keyword cannibalization, repeated errors, orphan pages, and LLM-powered strategic insights.
+            </p>
+        </div>
+    </div>
+
+    <!-- Run Form -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">Run New Analysis</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Website -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Website</label>
+                <select x-model="form.website" @change="filterTypes()"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                    <option value="">Select website…</option>
+                    {% for w in websites %}
+                    <option value="{{ w }}">{{ w }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <!-- Audit Type -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Audit Type</label>
+                <select x-model="form.audit_type"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                    <option value="">Select audit type…</option>
+                    <template x-for="t in filteredTypes" :key="t">
+                        <option :value="t" x-text="typeLabels[t] || t"></option>
+                    </template>
+                </select>
+            </div>
+            <!-- Mode -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Mode</label>
+                <select x-model="form.no_llm"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+                    <option value="false">Full (Rule-Based + LLM)</option>
+                    <option value="true">Rule-Based Only (Free, Fast)</option>
+                </select>
+            </div>
+            <!-- Run button -->
+            <div class="flex items-end">
+                <button @click="runAnalysis()"
+                        :disabled="!form.website || !form.audit_type || running"
+                        class="w-full px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2">
+                    <svg x-show="running" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                    <span x-text="running ? runStatus : 'Run Analysis'"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Progress / error bar -->
+        <div x-show="jobError" class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"
+             x-text="jobError"></div>
+        <div x-show="running && !jobError" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+            Analysis in progress… This may take 1–3 minutes for full LLM analysis. Results will appear in the table below when complete.
+        </div>
+    </div>
+
+    <!-- Recent Jobs History -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Recent Jobs</h2>
+                <p class="text-xs text-slate-400 mt-0.5">Last 10 cross-reference runs — persisted across server restarts</p>
+            </div>
+            <button @click="loadJobs()" class="text-xs text-primary-600 hover:text-primary-800 font-medium">↻ Refresh</button>
+        </div>
+        <template x-if="jobs.length === 0">
+            <p class="px-5 py-6 text-center text-sm text-slate-400">No jobs yet. Run an analysis above to get started.</p>
+        </template>
+        <template x-if="jobs.length > 0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+                        <tr>
+                            <th class="px-4 py-2 text-left">Website</th>
+                            <th class="px-4 py-2 text-left">Audit Type</th>
+                            <th class="px-4 py-2 text-center">Mode</th>
+                            <th class="px-4 py-2 text-center">Status</th>
+                            <th class="px-4 py-2 text-left">Started</th>
+                            <th class="px-4 py-2 text-left">Finished</th>
+                            <th class="px-4 py-2 text-left">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="job in jobs" :key="job.id">
+                            <tr class="hover:bg-slate-50 transition-colors">
+                                <td class="px-4 py-2 font-medium text-slate-800 truncate max-w-[140px]" x-text="job.website"></td>
+                                <td class="px-4 py-2 text-slate-600 text-xs" x-text="typeLabels[job.audit_type] || job.audit_type"></td>
+                                <td class="px-4 py-2 text-center">
+                                    <span class="text-xs px-1.5 py-0.5 rounded"
+                                          :class="job.no_llm ? 'bg-slate-100 text-slate-500' : 'bg-primary-50 text-primary-700'"
+                                          x-text="job.no_llm ? 'Lite' : 'Full'"></span>
+                                </td>
+                                <td class="px-4 py-2 text-center">
+                                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full"
+                                          :class="{
+                                            'bg-emerald-100 text-emerald-700': job.status === 'completed',
+                                            'bg-blue-100 text-blue-700':    job.status === 'running',
+                                            'bg-yellow-100 text-yellow-700': job.status === 'queued',
+                                            'bg-red-100 text-red-700':      job.status === 'failed',
+                                          }"
+                                          x-text="job.status"></span>
+                                </td>
+                                <td class="px-4 py-2 text-xs text-slate-400" x-text="job.started_at || '—'"></td>
+                                <td class="px-4 py-2 text-xs text-slate-400" x-text="job.completed_at || '—'"></td>
+                                <td class="px-4 py-2">
+                                    <template x-if="job.status === 'completed'">
+                                        <button @click="viewResults(job.website, job.audit_type, job.no_llm)"
+                                                class="text-xs px-2 py-1 bg-primary-50 text-primary-700 border border-primary-200 rounded hover:bg-primary-100 transition-colors">
+                                            View
+                                        </button>
+                                    </template>
+                                    <template x-if="job.status === 'failed'">
+                                        <span class="text-xs text-red-500 truncate max-w-[160px]" :title="job.error" x-text="job.error ? job.error.slice(0,40) + '…' : 'Error'"></span>
+                                    </template>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </template>
+    </div>
+
+    <!-- Available Analyses Table -->
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100">
+            <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Available Analyses</h2>
+            <p class="text-xs text-slate-400 mt-0.5">{{ site_entries | length }} website × audit type combinations with completed runs</p>
+        </div>
+
+        {% if site_entries %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
+                    <tr>
+                        <th class="px-4 py-3 text-left">Website</th>
+                        <th class="px-4 py-3 text-left">Audit Type</th>
+                        <th class="px-4 py-3 text-center">Audit Runs</th>
+                        <th class="px-4 py-3 text-center">Last Audit</th>
+                        <th class="px-4 py-3 text-center">Full Analysis</th>
+                        <th class="px-4 py-3 text-center">Lite Analysis</th>
+                        <th class="px-4 py-3 text-left">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for entry in site_entries %}
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-4 py-3 font-medium text-slate-800">
+                            <a href="/sites/{{ entry.website }}" class="hover:text-primary-600 transition-colors">{{ entry.website }}</a>
+                        </td>
+                        <td class="px-4 py-3 text-slate-600">{{ entry.audit_type_label }}</td>
+                        <td class="px-4 py-3 text-center text-slate-500">{{ entry.run_count }}</td>
+                        <td class="px-4 py-3 text-center text-slate-400">{{ entry.last_run or '—' }}</td>
+                        <!-- Full analysis -->
+                        <td class="px-4 py-3 text-center">
+                            {% if entry.full_analysis %}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-xs font-medium">
+                                ✓ {{ entry.full_analysis.last_modified }}
+                            </span>
+                            {% else %}
+                            <span class="text-slate-300 text-xs">—</span>
+                            {% endif %}
+                        </td>
+                        <!-- Lite analysis -->
+                        <td class="px-4 py-3 text-center">
+                            {% if entry.lite_analysis %}
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-700 rounded-full text-xs font-medium">
+                                ✓ {{ entry.lite_analysis.last_modified }}
+                            </span>
+                            {% else %}
+                            <span class="text-slate-300 text-xs">—</span>
+                            {% endif %}
+                        </td>
+                        <!-- Actions -->
+                        <td class="px-4 py-3">
+                            <div class="flex gap-2">
+                                {% if entry.full_analysis %}
+                                <button @click="viewResults('{{ entry.website }}', '{{ entry.audit_type }}', false)"
+                                        class="text-xs px-2 py-1 bg-primary-50 text-primary-700 border border-primary-200 rounded hover:bg-primary-100 transition-colors">
+                                    View Full
+                                </button>
+                                {% endif %}
+                                {% if entry.lite_analysis %}
+                                <button @click="viewResults('{{ entry.website }}', '{{ entry.audit_type }}', true)"
+                                        class="text-xs px-2 py-1 bg-slate-50 text-slate-700 border border-slate-200 rounded hover:bg-slate-100 transition-colors">
+                                    View Lite
+                                </button>
+                                {% endif %}
+                                <button @click="prefillForm('{{ entry.website }}', '{{ entry.audit_type }}')"
+                                        class="text-xs px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded hover:bg-amber-100 transition-colors">
+                                    Re-run
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-5 py-12 text-center text-slate-400">
+            <p class="text-sm">No completed audits found. Run an audit first, then come back to run cross-reference analysis.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Results Viewer Panel -->
+    <div x-show="results" x-cloak class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">
+                    Analysis Results — <span x-text="resultsTitle" class="text-primary-600"></span>
+                </h2>
+                <p class="text-xs text-slate-400 mt-0.5" x-text="resultsMeta"></p>
+            </div>
+            <button @click="results = null" class="text-slate-400 hover:text-slate-600 text-sm">✕ Close</button>
+        </div>
+
+        <!-- Stats bar -->
+        <template x-if="results && results.cross_reference_analysis">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 bg-slate-50 border-b border-slate-100">
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-slate-800"
+                         x-text="results.cross_reference_analysis.statistics?.average_score ?? '—'"></div>
+                    <div class="text-xs text-slate-400">Avg Score</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-slate-800"
+                         x-text="results.cross_reference_analysis.pages_analyzed ?? '—'"></div>
+                    <div class="text-xs text-slate-400">Pages Analyzed</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-slate-800"
+                         x-text="(results.cross_reference_analysis.rule_based_findings?.repeated_errors?.length ?? 0) + (results.cross_reference_analysis.rule_based_findings?.keyword_cannibalization?.length ?? 0)"></div>
+                    <div class="text-xs text-slate-400">Rule Findings</div>
+                </div>
+                <div class="text-center">
+                    <div class="text-2xl font-bold text-slate-800"
+                         x-text="results.cross_reference_analysis.llm_analysis?.site_wide_issues?.length ?? '—'"></div>
+                    <div class="text-xs text-slate-400">LLM Issues</div>
+                </div>
+            </div>
+        </template>
+
+        <div class="p-5 space-y-6">
+
+            <!-- Quick Wins -->
+            <template x-if="results?.cross_reference_analysis?.llm_analysis?.quick_wins?.length">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-2">⚡ Quick Wins</h3>
+                    <ul class="space-y-1">
+                        <template x-for="qw in results.cross_reference_analysis.llm_analysis.quick_wins" :key="qw">
+                            <li class="flex items-start gap-2 text-sm text-slate-600">
+                                <span class="text-emerald-500 mt-0.5 flex-shrink-0">✓</span>
+                                <span x-text="qw"></span>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+            </template>
+
+            <!-- LLM Site-Wide Issues -->
+            <template x-if="results?.cross_reference_analysis?.llm_analysis?.site_wide_issues?.length">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-2">🤖 Site-Wide Issues (LLM)</h3>
+                    <div class="space-y-2">
+                        <template x-for="issue in results.cross_reference_analysis.llm_analysis.site_wide_issues" :key="issue.issue">
+                            <div class="p-3 rounded-lg border"
+                                 :class="{
+                                    'border-red-200 bg-red-50': issue.severity === 'critical',
+                                    'border-orange-200 bg-orange-50': issue.severity === 'high',
+                                    'border-yellow-200 bg-yellow-50': issue.severity === 'medium',
+                                    'border-slate-200 bg-slate-50': issue.severity === 'low'
+                                 }">
+                                <div class="flex items-start justify-between gap-2">
+                                    <p class="text-sm font-medium text-slate-800" x-text="issue.issue"></p>
+                                    <span class="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full uppercase"
+                                          :class="{
+                                            'bg-red-100 text-red-700': issue.severity === 'critical',
+                                            'bg-orange-100 text-orange-700': issue.severity === 'high',
+                                            'bg-yellow-100 text-yellow-700': issue.severity === 'medium',
+                                            'bg-slate-100 text-slate-500': issue.severity === 'low'
+                                          }"
+                                          x-text="issue.severity"></span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-1" x-text="issue.recommendation"></p>
+                                <p x-show="issue.estimated_impact" class="text-xs text-slate-400 mt-0.5 italic"
+                                   x-text="'Impact: ' + issue.estimated_impact"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Rule-Based Findings -->
+            <template x-if="results?.cross_reference_analysis?.rule_based_findings">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-2">🔍 Rule-Based Findings</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                        <!-- Repeated Errors -->
+                        <template x-if="results.cross_reference_analysis.rule_based_findings.repeated_errors?.length">
+                            <div class="p-3 bg-red-50 border border-red-200 rounded-lg">
+                                <div class="text-xs font-semibold text-red-700 mb-1">
+                                    Repeated Errors / Patterns
+                                    (<span x-text="results.cross_reference_analysis.rule_based_findings.repeated_errors.length"></span>)
+                                </div>
+                                <ul class="space-y-1">
+                                    <template x-for="e in results.cross_reference_analysis.rule_based_findings.repeated_errors.slice(0,5)" :key="e.pattern || e.error">
+                                        <li class="text-xs text-red-600" x-text="(e.pattern || e.error) + ' — ' + (e.count || e.page_count) + ' pages'"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <!-- Keyword Cannibalization -->
+                        <template x-if="results.cross_reference_analysis.rule_based_findings.keyword_cannibalization?.length">
+                            <div class="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                <div class="text-xs font-semibold text-orange-700 mb-1">
+                                    Keyword Cannibalization
+                                    (<span x-text="results.cross_reference_analysis.rule_based_findings.keyword_cannibalization.length"></span>)
+                                </div>
+                                <ul class="space-y-1">
+                                    <template x-for="kc in results.cross_reference_analysis.rule_based_findings.keyword_cannibalization.slice(0,5)" :key="kc.keyword">
+                                        <li class="text-xs text-orange-600" x-text="'«' + kc.keyword + '» — ' + kc.page_count + ' pages'"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <!-- Thin Content -->
+                        <template x-if="results.cross_reference_analysis.rule_based_findings.thin_content_pages?.length">
+                            <div class="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                                <div class="text-xs font-semibold text-yellow-700 mb-1">
+                                    Thin Content / Orphan Risk
+                                    (<span x-text="results.cross_reference_analysis.rule_based_findings.thin_content_pages.length"></span> pages)
+                                </div>
+                                <ul class="space-y-0.5 max-h-28 overflow-y-auto">
+                                    <template x-for="p in results.cross_reference_analysis.rule_based_findings.thin_content_pages.slice(0,10)" :key="p">
+                                        <li class="text-xs text-yellow-600 truncate" x-text="p"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                        <!-- Score Outliers -->
+                        <template x-if="results.cross_reference_analysis.rule_based_findings.score_outliers?.length">
+                            <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                <div class="text-xs font-semibold text-slate-700 mb-1">
+                                    Score Outliers
+                                    (<span x-text="results.cross_reference_analysis.rule_based_findings.score_outliers.length"></span>)
+                                </div>
+                                <ul class="space-y-1">
+                                    <template x-for="o in results.cross_reference_analysis.rule_based_findings.score_outliers.slice(0,5)" :key="o.filename || o.issue">
+                                        <li class="text-xs text-slate-500"
+                                            x-text="(o.filename || o.issue || '') + (o.score !== undefined ? ' — ' + o.score : '')"></li>
+                                    </template>
+                                </ul>
+                            </div>
+                        </template>
+
+                    </div>
+                </div>
+            </template>
+
+            <!-- Content Gaps (LLM) -->
+            <template x-if="results?.cross_reference_analysis?.llm_analysis?.content_gaps?.length">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-2">📋 Content Gaps</h3>
+                    <div class="space-y-2">
+                        <template x-for="gap in results.cross_reference_analysis.llm_analysis.content_gaps" :key="gap.topic">
+                            <div class="flex items-start gap-2 p-2 border border-slate-100 rounded-lg">
+                                <span class="flex-shrink-0 text-xs font-semibold px-1.5 py-0.5 rounded mt-0.5"
+                                      :class="{
+                                        'bg-red-100 text-red-700': gap.priority === 'high',
+                                        'bg-yellow-100 text-yellow-700': gap.priority === 'medium',
+                                        'bg-slate-100 text-slate-500': gap.priority === 'low'
+                                      }"
+                                      x-text="gap.priority"></span>
+                                <div>
+                                    <p class="text-sm font-medium text-slate-700" x-text="gap.topic"></p>
+                                    <p class="text-xs text-slate-400" x-text="gap.rationale"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Strategic Insights -->
+            <template x-if="results?.cross_reference_analysis?.llm_analysis?.strategic_insights">
+                <div>
+                    <h3 class="text-sm font-semibold text-slate-700 mb-2">💡 Strategic Insights</h3>
+                    <p class="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3"
+                       x-text="results.cross_reference_analysis.llm_analysis.strategic_insights"></p>
+                </div>
+            </template>
+
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const SITE_ENTRIES = {{ site_entries | tojson }};
+const TYPE_LABELS  = {{ audit_type_labels | safe }};
+
+function crossRefApp() {
+    return {
+        form: { website: '', audit_type: '', no_llm: 'false' },
+        filteredTypes: [],
+        typeLabels: TYPE_LABELS,
+        running: false,
+        runStatus: 'Queued…',
+        jobError: null,
+        pollTimer: null,
+        results: null,
+        resultsTitle: '',
+        resultsMeta: '',
+        jobs: [],
+
+        async init() {
+            this.filteredTypes = [...new Set(SITE_ENTRIES.map(e => e.audit_type))].sort();
+            await this.loadJobs();
+        },
+
+        async loadJobs() {
+            try {
+                const resp = await fetch('/api/cross-reference/jobs?limit=10');
+                if (resp.ok) this.jobs = await resp.json();
+            } catch (_) { /* non-critical */ }
+        },
+
+        filterTypes() {
+            if (!this.form.website) {
+                this.filteredTypes = [...new Set(SITE_ENTRIES.map(e => e.audit_type))].sort();
+            } else {
+                this.filteredTypes = SITE_ENTRIES
+                    .filter(e => e.website === this.form.website)
+                    .map(e => e.audit_type)
+                    .sort();
+            }
+            this.form.audit_type = '';
+        },
+
+        prefillForm(website, auditType) {
+            this.form.website = website;
+            this.filterTypes();
+            this.$nextTick(() => { this.form.audit_type = auditType; });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        async runAnalysis() {
+            this.running = true;
+            this.runStatus = 'Queued…';
+            this.jobError = null;
+            this.results = null;
+
+            try {
+                const resp = await fetch('/api/cross-reference/run', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        website: this.form.website,
+                        audit_type: this.form.audit_type,
+                        no_llm: this.form.no_llm === 'true',
+                    }),
+                });
+                if (!resp.ok) throw new Error(await resp.text());
+                const { job_id } = await resp.json();
+                this.pollJob(job_id);
+            } catch (err) {
+                this.running = false;
+                this.jobError = 'Failed to start: ' + err.message;
+            }
+        },
+
+        pollJob(jobId) {
+            this.runStatus = 'Running…';
+            this.pollTimer = setInterval(async () => {
+                try {
+                    const resp = await fetch(`/api/cross-reference/status/${jobId}`);
+                    const job = await resp.json();
+
+                    if (job.status === 'completed') {
+                        clearInterval(this.pollTimer);
+                        this.running = false;
+                        this.runStatus = 'Done!';
+                        // Auto-load results and refresh job history
+                        this.viewResults(job.website, job.audit_type, job.no_llm);
+                        await this.loadJobs();
+                        // Refresh page to update Available Analyses table
+                        setTimeout(() => location.reload(), 1500);
+                    } else if (job.status === 'failed') {
+                        clearInterval(this.pollTimer);
+                        this.running = false;
+                        this.jobError = 'Analysis failed: ' + (job.error || 'Unknown error');
+                        await this.loadJobs();
+                    } else {
+                        this.runStatus = job.status === 'running' ? 'Analyzing…' : 'Queued…';
+                    }
+                } catch (err) {
+                    clearInterval(this.pollTimer);
+                    this.running = false;
+                    this.jobError = 'Poll error: ' + err.message;
+                }
+            }, 3000);
+        },
+
+        async viewResults(website, auditType, noLlm) {
+            try {
+                const url = `/api/cross-reference/results?website=${encodeURIComponent(website)}&audit_type=${encodeURIComponent(auditType)}&no_llm=${noLlm}`;
+                const resp = await fetch(url);
+                if (!resp.ok) throw new Error('Results not found');
+                this.results = await resp.json();
+                this.resultsTitle = `${website} — ${TYPE_LABELS[auditType] || auditType}`;
+                this.resultsMeta = this.results._meta
+                    ? `${this.results._meta.last_modified} · ${this.results._meta.size_kb} KB`
+                    : '';
+                this.$nextTick(() => {
+                    document.querySelector('[x-show="results"]')?.scrollIntoView({ behavior: 'smooth' });
+                });
+            } catch (err) {
+                this.jobError = 'Could not load results: ' + err.message;
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

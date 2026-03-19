@@ -1,0 +1,704 @@
+{% extends "base.html" %}
+
+{% block title %}Schema Markup Generator{% endblock %}
+
+{% block head %}
+<style>
+    /* JSON syntax highlighting */
+    .json-viewer {
+        background: #1e293b;
+        color: #10b981;
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        padding: 16px;
+        border-radius: 8px;
+        overflow-x: auto;
+    }
+    .json-viewer .json-key { color: #7dd3fc; }
+    .json-viewer .json-string { color: #fde047; }
+    .json-viewer .json-number { color: #f97316; }
+    .json-viewer .json-boolean { color: #a78bfa; }
+    .json-viewer .json-null { color: #94a3b8; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="schemaGenerator()" x-init="init()" class="space-y-6">
+    <!-- Header -->
+    <div>
+        <h1 class="text-2xl font-bold text-slate-900">🏷️ Schema Markup Generator</h1>
+        <p class="mt-1 text-sm text-slate-500">
+            Generate valid JSON-LD schema markup for your pages. AI picks all applicable types automatically.
+        </p>
+    </div>
+
+    <!-- Tab switcher -->
+    <div class="border-b border-slate-200">
+        <nav class="-mb-px flex gap-6">
+            <button @click="activeTab = 'audit'; loadSchemas()"
+                    :class="activeTab === 'audit'
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'"
+                    class="whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors">
+                From Audit
+            </button>
+            <button @click="activeTab = 'url'; loadUrlSchemas()"
+                    :class="activeTab === 'url'
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'"
+                    class="whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm transition-colors">
+                From URL
+            </button>
+        </nav>
+    </div>
+
+    <!-- ── FROM AUDIT TAB ── -->
+    <div x-show="activeTab === 'audit'" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-4">Generate from Audit</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Select Audit</label>
+                <select x-model="selectedAuditId" @change="loadAuditPages()"
+                        class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    <option value="">-- Select completed audit --</option>
+                    {% for audit in audits %}
+                    <option value="{{ audit.id }}">
+                        {{ audit.website }} - {{ audit.audit_type }} ({{ audit.created_at.strftime('%Y-%m-%d') if audit.created_at else '' }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Website Type (optional)</label>
+                <select x-model="websiteType"
+                        class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    <option value="">Auto-detect</option>
+                    <option value="ecommerce">E-commerce</option>
+                    <option value="saas">SaaS</option>
+                    <option value="local_business">Local Business</option>
+                    <option value="blog">Blog/Publisher</option>
+                    <option value="corporate">Corporate</option>
+                    <option value="medical">Medical</option>
+                    <option value="legal">Legal</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Schema Types Preference -->
+        <div class="mt-4">
+            <label class="block text-sm font-medium text-slate-700 mb-2">Preferred Schema Types (optional)</label>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <template x-for="type in availableSchemaTypes" :key="type">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" :value="type" x-model="schemaTypesHint"
+                               class="rounded border-slate-300 text-primary-600 focus:ring-primary-500">
+                        <span class="text-sm text-slate-700" x-text="type"></span>
+                    </label>
+                </template>
+            </div>
+        </div>
+
+        <!-- Advanced Options -->
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Max Pages</label>
+                <input type="number" x-model.number="maxPages" min="1" max="200"
+                       class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Provider (optional)</label>
+                <select x-model="provider"
+                        class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    <option value="">Use audit default</option>
+                    <option value="google">Google Gemini{% if not providers.google %} — key not set{% endif %}</option>
+                    <option value="anthropic">Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
+                    <option value="openai">OpenAI (GPT){% if not providers.openai %} — key not set{% endif %}</option>
+                    <option value="mistral">Mistral{% if not providers.mistral %} — key not set{% endif %}</option>
+                    <option value="perplexity">Perplexity{% if not providers.perplexity %} — key not set{% endif %}</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Model (optional)</label>
+                <select x-model="model"
+                        class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                    <option value="">Default (cheapest)</option>
+                    <optgroup label="Google">
+                        <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (cheapest)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                    </optgroup>
+                    <optgroup label="Anthropic">
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                        <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                    </optgroup>
+                    <optgroup label="OpenAI">
+                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                    </optgroup>
+                    <optgroup label="Mistral">
+                        <option value="mistral-small-latest">Mistral Small</option>
+                        <option value="mistral-large-latest">Mistral Large</option>
+                    </optgroup>
+                    <optgroup label="Perplexity">
+                        <option value="sonar">Sonar</option>
+                        <option value="sonar-pro">Sonar Pro</option>
+                    </optgroup>
+                </select>
+            </div>
+        </div>
+
+        <div class="mt-6 flex items-center justify-between">
+            <div class="text-sm text-slate-500" x-show="estimatedCost">
+                <span class="font-medium">Estimated cost:</span> <span x-text="estimatedCost"></span>
+            </div>
+            <button @click="generateSchemas()" :disabled="!selectedAuditId || generating"
+                    class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:bg-slate-400 disabled:cursor-not-allowed">
+                <svg x-show="!generating" class="-ml-1 mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <svg x-show="generating" class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="generating ? 'Generating...' : 'Generate Schema Markup'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ── FROM URL TAB ── -->
+    <div x-show="activeTab === 'url'" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-1">Generate from URL</h2>
+        <p class="text-sm text-slate-500 mb-4">
+            Paste a URL and optionally the page text content. The AI will generate every applicable schema type for that page.
+        </p>
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Page URL <span class="text-red-500">*</span></label>
+                <input type="url" x-model="urlInput" placeholder="https://example.com/your-page"
+                       class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-2">Page Content (optional — paste visible text for richer schemas)</label>
+                <textarea x-model="pageContent" rows="6"
+                          placeholder="Paste the main text content of the page here..."
+                          class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 text-sm font-mono"></textarea>
+                <p class="mt-1 text-xs text-slate-400">First 4 000 characters will be used. Leave empty to generate from URL alone.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Website Type</label>
+                    <select x-model="websiteType"
+                            class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                        <option value="">Auto-detect</option>
+                        <option value="ecommerce">E-commerce</option>
+                        <option value="saas">SaaS</option>
+                        <option value="local_business">Local Business</option>
+                        <option value="blog">Blog/Publisher</option>
+                        <option value="corporate">Corporate</option>
+                        <option value="medical">Medical</option>
+                        <option value="legal">Legal</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Provider</label>
+                    <select x-model="urlProvider"
+                            class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                        <option value="google">Google Gemini{% if not providers.google %} — key not set{% endif %}</option>
+                        <option value="anthropic">Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
+                        <option value="openai">OpenAI (GPT){% if not providers.openai %} — key not set{% endif %}</option>
+                        <option value="mistral">Mistral{% if not providers.mistral %} — key not set{% endif %}</option>
+                        <option value="perplexity">Perplexity{% if not providers.perplexity %} — key not set{% endif %}</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Model</label>
+                    <select x-model="urlModel"
+                            class="block w-full rounded-lg border-slate-300 shadow-sm focus:border-primary-500 focus:ring-primary-500">
+                        <optgroup label="Google">
+                            <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (cheapest)</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                        </optgroup>
+                        <optgroup label="Anthropic">
+                            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                            <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                        </optgroup>
+                        <optgroup label="OpenAI">
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option value="gpt-4o">GPT-4o</option>
+                        </optgroup>
+                        <optgroup label="Mistral">
+                            <option value="mistral-small-latest">Mistral Small</option>
+                            <option value="mistral-large-latest">Mistral Large</option>
+                        </optgroup>
+                        <optgroup label="Perplexity">
+                            <option value="sonar">Sonar</option>
+                            <option value="sonar-pro">Sonar Pro</option>
+                        </optgroup>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-6 flex justify-end">
+            <button @click="generateFromUrl()" :disabled="!urlInput || urlGenerating"
+                    class="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 disabled:bg-slate-400 disabled:cursor-not-allowed">
+                <svg x-show="!urlGenerating" class="-ml-1 mr-3 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                <svg x-show="urlGenerating" class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span x-text="urlGenerating ? 'Generating all schemas...' : 'Generate All Schemas'"></span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ── SCHEMAS RESULTS (both tabs) ── -->
+    <div x-show="schemas.length > 0" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-slate-900">
+                Generated Schemas
+                <span class="ml-2 text-sm font-normal text-slate-500">
+                    (<span x-text="schemas.length"></span> schemas across <span x-text="groupedByUrl.length"></span> page<span x-show="groupedByUrl.length !== 1">s</span>)
+                </span>
+            </h2>
+
+            <div class="flex gap-2" x-show="activeTab === 'audit' && selectedAuditId">
+                <button @click="exportAllJSON()"
+                        class="inline-flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
+                    <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    Export JSON
+                </button>
+                <button @click="exportAllHTML()"
+                        class="inline-flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
+                    <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                    </svg>
+                    Export HTML
+                </button>
+            </div>
+        </div>
+
+        <!-- Grouped by URL cards -->
+        <div class="space-y-3">
+            <template x-for="group in groupedByUrl" :key="group.url">
+                <div class="border border-slate-200 rounded-lg overflow-hidden">
+                    <!-- URL header row -->
+                    <div class="bg-slate-50 px-4 py-2.5 flex items-center justify-between gap-3">
+                        <a :href="group.url" target="_blank"
+                           class="text-sm font-medium text-slate-700 hover:text-primary-600 truncate min-w-0"
+                           x-text="group.url" @click.stop></a>
+                        <span class="flex-shrink-0 text-xs text-slate-400 bg-white border border-slate-200 rounded-full px-2 py-0.5"
+                              x-text="group.schemas.length + ' schema' + (group.schemas.length !== 1 ? 's' : '')"></span>
+                    </div>
+
+                    <!-- Schemas for this URL -->
+                    <div class="divide-y divide-slate-100">
+                        <template x-for="schema in group.schemas" :key="schema.id">
+                            <div class="px-4 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer"
+                                 @click="viewSchema(schema.id)">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+                                          :class="getSchemaTypeBadgeClass(schema.schema_type)"
+                                          x-text="schema.schema_type"></span>
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+                                          :class="getValidationBadgeClass(schema.validation_status)"
+                                          x-text="getValidationLabel(schema.validation_status)"></span>
+                                </div>
+                                <div class="flex gap-3 ml-4 flex-shrink-0">
+                                    <button @click.stop="copyJSON(schema.id)"
+                                            class="text-primary-600 hover:text-primary-800 text-sm font-medium">Copy</button>
+                                    <button @click.stop="viewSchema(schema.id)"
+                                            class="text-slate-600 hover:text-slate-800 text-sm font-medium">View</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Schema Detail Modal -->
+    <div x-show="selectedSchema"
+         x-cloak
+         @click.self="selectedSchema = null"
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" @click.stop>
+            <!-- Modal Header -->
+            <div class="border-b border-slate-200 px-6 py-4">
+                <div class="flex items-start justify-between">
+                    <div class="flex-1 min-w-0 pr-4">
+                        <h3 class="text-sm font-semibold text-slate-900 truncate" x-text="selectedSchema?.page_url"></h3>
+                        <div class="mt-2 flex items-center gap-3 flex-wrap">
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  :class="getSchemaTypeBadgeClass(selectedSchema?.schema_type)"
+                                  x-text="selectedSchema?.schema_type"></span>
+                            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                  :class="getValidationBadgeClass(selectedSchema?.validation_status)"
+                                  x-text="getValidationLabel(selectedSchema?.validation_status)"></span>
+                        </div>
+                    </div>
+                    <button @click="selectedSchema = null" class="text-slate-400 hover:text-slate-600 flex-shrink-0">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h4 class="text-sm font-semibold text-slate-900">JSON-LD Markup</h4>
+                        <div class="flex gap-2">
+                            <button @click="copySchemaJSON()"
+                                    class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded text-slate-700 bg-white hover:bg-slate-50">
+                                <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                                Copy JSON
+                            </button>
+                            <button @click="copySchemaHTML()"
+                                    class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded text-slate-700 bg-white hover:bg-slate-50">
+                                <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                </svg>
+                                Copy as HTML
+                            </button>
+                        </div>
+                    </div>
+                    <pre class="json-viewer" x-text="formatJSON(selectedSchema?.schema_json)"></pre>
+                </div>
+
+                <div x-show="selectedSchema?.validation_notes?.length > 0">
+                    <h4 class="text-sm font-semibold text-slate-900 mb-3">Validation Notes</h4>
+                    <div class="space-y-2">
+                        <template x-for="note in selectedSchema?.validation_notes" :key="note.message">
+                            <div class="flex items-start gap-2 p-3 rounded-lg"
+                                 :class="{'bg-green-50': note.level==='success','bg-yellow-50': note.level==='warning','bg-red-50': note.level==='error'}">
+                                <svg x-show="note.level === 'success'" class="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                </svg>
+                                <svg x-show="note.level === 'warning'" class="h-5 w-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                </svg>
+                                <svg x-show="note.level === 'error'" class="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                                </svg>
+                                <span class="text-sm"
+                                      :class="{'text-green-800': note.level==='success','text-yellow-800': note.level==='warning','text-red-800': note.level==='error'}"
+                                      x-text="note.message"></span>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 rounded-lg p-4">
+                    <h4 class="text-sm font-semibold text-blue-900 mb-2">📘 Implementation Guide</h4>
+                    <ul class="text-sm text-blue-800 space-y-1.5">
+                        <li>• Paste this in the <code class="bg-blue-100 px-1 rounded">&lt;head&gt;</code> section of your page, before <code class="bg-blue-100 px-1 rounded">&lt;/head&gt;</code></li>
+                        <li>• Or add via Google Tag Manager: Custom HTML tag</li>
+                        <li>• Validate at: <a href="https://search.google.com/test/rich-results" target="_blank" class="underline hover:text-blue-900">Google Rich Results Test</a></li>
+                        <li>• Check with: <a href="https://validator.schema.org/" target="_blank" class="underline hover:text-blue-900">Schema.org Validator</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="(activeTab === 'audit' && selectedAuditId && schemas.length === 0 && !generating) ||
+                 (activeTab === 'url' && schemas.length === 0 && !urlGenerating)"
+         class="bg-slate-50 rounded-lg border-2 border-dashed border-slate-300 p-12 text-center">
+        <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"></path>
+        </svg>
+        <h3 class="mt-2 text-sm font-medium text-slate-900">No schemas yet</h3>
+        <p class="mt-1 text-sm text-slate-500" x-text="activeTab === 'audit' ? 'Click Generate Schema Markup above to create JSON-LD schemas.' : 'Enter a URL above and click Generate All Schemas.'"></p>
+    </div>
+</div>
+
+<script>
+function schemaGenerator() {
+    return {
+        // Tab
+        activeTab: 'audit',
+
+        // Audit-mode state
+        selectedAuditId: '',
+        websiteType: '',
+        schemaTypesHint: [],
+        maxPages: 50,
+        provider: '',
+        model: '',
+        generating: false,
+        estimatedCost: '',
+
+        // URL-mode state
+        urlInput: '',
+        pageContent: '',
+        urlProvider: '{% if providers.anthropic %}anthropic{% elif providers.google %}google{% elif providers.openai %}openai{% elif providers.mistral %}mistral{% else %}anthropic{% endif %}',
+        urlModel: '{% if providers.anthropic %}claude-haiku-4-5-20251001{% elif providers.google %}gemini-2.0-flash-lite{% elif providers.openai %}gpt-4o-mini{% elif providers.mistral %}mistral-small-latest{% else %}claude-haiku-4-5-20251001{% endif %}',
+        urlGenerating: false,
+
+        // Shared
+        schemas: [],
+        selectedSchema: null,
+
+        availableSchemaTypes: [
+            'FAQPage', 'Article', 'Product', 'LocalBusiness',
+            'HowTo', 'Organization', 'BreadcrumbList', 'WebPage',
+            'Service', 'Event', 'Review', 'Person'
+        ],
+
+        // ── computed ──────────────────────────────────────────────────────────
+        get groupedByUrl() {
+            const map = new Map();
+            for (const schema of this.schemas) {
+                if (!map.has(schema.page_url)) map.set(schema.page_url, []);
+                map.get(schema.page_url).push(schema);
+            }
+            return Array.from(map.entries()).map(([url, schemas]) => ({ url, schemas }));
+        },
+
+        // ── lifecycle ─────────────────────────────────────────────────────────
+        init() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const auditId = urlParams.get('audit_id');
+            if (auditId) {
+                this.selectedAuditId = auditId;
+                this.loadSchemas();
+            }
+        },
+
+        // ── AUDIT TAB ─────────────────────────────────────────────────────────
+        async loadAuditPages() {
+            if (!this.selectedAuditId) return;
+            const _costMap = { anthropic: 0.005, openai: 0.0008, mistral: 0.0004, google: 0.0003, perplexity: 0.0010 };
+            const costPerPage = _costMap[this.provider] || 0.005;
+            this.estimatedCost = `~$${(this.maxPages * costPerPage).toFixed(3)} for ${this.maxPages} pages`;
+            await this.loadSchemas();
+        },
+
+        async loadSchemas() {
+            if (!this.selectedAuditId) return;
+            try {
+                const res = await fetch(`/api/schema?audit_id=${this.selectedAuditId}`);
+                const data = await res.json();
+                this.schemas = data.schemas || [];
+            } catch (e) {
+                console.error('Failed to load schemas:', e);
+            }
+        },
+
+        async generateSchemas() {
+            if (!this.selectedAuditId || this.generating) return;
+            this.generating = true;
+            try {
+                const payload = {
+                    audit_id: this.selectedAuditId,
+                    max_pages: this.maxPages,
+                    website_type: this.websiteType || undefined,
+                    schema_types_hint: this.schemaTypesHint.length > 0 ? this.schemaTypesHint : undefined,
+                    provider: this.provider || undefined,
+                    model: this.model || undefined
+                };
+                const res = await fetch('/api/schema/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) throw new Error('Generation failed');
+                const data = await res.json();
+                alert(`Schema generation started! Processing ${data.pages_count} pages.\nEstimated cost: ${data.estimated_cost}`);
+                this.pollSchemas();
+            } catch (e) {
+                console.error('Failed to generate schemas:', e);
+                alert('Failed to start schema generation. Please try again.');
+            } finally {
+                this.generating = false;
+            }
+        },
+
+        pollSchemas() {
+            const interval = setInterval(async () => {
+                await this.loadSchemas();
+            }, 3000);
+            setTimeout(() => clearInterval(interval), 120000);
+        },
+
+        // ── URL TAB ───────────────────────────────────────────────────────────
+        async loadUrlSchemas() {
+            try {
+                const res = await fetch('/api/schema?source=url');
+                const data = await res.json();
+                this.schemas = data.schemas || [];
+            } catch (e) {
+                console.error('Failed to load URL schemas:', e);
+            }
+        },
+
+        async generateFromUrl() {
+            if (!this.urlInput || this.urlGenerating) return;
+            this.urlGenerating = true;
+            this.schemas = [];
+            try {
+                const payload = {
+                    url: this.urlInput,
+                    page_content: this.pageContent || undefined,
+                    provider: this.urlProvider,
+                    model: this.urlModel,
+                    website_type: this.websiteType || undefined,
+                    schema_types_hint: this.schemaTypesHint.length > 0 ? this.schemaTypesHint : undefined
+                };
+                const res = await fetch('/api/schema/generate-from-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Generation failed');
+                }
+                const data = await res.json();
+                this.schemas = data.schemas || [];
+            } catch (e) {
+                console.error('Failed to generate schemas from URL:', e);
+                alert('Error: ' + e.message);
+            } finally {
+                this.urlGenerating = false;
+            }
+        },
+
+        // ── Shared actions ────────────────────────────────────────────────────
+        async viewSchema(schemaId) {
+            try {
+                const res = await fetch(`/api/schema/${schemaId}`);
+                this.selectedSchema = await res.json();
+            } catch (e) {
+                console.error('Failed to load schema:', e);
+            }
+        },
+
+        async copyJSON(schemaId) {
+            try {
+                const res = await fetch(`/api/schema/${schemaId}/raw`);
+                const json = await res.text();
+                await navigator.clipboard.writeText(json);
+                alert('✅ JSON-LD copied to clipboard!');
+            } catch (e) {
+                alert('❌ Failed to copy. Please try again.');
+            }
+        },
+
+        async copySchemaJSON() {
+            if (!this.selectedSchema) return;
+            try {
+                const json = typeof this.selectedSchema.schema_json === 'string'
+                    ? this.selectedSchema.schema_json
+                    : JSON.stringify(this.selectedSchema.schema_json, null, 2);
+                await navigator.clipboard.writeText(json);
+                alert('✅ JSON-LD copied to clipboard!');
+            } catch (e) {
+                console.error('Failed to copy:', e);
+            }
+        },
+
+        async copySchemaHTML() {
+            if (!this.selectedSchema) return;
+            try {
+                const json = typeof this.selectedSchema.schema_json === 'string'
+                    ? this.selectedSchema.schema_json
+                    : JSON.stringify(this.selectedSchema.schema_json, null, 2);
+                const html = `<script type="application/ld+json">\n${json}\n<\/script>`;
+                await navigator.clipboard.writeText(html);
+                alert('✅ HTML snippet copied to clipboard!');
+            } catch (e) {
+                console.error('Failed to copy:', e);
+            }
+        },
+
+        async exportAllJSON() {
+            if (!this.selectedAuditId) return;
+            try {
+                const res = await fetch(`/api/schema/export/${this.selectedAuditId}?format=json`);
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `schemas_${this.selectedAuditId}.json`;
+                a.click();
+            } catch (e) {
+                console.error('Failed to export:', e);
+            }
+        },
+
+        async exportAllHTML() {
+            if (!this.selectedAuditId) return;
+            window.location.href = `/api/schema/export/${this.selectedAuditId}?format=html`;
+        },
+
+        formatJSON(json) {
+            if (!json) return '';
+            if (typeof json === 'string') {
+                try { return JSON.stringify(JSON.parse(json), null, 2); } catch { return json; }
+            }
+            return JSON.stringify(json, null, 2);
+        },
+
+        getSchemaTypeBadgeClass(type) {
+            const classes = {
+                'FAQPage': 'bg-purple-100 text-purple-800',
+                'Product': 'bg-blue-100 text-blue-800',
+                'LocalBusiness': 'bg-green-100 text-green-800',
+                'Article': 'bg-orange-100 text-orange-800',
+                'BlogPosting': 'bg-orange-100 text-orange-800',
+                'HowTo': 'bg-teal-100 text-teal-800',
+                'Organization': 'bg-indigo-100 text-indigo-800',
+                'WebPage': 'bg-slate-100 text-slate-800',
+                'BreadcrumbList': 'bg-amber-100 text-amber-800',
+                'Service': 'bg-cyan-100 text-cyan-800',
+                'Event': 'bg-pink-100 text-pink-800',
+                'Person': 'bg-emerald-100 text-emerald-800',
+                'WebSite': 'bg-violet-100 text-violet-800'
+            };
+            return classes[type] || 'bg-slate-100 text-slate-800';
+        },
+
+        getValidationBadgeClass(status) {
+            const classes = {
+                'validated': 'bg-green-100 text-green-800',
+                'valid': 'bg-green-100 text-green-800',
+                'has_warnings': 'bg-yellow-100 text-yellow-800',
+                'invalid': 'bg-red-100 text-red-800',
+                'generated': 'bg-blue-100 text-blue-800'
+            };
+            return classes[status] || 'bg-slate-100 text-slate-800';
+        },
+
+        getValidationLabel(status) {
+            const labels = {
+                'validated': '✅ Valid',
+                'valid': '✅ Valid',
+                'has_warnings': '⚠️ Warnings',
+                'invalid': '❌ Invalid',
+                'generated': '🔄 Generated'
+            };
+            return labels[status] || status;
+        }
+    };
+}
+</script>
+{% endblock %}

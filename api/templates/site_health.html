@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block title %}Site Health — {{ website }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Header -->
+    <div class="flex flex-wrap justify-between items-start gap-4">
+        <div>
+            <nav class="flex mb-3" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2 text-sm">
+                    <li><a href="/" class="text-slate-400 hover:text-slate-600">Dashboard</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li class="text-slate-700 font-medium">{{ website }}</li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <svg class="w-6 h-6 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                </svg>
+                Site Health — {{ website }}
+            </h1>
+            <p class="mt-1 text-sm text-slate-500">
+                {{ total_audit_types }} audit type{{ 's' if total_audit_types != 1 }} · {{ total_audits_run }} total runs · most recent per type
+            </p>
+        </div>
+
+        <!-- Composite Score -->
+        {% if composite_score is not none %}
+        <div class="flex-shrink-0">
+            <div class="text-center bg-white border-2 rounded-2xl shadow-sm px-10 py-5
+                {% if composite_score >= 85 %}border-emerald-300
+                {% elif composite_score >= 70 %}border-yellow-300
+                {% elif composite_score >= 50 %}border-orange-300
+                {% else %}border-red-300{% endif %}">
+                <div class="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Site Health Score</div>
+                <div class="text-6xl font-bold
+                    {% if composite_score >= 85 %}text-emerald-500
+                    {% elif composite_score >= 70 %}text-yellow-500
+                    {% elif composite_score >= 50 %}text-orange-500
+                    {% else %}text-red-500{% endif %}">
+                    {{ composite_score }}
+                </div>
+                <div class="text-xs text-slate-400 mt-1">weighted composite</div>
+                <!-- Health label -->
+                <div class="mt-2 text-xs font-semibold px-3 py-1 rounded-full
+                    {% if composite_score >= 85 %}bg-emerald-100 text-emerald-700
+                    {% elif composite_score >= 70 %}bg-yellow-100 text-yellow-700
+                    {% elif composite_score >= 50 %}bg-orange-100 text-orange-700
+                    {% else %}bg-red-100 text-red-700{% endif %}">
+                    {% if composite_score >= 85 %}Excellent
+                    {% elif composite_score >= 70 %}Good
+                    {% elif composite_score >= 50 %}Needs Work
+                    {% else %}Poor{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Chart + Audit Type Grid -->
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+
+        <!-- Radar Chart -->
+        <div class="xl:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col items-center">
+            <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">Audit Radar</h2>
+            <div class="w-full max-w-xs">
+                <canvas id="radarChart" height="300"></canvas>
+            </div>
+            <p class="text-xs text-slate-400 mt-3 text-center">Site-average score per audit type</p>
+        </div>
+
+        <!-- Audit Type Cards -->
+        <div class="xl:col-span-2">
+            <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Latest Score by Audit Type</h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {% for s in audit_summaries %}
+                <a href="/audits/{{ s.audit_id }}"
+                   class="bg-white rounded-xl border border-slate-200 shadow-sm p-4 hover:shadow-md hover:border-primary-300 transition-all block">
+                    <div class="flex items-start justify-between">
+                        <div class="flex-1 min-w-0">
+                            <div class="text-xs font-semibold text-slate-700 truncate">{{ s.audit_type_label }}</div>
+                            <div class="text-xs text-slate-400 mt-0.5">{{ s.completed_at }}</div>
+                            <div class="text-xs text-slate-400">{{ s.page_count }} pages</div>
+                        </div>
+                        <div class="ml-2 flex-shrink-0">
+                            {% if s.avg_score is not none %}
+                            <div class="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold
+                                {% if s.avg_score >= 85 %}bg-emerald-100 text-emerald-700
+                                {% elif s.avg_score >= 70 %}bg-yellow-100 text-yellow-700
+                                {% elif s.avg_score >= 50 %}bg-orange-100 text-orange-700
+                                {% else %}bg-red-100 text-red-700{% endif %}">
+                                {{ s.avg_score }}
+                            </div>
+                            {% else %}
+                            <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-xs text-slate-400">N/A</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <!-- Weight bar -->
+                    <div class="mt-3">
+                        <div class="flex justify-between text-xs text-slate-400 mb-1">
+                            <span>Weight</span><span>{{ s.weight_pct }}%</span>
+                        </div>
+                        <div class="h-1 bg-slate-100 rounded-full overflow-hidden">
+                            <div class="h-1 bg-primary-400 rounded-full" style="width: {{ [s.weight_pct * 5, 100] | min }}%"></div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Score History Trend -->
+    <div id="trendSection" class="bg-white rounded-xl border border-slate-200 shadow-sm p-5" style="display:none">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">📈 Score Trend History</h2>
+            <span class="text-xs text-slate-400">Last 10 runs per type · types with ≥ 2 runs</span>
+        </div>
+        <div class="relative" style="height: 280px;">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Missing Audit Types -->
+    {% set covered_types = audit_summaries | map(attribute='audit_type') | list %}
+    {% set all_types = [
+        ('SEO_AUDIT','SEO'), ('GEO_AUDIT','GEO'), ('CONTENT_QUALITY','Content Quality'),
+        ('TECHNICAL_SEO','Technical SEO'), ('UX_CONTENT','UX Content'),
+        ('ACCESSIBILITY_AUDIT','Accessibility'), ('BRAND_VOICE','Brand Voice'),
+        ('LEGAL_GDPR','Legal / GDPR'), ('INTERNAL_LINKING','Internal Linking'),
+        ('READABILITY_AUDIT','Readability'), ('COMPETITOR_ANALYSIS','Competitors'),
+        ('CONTENT_FRESHNESS','Content Freshness'), ('AI_OVERVIEW_OPTIMIZATION','AI Overview'),
+        ('SPELLING_GRAMMAR','Spelling & Grammar'), ('TRANSLATION_QUALITY','Translation'),
+        ('LOCAL_SEO','Local SEO'), ('SECURITY_CONTENT_AUDIT','Security'),
+        ('E_COMMERCE','E-Commerce')
+    ] %}
+    {% set missing_types = all_types | selectattr(0, 'ne', covered_types | join('|')) | list %}
+
+    {% if audit_summaries | length < 18 %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <h3 class="text-sm font-semibold text-amber-800 mb-2">
+            ⚠ {{ 18 - audit_summaries|length }} Audit Type{{ 's' if (18 - audit_summaries|length) != 1 }} Not Yet Run
+        </h3>
+        <div class="flex flex-wrap gap-2">
+            {% for type_pair in all_types %}
+                {% if type_pair[0] not in covered_types %}
+                <a href="/new?website={{ website }}&type={{ type_pair[0] }}"
+                   class="inline-flex items-center px-2 py-1 bg-white border border-amber-300 rounded-md text-xs text-amber-700 hover:bg-amber-100 transition-colors">
+                    + {{ type_pair[1] }}
+                </a>
+                {% endif %}
+            {% endfor %}
+        </div>
+        <p class="text-xs text-amber-600 mt-2">Click to run a missing audit and improve your coverage score.</p>
+    </div>
+    {% else %}
+    <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-700 font-medium">
+        ✓ All 18 audit types have been run for {{ website }}.
+    </div>
+    {% endif %}
+
+    <!-- Worst Pages Drill-down -->
+    {% if worst_pages_by_type %}
+    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-4">
+            🔍 Lowest Scoring Pages by Audit Type
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {% for s in audit_summaries %}
+            {% if s.audit_type in worst_pages_by_type %}
+            <div class="border border-slate-200 rounded-lg overflow-hidden">
+                <div class="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-slate-700">{{ s.audit_type_label }}</span>
+                    <a href="/audits/{{ s.audit_id }}/results?max_score=69"
+                       class="text-xs text-primary-600 hover:underline">View all →</a>
+                </div>
+                <ul class="divide-y divide-slate-100">
+                {% for page in worst_pages_by_type[s.audit_type] %}
+                <li class="px-3 py-2 flex items-center gap-2">
+                    <span class="flex-shrink-0 w-8 h-6 flex items-center justify-center rounded text-xs font-bold
+                        {% if page.score >= 70 %}bg-yellow-100 text-yellow-700
+                        {% elif page.score >= 50 %}bg-orange-100 text-orange-700
+                        {% else %}bg-red-100 text-red-700{% endif %}">
+                        {{ page.score }}
+                    </span>
+                    <a href="/audits/{{ page.audit_id }}/results?url_search={{ page.url | urlencode }}"
+                       class="text-xs text-slate-600 hover:text-primary-700 truncate flex-1"
+                       title="{{ page.url }}">{{ page.url }}</a>
+                </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="flex flex-wrap gap-3">
+        <a href="/new" class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors">
+            + New Audit
+        </a>
+        <a href="/?website={{ website }}" class="inline-flex items-center px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+            All Audits for This Site
+        </a>
+        <a href="/sites/{{ website }}/export/csv"
+           class="inline-flex items-center px-4 py-2 border border-slate-300 text-slate-700 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+            <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Export CSV
+        </a>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const labels = {{ chart_labels | safe }};
+    const scores = {{ chart_scores | safe }};
+    if (!labels.length) return;
+
+    const ctx = document.getElementById('radarChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'radar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Avg Score',
+                data: scores,
+                backgroundColor: 'rgba(14, 165, 233, 0.15)',
+                borderColor: 'rgba(14, 165, 233, 0.8)',
+                borderWidth: 2,
+                pointBackgroundColor: scores.map(s =>
+                    s >= 85 ? '#10b981' : s >= 70 ? '#eab308' : s >= 50 ? '#f97316' : '#ef4444'
+                ),
+                pointRadius: 5,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                r: {
+                    min: 0,
+                    max: 100,
+                    ticks: { stepSize: 25, font: { size: 10 } },
+                    pointLabels: { font: { size: 10 } },
+                    grid: { color: 'rgba(0,0,0,0.06)' },
+                    angleLines: { color: 'rgba(0,0,0,0.06)' }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: { label: ctx => ` ${ctx.raw}/100 (site avg)` }
+                }
+            }
+        }
+    });
+})();
+
+// ── Trend Chart ────────────────────────────────────────────────────────────
+(function() {
+    const historyData = {{ history_data | safe }};
+    if (!Object.keys(historyData).length) return;
+
+    document.getElementById('trendSection').style.display = '';
+
+    // Collect & sort all unique dates across all audit types
+    const allDates = new Set();
+    Object.values(historyData).forEach(pts => pts.forEach(p => allDates.add(p.date)));
+    const sortedDates = [...allDates].sort();
+
+    const palette = [
+        'rgba(14,165,233,0.9)',
+        'rgba(16,185,129,0.9)',
+        'rgba(234,179,8,0.9)',
+        'rgba(249,115,22,0.9)',
+        'rgba(239,68,68,0.9)',
+        'rgba(168,85,247,0.9)',
+        'rgba(236,72,153,0.9)',
+        'rgba(20,184,166,0.9)',
+        'rgba(251,191,36,0.9)',
+        'rgba(99,102,241,0.9)',
+    ];
+
+    const datasets = Object.entries(historyData).map(([atype, points], i) => {
+        const color = palette[i % palette.length];
+        const label = points[0]?.label || atype;
+        const scoreMap = {};
+        points.forEach(p => { scoreMap[p.date] = p.score; });
+        return {
+            label,
+            data: sortedDates.map(d => (scoreMap[d] !== undefined ? scoreMap[d] : null)),
+            borderColor: color,
+            backgroundColor: color.replace('0.9', '0.12'),
+            borderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.3,
+            spanGaps: false,
+        };
+    });
+
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: { labels: sortedDates, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                y: {
+                    min: 0, max: 100,
+                    ticks: { stepSize: 25, font: { size: 10 } },
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                    title: { display: true, text: 'Avg Score', font: { size: 10 } },
+                },
+                x: {
+                    ticks: { font: { size: 10 }, maxRotation: 30 },
+                    grid: { display: false },
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { font: { size: 10 }, boxWidth: 12, padding: 10 }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${ctx.dataset.label}: ${ctx.raw !== null ? ctx.raw + '/100' : '—'}`
+                    }
+                }
+            }
+        }
+    });
+})();
+</script>
+{% endblock %}

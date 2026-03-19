@@ -1,0 +1,861 @@
+{% extends "base.html" %}
+
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+{% endblock %}
+
+{% block title %}New Audit - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="mb-8">
+        <h1 class="text-2xl font-bold text-slate-900">Start New Audit</h1>
+        <p class="mt-1 text-sm text-slate-500">Configure and launch a website analysis</p>
+    </div>
+
+    <form id="new-audit-form" x-data="auditForm()" @submit.prevent="submitAudit()"
+        class="bg-white shadow-sm rounded-lg border border-slate-200 p-6 space-y-6">
+
+        <!-- Form Response Area -->
+        <div id="form-response"></div>
+
+        <div class="border-b border-slate-200">
+            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                <button type="button" @click="mode = 'full'"
+                    :class="mode === 'full' ? 'border-primary-500 text-primary-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'"
+                    class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">Full Site
+                    Audit</button>
+                <button type="button" @click="mode = 'single'"
+                    :class="mode === 'single' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'"
+                    class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors">✨ Single Page
+                    (God Mode)</button>
+            </nav>
+        </div>
+
+        <!-- Website URL -->
+        <div x-show="mode === 'full'">
+            <label for="website" class="block text-sm font-medium text-slate-700">
+                Website Domain <span class="text-red-500">*</span>
+            </label>
+            <div class="mt-1 relative">
+                <input type="text" name="website" id="website" x-model="website" :required="mode === 'full'"
+                    placeholder="example.com"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                <p class="mt-1 text-xs text-slate-500">Enter the domain without http:// or https://</p>
+            </div>
+        </div>
+
+        <!-- Sitemap URL -->
+        <div x-show="mode === 'full'">
+            <label for="sitemap_url" class="block text-sm font-medium text-slate-700 w-full flex justify-between">
+                <span>Sitemap URL</span>
+
+                <!-- Dynamic Page Count Badge -->
+                <span x-show="sitemapUrl && !fetchingSitemapCount && sitemapCount !== null" x-cloak
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                    <span x-text="sitemapCount + ' pages found'"></span>
+                </span>
+                <span x-show="fetchingSitemapCount" x-cloak class="inline-flex items-center text-xs text-slate-500">
+                    <svg class="animate-spin mr-1 h-3 w-3 text-slate-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                        </circle>
+                        <path class="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                        </path>
+                    </svg>
+                    Checking sitemap...
+                </span>
+                <span x-show="sitemapError" x-cloak class="text-xs text-red-500" x-text="sitemapError"></span>
+            </label>
+            <div class="mt-1">
+                <input type="url" name="sitemap_url" id="sitemap_url" x-model="sitemapUrl" @blur="fetchSitemapCount()"
+                    @keyup.enter="fetchSitemapCount()" placeholder="https://example.com/sitemap.xml"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                <p class="mt-1 text-xs text-slate-500">
+                    Leave empty to skip scraping (use existing HTML files)
+                </p>
+            </div>
+            <button type="button" @click="autoDetectSitemap()" :disabled="!website"
+                class="mt-2 text-sm text-primary-600 hover:text-primary-700 disabled:text-slate-400 disabled:cursor-not-allowed">
+                <svg class="inline-block w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+                Auto-detect from robots.txt
+            </button>
+        </div>
+
+        <!-- Audit Types (Multi-select) -->
+        <div x-show="mode === 'full'">
+            <label class="block text-sm font-medium text-slate-700 mb-2">
+                Audit Types <span class="text-red-500">*</span>
+            </label>
+            <p class="text-xs text-slate-500 mb-3">Select one or more audit types to run. Scraping is done once and
+                reused across all audits.</p>
+
+            <div class="space-y-2 max-h-64 overflow-y-auto border border-slate-200 rounded-lg p-3">
+                {% for audit in audit_types %}
+                <label class="flex items-start p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input type="checkbox" name="audit_types" value="{{ audit.type }}" {% if audit.type=='SEO_AUDIT'
+                        %}checked{% endif %}
+                        class="mt-0.5 h-4 w-4 text-primary-600 focus:ring-primary-500 border-slate-300 rounded">
+                    <div class="ml-3">
+                        <span class="text-sm font-medium text-slate-700">{{ audit.name }}</span>
+                        <p class="text-xs text-slate-500">{{ audit.description }}</p>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+
+            <div class="mt-2 flex gap-2">
+                <button type="button"
+                    onclick="document.querySelectorAll('[name=audit_types]').forEach(cb => cb.checked = true)"
+                    class="text-xs text-primary-600 hover:text-primary-700">Select All</button>
+                <span class="text-xs text-slate-400">|</span>
+                <button type="button"
+                    onclick="document.querySelectorAll('[name=audit_types]').forEach(cb => cb.checked = false)"
+                    class="text-xs text-primary-600 hover:text-primary-700">Clear All</button>
+            </div>
+        </div>
+
+        <!-- Single URL -->
+        <div x-show="mode === 'single'" x-cloak>
+            <label for="single_url" class="block text-sm font-medium text-slate-700">
+                Page URL <span class="text-red-500">*</span>
+            </label>
+            <div class="mt-1">
+                <input type="url" name="single_url" id="single_url" x-model="singleUrl" :required="mode === 'single'"
+                    placeholder="https://example.com/page"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+            </div>
+            <p class="mt-1 text-xs text-slate-500">Enter a specific, single webpage URL to analyze.</p>
+        </div>
+
+        <!-- Single Audit Type -->
+        <div x-show="mode === 'single'" x-cloak>
+            <label class="block text-sm font-medium text-slate-700 mb-2">
+                Audit Type <span class="text-red-500">*</span>
+            </label>
+            <div class="mt-1">
+                <select name="single_audit_type" x-model="singleAuditType"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                    <option value="god_mode">✨ God Mode (Run All Audits)</option>
+                    {% for audit in audit_types %}
+                    <option value="{{ audit.type }}">{{ audit.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">Select God Mode to run all configured LLM prompts recursively on this
+                single page in parallel.</p>
+        </div>
+
+        <!-- Output Language -->
+        <div>
+            <label for="language" class="block text-sm font-medium text-slate-700">
+                Output Language
+            </label>
+            <div class="mt-1">
+                <select name="language" id="language"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                    <option value="English">English</option>
+                    <option value="Romanian">Română (Romanian)</option>
+                    <option value="German">Deutsch (German)</option>
+                    <option value="French">Français (French)</option>
+                    <option value="Spanish">Español (Spanish)</option>
+                    <option value="Italian">Italiano (Italian)</option>
+                    <option value="Portuguese">Português (Portuguese)</option>
+                    <option value="Dutch">Nederlands (Dutch)</option>
+                    <option value="Polish">Polski (Polish)</option>
+                    <option value="Hungarian">Magyar (Hungarian)</option>
+                    <option value="Czech">Čeština (Czech)</option>
+                    <option value="Bulgarian">Български (Bulgarian)</option>
+                    <option value="Turkish">Türkçe (Turkish)</option>
+                    <option value="Swedish">Svenska (Swedish)</option>
+                    <option value="Danish">Dansk (Danish)</option>
+                    <option value="Norwegian">Norsk (Norwegian)</option>
+                    <option value="Finnish">Suomi (Finnish)</option>
+                    <option value="Greek">Ελληνικά (Greek)</option>
+                    <option value="Japanese">日本語 (Japanese)</option>
+                    <option value="Chinese">中文 (Chinese)</option>
+                    <option value="Korean">한국어 (Korean)</option>
+                    <option value="Arabic">العربية (Arabic)</option>
+                </select>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">
+                All recommendations, issues, and descriptions will be written in this language.
+                JSON keys and scores remain in English.
+            </p>
+        </div>
+
+        <!-- LLM Provider -->
+        <div>
+            <label for="provider" class="block text-sm font-medium text-slate-700">
+                LLM Provider <span class="text-red-500">*</span>
+            </label>
+            <div class="mt-1">
+                <select name="provider" id="provider" required
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                    <option value="google"    {% if providers.google    %}{% else %}class="text-slate-400"{% endif %}>Google Gemini{% if not providers.google %} — key not set{% endif %}</option>
+                    <option value="anthropic" {% if providers.anthropic %}selected{% endif %}>Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
+                    <option value="openai"    {% if providers.openai    %}{% else %}class="text-slate-400"{% endif %}>OpenAI (GPT-4){% if not providers.openai %} — key not set{% endif %}</option>
+                    <option value="mistral"   {% if providers.mistral   %}{% else %}class="text-slate-400"{% endif %}>Mistral{% if not providers.mistral %} — key not set{% endif %}</option>
+                </select>
+            </div>
+            {% if not providers.google and not providers.anthropic and not providers.openai and not providers.mistral %}
+            <p class="mt-1 text-sm text-amber-600">
+                ⚠️ No API keys configured yet. Add at least one key to .env to run audits.
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Model Selection with Tier Quick-Select -->
+        {% if providers_ui is defined %}
+        <div>
+            <label for="model" class="block text-sm font-medium text-slate-700">
+                Model
+            </label>
+            <div class="flex gap-2 mt-1 mb-2">
+                <button type="button" onclick="selectTier('cheap')"
+                    class="px-3 py-1 text-xs rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors">
+                    💰 Cheapest
+                </button>
+                <button type="button" onclick="selectTier('balanced')"
+                    class="px-3 py-1 text-xs rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+                    ⚖️ Balanced
+                </button>
+                <button type="button" onclick="selectTier('premium')"
+                    class="px-3 py-1 text-xs rounded-full bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors">
+                    🚀 Premium
+                </button>
+            </div>
+            <select name="model" id="model"
+                class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+            </select>
+            <p id="model-cost-hint" class="mt-1 text-xs text-slate-500"></p>
+        </div>
+        {% endif %}
+
+        <!-- Perplexity Research Layer -->
+        <div x-show="mode === 'full'"
+            class="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+            <div class="flex items-start">
+                <div class="flex items-center h-5">
+                    <input type="checkbox" name="use_perplexity" id="use_perplexity" {% if perplexity_available %}{%
+                        else %}disabled{% endif %}
+                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded">
+                </div>
+                <div class="ml-3">
+                    <label for="use_perplexity" class="text-sm font-medium text-slate-800">
+                        🔍 Perplexity AI Research Layer
+                    </label>
+                    <p class="text-xs text-slate-600 mt-1">
+                        Enriches audit with real AI search data. For each page, queries Perplexity to check:
+                        brand visibility in AI responses, content gaps vs AI recommendations, and competitor mentions.
+                        <br>
+                        <span class="font-medium">Best for:</span> GEO, SEO, and Internal Linking audits.
+                        <span class="font-medium">Cost:</span> ~$0.005/page (~$0.75 for 145 pages).
+                    </p>
+                    {% if not perplexity_available %}
+                    <p class="text-xs text-amber-600 mt-1 font-medium">
+                        ⚠️ Add PERPLEXITY_API_KEY to .env to enable. Get key at
+                        <a href="https://www.perplexity.ai/settings/api" target="_blank"
+                            class="underline">perplexity.ai/settings/api</a>
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Options -->
+        <div x-show="mode === 'full'" x-data="{ showAdvanced: false }">
+            <button type="button" @click="showAdvanced = !showAdvanced"
+                class="text-sm text-slate-600 hover:text-slate-900 flex items-center">
+                <svg class="w-4 h-4 mr-1 transition-transform" :class="{ 'rotate-90': showAdvanced }" fill="none"
+                    stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+                Advanced Options
+            </button>
+
+            <div x-show="showAdvanced" x-collapse class="mt-4 space-y-4 pl-4 border-l-2 border-slate-200">
+                <!-- Max Characters -->
+                <div>
+                    <label for="max_chars" class="block text-sm font-medium text-slate-700">
+                        Max Characters per Request
+                    </label>
+                    <input type="number" name="max_chars" id="max_chars" value="30000" min="5000" max="100000"
+                        class="mt-1 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                </div>
+
+                <!-- Processing Mode -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700">Processing Mode</label>
+                    <div class="mt-2 space-y-2">
+                        <label class="flex items-center">
+                            <input type="radio" name="use_direct_mode" value="true" checked
+                                class="focus:ring-primary-500 h-4 w-4 text-primary-600 border-slate-300">
+                            <span class="ml-2 text-sm text-slate-700">
+                                Direct Mode (Fast) - Recommended for &lt;50 pages
+                            </span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio" name="use_direct_mode" value="false"
+                                class="focus:ring-primary-500 h-4 w-4 text-primary-600 border-slate-300">
+                            <span class="ml-2 text-sm text-slate-700">
+                                Batch Mode (Cost-effective) - For larger sites
+                            </span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Concurrency -->
+                <div>
+                    <label for="concurrency" class="block text-sm font-medium text-slate-700">
+                        Concurrent Requests (Direct Mode)
+                    </label>
+                    <input type="number" name="concurrency" id="concurrency" value="5" min="1" max="20"
+                        class="mt-1 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                </div>
+
+                <!-- Webhook URL -->
+                <div>
+                    <label for="webhook_url" class="block text-sm font-medium text-slate-700">
+                        Webhook URL
+                        <span class="ml-1 text-xs font-normal text-slate-400">(optional)</span>
+                    </label>
+                    <div class="mt-1 relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <svg class="h-4 w-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1">
+                                </path>
+                            </svg>
+                        </div>
+                        <input type="url" name="webhook_url" id="webhook_url"
+                            placeholder="https://hooks.slack.com/services/…"
+                            class="pl-9 shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                    </div>
+                    <p class="mt-1 text-xs text-slate-500">
+                        A POST request with the audit summary will be sent to this URL on completion or failure.
+                        Works with Slack incoming webhooks, Zapier, Make, and custom endpoints.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Single Results Display -->
+        <div x-show="mode === 'single' && singleResults" x-cloak class="mt-6 space-y-6">
+            <div class="flex justify-between items-center border-b pb-2">
+                <h2 class="text-xl font-bold text-slate-900">Analysis Results</h2>
+                <div class="space-x-2 flex">
+                    <button type="button" @click="exportCSV()"
+                        class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-xs font-medium rounded shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                        <svg class="mr-1.5 -ml-0.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                            </path>
+                        </svg>
+                        Export CSV
+                    </button>
+                    <button type="button" @click="downloadPDF($event)"
+                        class="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        <svg class="mr-1.5 -ml-0.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        Download PDF
+                    </button>
+                </div>
+            </div>
+
+            <div id="pdf-wrapper" class="bg-slate-50 p-6 -mx-6 -mt-6 mb-6">
+                <div id="pdf-content" class="bg-white p-6 pb-2">
+                    <template x-for="(data, type) in singleResults" :key="type">
+                        <div
+                            class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mb-6 break-inside-avoid">
+                            <div class="bg-slate-50 border-b border-slate-200 px-6 py-4">
+                                <h3 class="text-lg font-bold text-slate-900 capitalize"
+                                    x-text="type.replace(/_/g, ' ').toLowerCase()"></h3>
+                            </div>
+                            <div class="p-6">
+                                <!-- Error state -->
+                                <template x-if="data.error">
+                                    <div class="text-red-600 bg-red-50 p-4 rounded-md text-sm border border-red-200">
+                                        <span class="font-bold">Error:</span> <span x-text="data.error"></span>
+                                    </div>
+                                </template>
+
+                                <!-- Success state -->
+                                <template x-if="!data.error">
+                                    <div class="space-y-6">
+                                        <template x-for="(val, key) in data" :key="key">
+                                            <div class="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                                                <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2"
+                                                    x-text="key.replace(/_/g, ' ')"></h4>
+
+                                                <!-- Array of Objects -->
+                                                <template
+                                                    x-if="Array.isArray(val) && val.length > 0 && typeof val[0] === 'object'">
+                                                    <div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-2 mt-2">
+                                                        <template x-for="(item, idx) in val" :key="idx">
+                                                            <div
+                                                                class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm shadow-sm transition hover:shadow-md">
+                                                                <template x-for="(v, k) in item" :key="k">
+                                                                    <div class="mb-2 last:mb-0">
+                                                                        <span
+                                                                            class="font-semibold text-slate-700 capitalize"
+                                                                            x-text="k.replace(/_/g, ' ') + ': '"></span>
+                                                                        <span class="text-slate-600"
+                                                                            x-html="formatText(v)"></span>
+                                                                    </div>
+                                                                </template>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+
+                                                <!-- Simple Array -->
+                                                <template
+                                                    x-if="Array.isArray(val) && (val.length === 0 || typeof val[0] !== 'object')">
+                                                    <ul
+                                                        class="list-disc list-inside text-sm text-slate-700 space-y-1 mt-1 pl-2">
+                                                        <template x-for="(item, idx) in val" :key="idx">
+                                                            <li x-text="item"></li>
+                                                        </template>
+                                                        <template x-if="val.length === 0">
+                                                            <li class="text-slate-400 italic list-none">None found</li>
+                                                        </template>
+                                                    </ul>
+                                                </template>
+
+                                                <!-- Nested Object (Not Array) -->
+                                                <template
+                                                    x-if="val !== null && typeof val === 'object' && !Array.isArray(val)">
+                                                    <div
+                                                        class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm mt-2 grid gap-4 grid-cols-1 sm:grid-cols-2">
+                                                        <template x-for="(v, k) in val" :key="k">
+                                                            <div>
+                                                                <div class="text-xs text-slate-500 uppercase tracking-wider mb-1"
+                                                                    x-text="k.replace(/_/g, ' ')"></div>
+                                                                <div class="font-medium text-slate-800"
+                                                                    x-html="formatText(v)"></div>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+
+                                                <!-- Primitive Value -->
+                                                <template
+                                                    x-if="val === null || (typeof val !== 'object' && !Array.isArray(val))">
+                                                    <div class="text-base text-slate-800 mt-1" x-html="formatText(val)">
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                </div>
+                </template>
+            </div>
+        </div>
+</div>
+
+<!-- Submit Button -->
+<div class="pt-4 border-t border-slate-200">
+    <button type="submit" :disabled="submitting"
+        class="w-full flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        <span x-show="submitting">
+            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4">
+                </circle>
+                <path class="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+                </path>
+            </svg>
+        </span>
+        <svg x-show="!submitting" class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        </svg>
+        <span x-text="submitting ? submitStatus : 'Start Audit(s)'"></span>
+    </button>
+</div>
+</form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function auditForm() {
+        return {
+            mode: new URLSearchParams(window.location.search).get('tab') === 'single' ? 'single' : 'full', // 'full' or 'single'
+
+            // Full fields
+            website: '',
+            sitemapUrl: '',
+            sitemapCount: null,
+            fetchingSitemapCount: false,
+            sitemapError: null,
+
+            // Single fields
+            singleUrl: '',
+            singleAuditType: 'god_mode',
+            singleResults: null,
+
+            submitting: false,
+            submitStatus: 'Starting...',
+
+            async fetchSitemapCount() {
+                if (!this.sitemapUrl) {
+                    this.sitemapCount = null;
+                    this.sitemapError = null;
+                    return;
+                }
+
+                this.fetchingSitemapCount = true;
+                this.sitemapError = null;
+
+                try {
+                    const response = await fetch(`/api/audits/sitemap/count?url=${encodeURIComponent(this.sitemapUrl)}`);
+                    const data = await response.json();
+
+                    if (data.error) {
+                        this.sitemapError = data.error;
+                        this.sitemapCount = null;
+                    } else {
+                        this.sitemapCount = data.count;
+
+                        // Also auto-update the max_chars advanced setting for very large sites
+                        if (this.sitemapCount > 50 && document.getElementById('max_chars')) {
+                            document.querySelector('input[name="use_direct_mode"][value="false"]').checked = true;
+                        }
+                    }
+                } catch (err) {
+                    this.sitemapError = "Failed to connect to parser.";
+                } finally {
+                    this.fetchingSitemapCount = false;
+                }
+            },
+
+            async autoDetectSitemap() {
+                if (!this.website) return;
+
+                // Try common sitemap locations
+                const locations = [
+                    `https://${this.website}/sitemap.xml`,
+                    `https://${this.website}/sitemap_index.xml`,
+                    `https://www.${this.website}/sitemap.xml`
+                ];
+
+                // For now, just set the first common location
+                this.sitemapUrl = locations[0];
+                this.fetchSitemapCount();
+            },
+
+            async submitAudit() {
+                if (this.submitting) return;
+
+                if (this.mode === 'single') {
+                    return this.submitSingleAudit();
+                }
+
+                const form = document.getElementById('new-audit-form');
+                const responseDiv = document.getElementById('form-response');
+
+                // Collect selected audit types
+                const selectedTypes = Array.from(form.querySelectorAll('[name="audit_types"]:checked')).map(cb => cb.value);
+
+                if (selectedTypes.length === 0) {
+                    responseDiv.innerHTML = `
+                    <div class="rounded-md bg-yellow-50 p-4 mb-4">
+                        <div class="flex">
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-yellow-800">No Audit Selected</h3>
+                                <div class="mt-2 text-sm text-yellow-700">Please select at least one audit type.</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                    return;
+                }
+
+                this.submitting = true;
+                responseDiv.innerHTML = '';
+
+                const basePayload = {
+                    website: form.querySelector('[name="website"]').value,
+                    sitemap_url: form.querySelector('[name="sitemap_url"]').value || null,
+                    provider: form.querySelector('[name="provider"]').value,
+                    model: document.getElementById('model')?.value || null,
+                    max_chars: parseInt(form.querySelector('[name="max_chars"]').value) || 30000,
+                    use_direct_mode: form.querySelector('[name="use_direct_mode"]:checked').value === 'true',
+                    concurrency: parseInt(form.querySelector('[name="concurrency"]').value) || 5,
+                    use_perplexity: form.querySelector('[name="use_perplexity"]')?.checked || false,
+                    language: form.querySelector('[name="language"]').value || 'English',
+                    webhook_url: form.querySelector('[name="webhook_url"]')?.value || null,
+                };
+
+                const createdIds = [];
+                const errors = [];
+
+                for (let i = 0; i < selectedTypes.length; i++) {
+                    const auditType = selectedTypes[i];
+                    this.submitStatus = `Creating ${i + 1}/${selectedTypes.length}: ${auditType}...`;
+
+                    const payload = { ...basePayload, audit_type: auditType };
+
+                    try {
+                        const response = await fetch('/api/audits', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const data = await response.json();
+
+                        if (response.ok && data.id) {
+                            createdIds.push(data.id);
+                        } else {
+                            errors.push(`${auditType}: ${data.detail || 'Unknown error'}`);
+                        }
+                    } catch (err) {
+                        errors.push(`${auditType}: ${err.message}`);
+                    }
+                }
+
+                this.submitting = false;
+
+                if (errors.length > 0) {
+                    responseDiv.innerHTML = `
+                    <div class="rounded-md bg-yellow-50 p-4 mb-4">
+                        <div class="ml-3">
+                            <h3 class="text-sm font-medium text-yellow-800">Some audits failed</h3>
+                            <div class="mt-2 text-sm text-yellow-700">${errors.join('<br>')}</div>
+                            ${createdIds.length > 0 ? '<p class="mt-2">Redirecting to dashboard...</p>' : ''}
+                        </div>
+                    </div>
+                `;
+                }
+
+                if (createdIds.length > 0) {
+                    // If single audit, go to detail page; if multiple, go to dashboard
+                    if (createdIds.length === 1) {
+                        window.location.href = `/audits/${createdIds[0]}`;
+                    } else {
+                        setTimeout(() => { window.location.href = '/'; }, errors.length > 0 ? 2000 : 0);
+                    }
+                }
+            },
+
+            async submitSingleAudit() {
+                const form = document.getElementById('new-audit-form');
+                const responseDiv = document.getElementById('form-response');
+
+                if (!this.singleUrl) {
+                    responseDiv.innerHTML = `<div class="rounded-md bg-yellow-50 p-4 mb-4"><div class="text-sm text-yellow-700">Please provide a URL.</div></div>`;
+                    return;
+                }
+
+                this.submitting = true;
+                this.singleResults = null;
+                responseDiv.innerHTML = '';
+                this.submitStatus = 'Fetching & Analyzing (God Mode)...';
+
+                try {
+                    const response = await fetch('/api/audits/single', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            url: this.singleUrl,
+                            audit_type: this.singleAuditType,
+                            provider: document.getElementById('provider').value,
+                            model: document.getElementById('model')?.value || null,
+                            language: document.getElementById('language').value
+                        })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        this.singleResults = data.results;
+                        responseDiv.innerHTML = `
+                            <div class="rounded-md bg-green-50 border border-green-200 p-4 mb-4 flex items-center justify-between">
+                                <div class="text-sm text-green-700">
+                                    <span class="font-medium">Audit saved!</span> Results are displayed below and permanently saved.
+                                </div>
+                                <a href="/audits/${data.id}"
+                                    class="ml-4 shrink-0 inline-flex items-center px-3 py-1.5 border border-green-300 text-xs font-medium rounded shadow-sm text-green-700 bg-white hover:bg-green-50">
+                                    View Saved Audit →
+                                </a>
+                            </div>
+                        `;
+                    } else {
+                        responseDiv.innerHTML = `<div class="rounded-md bg-red-50 p-4 mb-4"><div class="text-sm text-red-700">Error: ${data.detail || 'Failed analysis'}</div></div>`;
+                    }
+                } catch (err) {
+                    responseDiv.innerHTML = `<div class="rounded-md bg-red-50 p-4 mb-4"><div class="text-sm text-red-700">Network Error: ${err.message}</div></div>`;
+                } finally {
+                    this.submitting = false;
+                    this.submitStatus = 'Start Audit(s)';
+                }
+            },
+
+            formatText(val) {
+                if (val === null || val === undefined) return '';
+                let text = String(val);
+                // Convert URLs to actual links
+                text = text.replace(/(https?:\/\/[^\s"]+)/g, '<a href="$1" target="_blank" class="text-indigo-600 hover:text-indigo-800 underline break-all">$1</a>');
+                // Convert bold **text** to <strong>text</strong>
+                text = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                return text;
+            },
+
+            exportCSV() {
+                if (!this.singleResults) return;
+
+                let csvContent = "Audit Type,Category,Key,Value\n";
+
+                for (const [auditType, result] of Object.entries(this.singleResults)) {
+                    if (result.error) {
+                        csvContent += `"${auditType}","Error","Message","${String(result.error).replace(/"/g, '""')}"\n`;
+                        continue;
+                    }
+
+                    for (const [key, value] of Object.entries(result)) {
+                        if (Array.isArray(value)) {
+                            if (value.length > 0 && typeof value[0] === 'object') {
+                                // Array of objects
+                                value.forEach((item, idx) => {
+                                    for (const [subKey, subVal] of Object.entries(item)) {
+                                        const safeVal = String(subVal).replace(/"/g, '""');
+                                        csvContent += `"${auditType}","${key} [${idx + 1}]","${subKey}","${safeVal}"\n`;
+                                    }
+                                });
+                            } else {
+                                // Simple array
+                                const safeVal = value.join('; ').replace(/"/g, '""');
+                                csvContent += `"${auditType}","${key}","Items","${safeVal}"\n`;
+                            }
+                        } else if (value !== null && typeof value === 'object') {
+                            // Nested object
+                            for (const [subKey, subVal] of Object.entries(value)) {
+                                const safeVal = String(subVal).replace(/"/g, '""');
+                                csvContent += `"${auditType}","${key}","${subKey}","${safeVal}"\n`;
+                            }
+                        } else {
+                            // Primitive
+                            const safeVal = String(value).replace(/"/g, '""');
+                            csvContent += `"${auditType}","General","${key}","${safeVal}"\n`;
+                        }
+                    }
+                }
+
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `Audit_${this.singleUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            },
+
+            downloadPDF(event) {
+                const element = document.getElementById('pdf-content');
+                if (!element) return;
+
+                // Temporarily show spinner on button
+                const btn = event.currentTarget;
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = `<svg class="animate-spin mr-1.5 -ml-0.5 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+                btn.disabled = true;
+
+                // Temporarily disable scroll
+                const currentScroll = window.scrollY;
+
+                // Ensure Alpine has finished rendering
+                this.$nextTick(() => {
+                    // Scroll to top explicitly
+                    window.scrollTo(0, 0);
+
+                    const opt = {
+                        margin: [10, 10, 10, 10],
+                        filename: `Audit_${this.singleUrl.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: {
+                            scale: 1.5,
+                            useCORS: true,
+                            scrollY: 0,
+                            windowWidth: document.documentElement.offsetWidth,
+                            windowHeight: document.documentElement.scrollHeight
+                        },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                        pagebreak: { mode: ['css', 'legacy'] }
+                    };
+
+                    html2pdf().set(opt).from(element).save().then(() => {
+                        // Restore scroll and button
+                        window.scrollTo(0, currentScroll);
+                        btn.innerHTML = originalHtml;
+                        btn.disabled = false;
+                    });
+                });
+            }
+        }
+    }
+</script>
+
+{% if providers_ui is defined %}
+<script>
+    // Dynamic model population from centralized registry
+    const providersData = {{ providers_ui | tojson }};
+
+    function updateModels() {
+        const provider = document.getElementById('provider').value;
+        const modelSelect = document.getElementById('model');
+        const costHint = document.getElementById('model-cost-hint');
+        if (!modelSelect) return;
+
+        modelSelect.innerHTML = '';
+
+        if (providersData[provider]) {
+            providersData[provider].models.forEach(m => {
+                const opt = document.createElement('option');
+                opt.value = m.id;
+                opt.textContent = `${m.tier_emoji} ${m.name} — ${m.price_label}`;
+                if (m.id === providersData[provider].default_model) opt.selected = true;
+                modelSelect.appendChild(opt);
+            });
+            updateCostHint();
+        }
+    }
+
+    function selectTier(tier) {
+        const provider = document.getElementById('provider').value;
+        const models = providersData[provider]?.models || [];
+        const tierModel = models.find(m => m.tier === tier);
+        if (tierModel) {
+            document.getElementById('model').value = tierModel.id;
+            updateCostHint();
+        }
+    }
+
+    function updateCostHint() {
+        const provider = document.getElementById('provider').value;
+        const modelId = document.getElementById('model')?.value;
+        const costHint = document.getElementById('model-cost-hint');
+        if (!costHint || !modelId) return;
+
+        const model = providersData[provider]?.models.find(m => m.id === modelId);
+        if (model) {
+            costHint.textContent = `${model.notes} • Est. ~$${(0.003 * parseFloat(model.price_label.split('/')[0].replace('$', '')) + 0.002 * parseFloat(model.price_label.split('/')[1].replace('$', '').split(' ')[0])).toFixed(4)}/page`;
+        }
+    }
+
+    document.getElementById('provider').addEventListener('change', updateModels);
+    document.addEventListener('DOMContentLoaded', updateModels);
+</script>
+{% endif %}
+{% endblock %}

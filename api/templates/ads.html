@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}Google Ads — Paid Search Data{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="adsList()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Google Ads</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Upload Google Ads exports (search terms + campaigns) and cross-reference
+                with your GSC data to find paid/organic overlaps and gaps.
+            </p>
+        </div>
+        <button @click="showForm = !showForm"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex-shrink-0">
+            <span x-text="showForm ? '✕ Cancel' : '+ Add Account'"></span>
+        </button>
+    </div>
+
+    <!-- Add account form -->
+    <div x-show="showForm" x-transition
+         class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <h2 class="text-base font-semibold text-slate-800 mb-4">Add Ads Account</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Account name <span class="text-slate-400">(label)</span></label>
+                <input x-model="form.name" type="text" placeholder="e.g. Main Brand Campaign"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Customer ID <span class="text-slate-400">(optional)</span></label>
+                <input x-model="form.account_id" type="text" placeholder="123-456-7890"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Currency <span class="text-slate-400">(optional)</span></label>
+                <input x-model="form.currency" type="text" placeholder="USD"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+            </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+            <button @click="createAccount()"
+                    :disabled="!form.name.trim() || creating"
+                    class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <span x-text="creating ? 'Creating…' : 'Create Account'"></span>
+            </button>
+            <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+        </div>
+    </div>
+
+    <!-- How to export hint -->
+    <div x-show="accounts.length === 0 && !loading"
+         class="bg-blue-50 border border-blue-200 rounded-xl p-5 text-sm text-blue-800">
+        <p class="font-semibold mb-2">How to export from Google Ads:</p>
+        <ol class="list-decimal list-inside space-y-1 text-blue-700">
+            <li>Open <a href="https://ads.google.com" target="_blank" class="underline">Google Ads</a> → select your account</li>
+            <li>Go to <strong>Keywords → Search terms</strong></li>
+            <li>Set your date range and click <strong>Download → CSV</strong></li>
+            <li>Then go to <strong>Campaigns</strong> and download the campaigns CSV</li>
+            <li>Come back here, create an account, and upload both CSV files</li>
+        </ol>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-12 text-slate-400 text-sm">Loading…</div>
+
+    <!-- Accounts grid -->
+    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <template x-for="a in accounts" :key="a.id">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
+
+                <!-- Card header -->
+                <div class="p-5 flex-1">
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <h3 class="font-semibold text-slate-900 text-base leading-tight" x-text="a.name"></h3>
+                        <button @click="deleteAccount(a.id, a.name)"
+                                class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                                title="Delete account">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                    </div>
+                    <div class="flex items-center gap-2 mb-3">
+                        <p x-show="a.account_id" class="text-xs text-slate-400 font-mono" x-text="'ID: ' + a.account_id"></p>
+                        <span x-show="a.currency" class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded" x-text="a.currency"></span>
+                    </div>
+
+                    <!-- Stats chips -->
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="a.total_terms > 0 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'">
+                            🔑 <span x-text="a.total_terms.toLocaleString()"></span> terms
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="a.total_campaigns > 0 ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-400'">
+                            📋 <span x-text="a.total_campaigns.toLocaleString()"></span> campaigns
+                        </span>
+                    </div>
+
+                    <!-- Upload zone -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <!-- Search terms upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[a.id+'_terms'] ? 'border-blue-300 bg-blue-50' : 'border-slate-200 hover:border-blue-300 hover:bg-blue-50'">
+                            <span class="text-lg">🔑</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[a.id+'_terms'] ? 'Uploading…' : 'Search Terms CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(a.id, $event, 'terms')">
+                        </label>
+                        <!-- Campaigns upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[a.id+'_campaigns'] ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-violet-50'">
+                            <span class="text-lg">📋</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[a.id+'_campaigns'] ? 'Uploading…' : 'Campaigns CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(a.id, $event, 'campaigns')">
+                        </label>
+                    </div>
+
+                    <!-- Upload feedback -->
+                    <p x-show="uploadMsg[a.id]" x-text="uploadMsg[a.id]"
+                       :class="uploadErr[a.id] ? 'text-red-600' : 'text-emerald-600'"
+                       class="text-xs mt-2 font-medium"></p>
+                </div>
+
+                <!-- Card footer -->
+                <div class="border-t border-slate-100 px-5 py-3">
+                    <a :href="'/ads/' + a.id"
+                       class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors">
+                        View data & cross-reference →
+                    </a>
+                </div>
+            </div>
+        </template>
+    </div>
+
+</div>
+
+<script>
+function adsList() {
+    return {
+        accounts:  [],
+        loading:   true,
+        showForm:  false,
+        creating:  false,
+        formError: '',
+        form:      { name: '', account_id: '', currency: '' },
+        uploading: {},
+        uploadMsg: {},
+        uploadErr: {},
+
+        async init() {
+            await this.loadAccounts();
+        },
+
+        async loadAccounts() {
+            this.loading = true;
+            const res = await fetch('/api/ads/accounts');
+            this.accounts = await res.json();
+            this.loading = false;
+        },
+
+        async createAccount() {
+            this.formError = '';
+            if (!this.form.name.trim()) return;
+            this.creating = true;
+            try {
+                const res = await fetch('/api/ads/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name:       this.form.name.trim(),
+                        account_id: this.form.account_id.trim(),
+                        currency:   this.form.currency.trim(),
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.formError = err.detail || 'Failed to create account';
+                } else {
+                    this.form = { name: '', account_id: '', currency: '' };
+                    this.showForm = false;
+                    await this.loadAccounts();
+                }
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        async deleteAccount(id, name) {
+            if (!confirm(`Delete account "${name}" and all its data?\nThis cannot be undone.`)) return;
+            await fetch('/api/ads/accounts/' + id, { method: 'DELETE' });
+            await this.loadAccounts();
+        },
+
+        async uploadCsv(accountId, event, hint) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const key = accountId + '_' + hint;
+            this.uploading = { ...this.uploading, [key]: true };
+            this.uploadMsg = { ...this.uploadMsg, [accountId]: '' };
+            this.uploadErr = { ...this.uploadErr, [accountId]: false };
+
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res = await fetch('/api/ads/accounts/' + accountId + '/upload', {
+                    method: 'POST',
+                    body: fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = { ...this.uploadMsg, [accountId]: data.detail || 'Upload failed' };
+                    this.uploadErr = { ...this.uploadErr, [accountId]: true };
+                } else {
+                    this.uploadMsg = {
+                        ...this.uploadMsg,
+                        [accountId]: `✓ ${data.rows_imported.toLocaleString()} ${data.report_type.replace('_', ' ')} rows imported`,
+                    };
+                    await this.loadAccounts();
+                }
+            } catch (e) {
+                this.uploadMsg = { ...this.uploadMsg, [accountId]: 'Network error' };
+                this.uploadErr = { ...this.uploadErr, [accountId]: true };
+            } finally {
+                this.uploading = { ...this.uploading, [key]: false };
+                event.target.value = '';
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

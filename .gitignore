@@ -1,0 +1,60 @@
+# Environment & secrets
+.env
+*.env.local
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Old domain scrape folders
+ahrefs.com/
+bancatransilvania.ro/
+bestetic.ro/
+ing.ro/
+stancosmin.com/
+tmp/
+
+# Lead worker (separate project)
+lead_worker/
+
+# Dev tools & junk
+cloudflared.exe
+cloudflare_tunnel.log
+nul
+=1.13.0
+.wget-hsts
+.npmrc.bak
+*.zip
+*.log
+
+# Merge notes & old changelogs (optional — remove these lines to keep them)
+merge_notes/
+prompts_backup/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings (keep .claude/haiku_task_guide.md if you want)
+.claude/settings.local.json
+.claude/launch.json
+
+# Debug scripts
+debug_*.py
+plan2.md

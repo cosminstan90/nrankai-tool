@@ -1,0 +1,21 @@
+# Master unified dependencies (CLI + analyzers)
+anthropic>=0.40.0
+openai>=1.50.0
+mistralai>=1.0.0
+google-genai>=1.0.0
+selenium>=4.25.0
+undetected-chromedriver>=3.5.0
+beautifulsoup4>=4.12.0
+html2text>=2024.2.26
+pandas>=2.2.0
+openpyxl>=3.1.0
+python-dotenv>=1.0.0
+tqdm>=4.66.0
+requests>=2.31.0
+aiohttp>=3.9.0
+certifi>=2024.0.0
+pyyaml>=6.0.0
+reportlab>=4.0.0
+json-repair>=0.30.0
+google-auth-oauthlib>=1.0.0
+google-api-python-client>=2.0.0

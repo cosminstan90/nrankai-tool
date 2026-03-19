@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audit Templates - Website LLM Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen" x-data="templatesManager()">
+    
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex space-x-8">
+                    <a href="/" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-900">
+                        Home
+                    </a>
+                    <a href="/audits" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900">
+                        Audits
+                    </a>
+                    <a href="/new" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900">
+                        New Audit
+                    </a>
+                    <a href="/templates" class="inline-flex items-center px-1 pt-1 border-b-2 border-indigo-500 text-sm font-medium text-gray-900">
+                        Templates
+                    </a>
+                    <a href="/costs" class="inline-flex items-center px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-900">
+                        Costs
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Audit Templates</h1>
+                <p class="mt-1 text-sm text-gray-500">Reusable configurations for quick audit launches</p>
+            </div>
+            <button @click="openCreateModal()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                </svg>
+                Create Template
+            </button>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="text-center py-12">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            <p class="mt-4 text-gray-500">Loading templates...</p>
+        </div>
+
+        <!-- Error State -->
+        <div x-show="error" x-cloak class="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <div class="flex">
+                <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                </svg>
+                <p class="ml-3 text-sm text-red-800" x-text="error"></p>
+            </div>
+        </div>
+
+        <!-- Templates Grid -->
+        <div x-show="!loading" x-cloak class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <template x-for="template in templates" :key="template.id">
+                <div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                    <div class="p-6">
+                        <!-- Header -->
+                        <div class="flex items-start justify-between mb-4">
+                            <div class="flex items-center">
+                                <span class="text-3xl mr-3" x-text="template.icon || '📋'"></span>
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-900" x-text="template.name"></h3>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span x-show="template.is_default" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                            ⭐ Default
+                                        </span>
+                                        <span class="text-xs text-gray-500" x-text="`Used ${template.use_count} times`"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Description -->
+                        <p class="text-sm text-gray-600 mb-4 line-clamp-2" x-text="template.description || 'No description'"></p>
+
+                        <!-- Config Badges -->
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <span x-show="template.audit_type" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" x-text="template.audit_type"></span>
+                            <span x-show="template.provider" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" x-text="template.provider"></span>
+                            <span x-show="template.language" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800" x-text="template.language"></span>
+                            <span x-show="template.auto_summary" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                +Summary
+                            </span>
+                            <span x-show="template.auto_briefs" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800">
+                                +Briefs
+                            </span>
+                            <span x-show="template.auto_schemas" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                +Schemas
+                            </span>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex gap-2">
+                            <button @click="openLaunchModal(template)" class="flex-1 inline-flex justify-center items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                                Launch
+                            </button>
+                            <button @click="openEditModal(template)" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                Edit
+                            </button>
+                            <button @click="duplicateTemplate(template)" class="px-3 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+                                Copy
+                            </button>
+                            <button @click="deleteTemplate(template.id)" class="px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && templates.length === 0" x-cloak class="text-center py-12">
+            <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">No templates</h3>
+            <p class="mt-1 text-sm text-gray-500">Get started by creating a new template.</p>
+            <div class="mt-6">
+                <button @click="openCreateModal()" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                    Create Template
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div x-show="showModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div x-show="showModal" x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="showModal = false"></div>
+
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div x-show="showModal" x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100" x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full sm:p-6">
+                
+                <div class="mb-4">
+                    <h3 class="text-lg font-medium text-gray-900" x-text="modalMode === 'create' ? 'Create Template' : 'Edit Template'"></h3>
+                </div>
+
+                <form @submit.prevent="saveTemplate()" class="space-y-4">
+                    <!-- Basic Info -->
+                    <div class="grid grid-cols-12 gap-4">
+                        <div class="col-span-2">
+                            <label class="block text-sm font-medium text-gray-700">Icon</label>
+                            <input type="text" x-model="formData.icon" maxlength="10" placeholder="🔍" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm text-center text-2xl">
+                        </div>
+                        <div class="col-span-10">
+                            <label class="block text-sm font-medium text-gray-700">Template Name *</label>
+                            <input type="text" x-model="formData.name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Description</label>
+                        <textarea x-model="formData.description" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"></textarea>
+                    </div>
+
+                    <!-- Audit Configuration -->
+                    <div class="border-t pt-4">
+                        <h4 class="text-sm font-medium text-gray-900 mb-3">Audit Configuration</h4>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Audit Type</label>
+                                <select x-model="formData.audit_type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="">None</option>
+                                    <option value="SEO_AUDIT">SEO Audit</option>
+                                    <option value="GEO_AUDIT">GEO Audit</option>
+                                    <option value="CONTENT_QUALITY">Content Quality</option>
+                                    <option value="TECHNICAL_SEO">Technical SEO</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Provider</label>
+                                <select x-model="formData.provider" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="">None</option>
+                                    <option value="anthropic">Anthropic</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="mistral">Mistral</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Model</label>
+                                <input type="text" x-model="formData.model" placeholder="e.g. claude-sonnet-4-20250514" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Language</label>
+                                <select x-model="formData.language" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <option value="">None</option>
+                                    <option value="English">English</option>
+                                    <option value="Romanian">Romanian</option>
+                                    <option value="Spanish">Spanish</option>
+                                    <option value="French">French</option>
+                                    <option value="German">German</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Concurrency</label>
+                                <input type="number" x-model.number="formData.concurrency" min="1" max="50" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Max Chars</label>
+                                <input type="number" x-model.number="formData.max_chars" min="1000" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="formData.use_perplexity" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <span class="ml-2 text-sm text-gray-700">Use Perplexity for verification</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Auto-Actions -->
+                    <div class="border-t pt-4">
+                        <h4 class="text-sm font-medium text-gray-900 mb-3">Auto-Actions (Post-Audit)</h4>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="flex items-center">
+                                    <input type="checkbox" x-model="formData.auto_summary" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <span class="ml-2 text-sm text-gray-700">Auto-generate AI Summary</span>
+                                </label>
+                                <div x-show="formData.auto_summary" class="ml-6 mt-2 grid grid-cols-2 gap-2">
+                                    <input type="text" x-model="formData.summary_provider" placeholder="Provider (optional)" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                    <input type="text" x-model="formData.summary_model" placeholder="Model (optional)" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                                </div>
+                            </div>
+
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="formData.auto_briefs" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <span class="ml-2 text-sm text-gray-700">Auto-generate Content Briefs</span>
+                            </label>
+
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="formData.auto_schemas" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                <span class="ml-2 text-sm text-gray-700">Auto-generate Schema Markup</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Metadata -->
+                    <div class="border-t pt-4">
+                        <label class="flex items-center">
+                            <input type="checkbox" x-model="formData.is_default" class="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                            <span class="ml-2 text-sm text-gray-700">Show in quick-launch (default template)</span>
+                        </label>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex justify-end gap-3 pt-4 border-t">
+                        <button type="button" @click="showModal = false" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                            <span x-text="modalMode === 'create' ? 'Create' : 'Save Changes'"></span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Launch Modal -->
+    <div x-show="showLaunchModal" x-cloak class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div x-show="showLaunchModal" x-transition class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="showLaunchModal = false"></div>
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+            
+            <div x-show="showLaunchModal" x-transition class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div class="mb-4">
+                    <div class="flex items-center">
+                        <span class="text-3xl mr-3" x-text="selectedTemplate?.icon || '📋'"></span>
+                        <div>
+                            <h3 class="text-lg font-medium text-gray-900" x-text="`Launch: ${selectedTemplate?.name}`"></h3>
+                            <p class="text-sm text-gray-500 mt-1" x-text="selectedTemplate?.description"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <form @submit.prevent="launchAudit()" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Website URL *</label>
+                        <input type="url" x-model="launchData.website" required placeholder="https://example.com" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Sitemap URL (optional)</label>
+                        <input type="url" x-model="launchData.sitemap_url" placeholder="https://example.com/sitemap.xml" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+                    </div>
+
+                    <div class="bg-gray-50 rounded-lg p-4">
+                        <h4 class="text-sm font-medium text-gray-700 mb-2">Template Configuration</h4>
+                        <dl class="text-sm space-y-1">
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">Type:</dt>
+                                <dd class="text-gray-900" x-text="selectedTemplate?.audit_type || 'Not set'"></dd>
+                            </div>
+                            <div class="flex justify-between">
+                                <dt class="text-gray-500">Provider:</dt>
+                                <dd class="text-gray-900" x-text="selectedTemplate?.provider || 'Not set'"></dd>
+                            </div>
+                            <div class="flex justify-between" x-show="selectedTemplate?.language">
+                                <dt class="text-gray-500">Language:</dt>
+                                <dd class="text-gray-900" x-text="selectedTemplate?.language"></dd>
+                            </div>
+                            <div x-show="selectedTemplate?.auto_summary || selectedTemplate?.auto_briefs || selectedTemplate?.auto_schemas" class="border-t pt-2 mt-2">
+                                <dt class="text-gray-500 mb-1">Auto-actions:</dt>
+                                <dd class="flex flex-wrap gap-1">
+                                    <span x-show="selectedTemplate?.auto_summary" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">Summary</span>
+                                    <span x-show="selectedTemplate?.auto_briefs" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-pink-100 text-pink-800">Briefs</span>
+                                    <span x-show="selectedTemplate?.auto_schemas" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800">Schemas</span>
+                                </dd>
+                            </div>
+                        </dl>
+                    </div>
+
+                    <div class="flex justify-end gap-3 pt-4">
+                        <button type="button" @click="showLaunchModal = false" class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                            Launch Audit
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function templatesManager() {
+            return {
+                templates: [],
+                loading: true,
+                error: null,
+                showModal: false,
+                showLaunchModal: false,
+                modalMode: 'create', // 'create' or 'edit'
+                selectedTemplate: null,
+                formData: this.getEmptyFormData(),
+                launchData: {
+                    website: '',
+                    sitemap_url: ''
+                },
+
+                init() {
+                    this.loadTemplates();
+                },
+
+                getEmptyFormData() {
+                    return {
+                        id: null,
+                        name: '',
+                        description: '',
+                        icon: '',
+                        audit_type: '',
+                        provider: '',
+                        model: '',
+                        language: '',
+                        use_perplexity: false,
+                        concurrency: null,
+                        max_chars: null,
+                        auto_summary: false,
+                        summary_provider: '',
+                        summary_model: '',
+                        auto_briefs: false,
+                        auto_schemas: false,
+                        is_default: false
+                    };
+                },
+
+                async loadTemplates() {
+                    try {
+                        this.loading = true;
+                        this.error = null;
+                        const response = await fetch('/api/templates');
+                        if (!response.ok) throw new Error('Failed to load templates');
+                        this.templates = await response.json();
+                    } catch (err) {
+                        this.error = err.message;
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                openCreateModal() {
+                    this.modalMode = 'create';
+                    this.formData = this.getEmptyFormData();
+                    this.showModal = true;
+                },
+
+                openEditModal(template) {
+                    this.modalMode = 'edit';
+                    this.formData = { ...template };
+                    this.showModal = true;
+                },
+
+                async saveTemplate() {
+                    try {
+                        const url = this.modalMode === 'create' 
+                            ? '/api/templates'
+                            : `/api/templates/${this.formData.id}`;
+                        
+                        const method = this.modalMode === 'create' ? 'POST' : 'PATCH';
+                        
+                        const response = await fetch(url, {
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.formData)
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || 'Failed to save template');
+                        }
+
+                        this.showModal = false;
+                        await this.loadTemplates();
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                },
+
+                async duplicateTemplate(template) {
+                    this.modalMode = 'create';
+                    this.formData = {
+                        ...template,
+                        id: null,
+                        name: `${template.name} (Copy)`,
+                        use_count: 0
+                    };
+                    this.showModal = true;
+                },
+
+                async deleteTemplate(templateId) {
+                    if (!confirm('Are you sure you want to delete this template?')) return;
+
+                    try {
+                        const response = await fetch(`/api/templates/${templateId}`, {
+                            method: 'DELETE'
+                        });
+
+                        if (!response.ok) throw new Error('Failed to delete template');
+                        
+                        await this.loadTemplates();
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                },
+
+                openLaunchModal(template) {
+                    this.selectedTemplate = template;
+                    this.launchData = { website: '', sitemap_url: '' };
+                    this.showLaunchModal = true;
+                },
+
+                async launchAudit() {
+                    try {
+                        const response = await fetch(`/api/templates/${this.selectedTemplate.id}/launch`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(this.launchData)
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            throw new Error(error.detail || 'Failed to launch audit');
+                        }
+
+                        const result = await response.json();
+                        this.showLaunchModal = false;
+                        
+                        // Redirect to audit page
+                        window.location.href = `/audits/${result.audit_id}`;
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        [x-cloak] { display: none !important; }
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+    </style>
+
+</body>
+</html>

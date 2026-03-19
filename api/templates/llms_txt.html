@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+{% block title %}llms.txt Generator{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="llmsTxtApp()" x-init="init()">
+
+    <!-- ── Header ──────────────────────────────────────────────────────────── -->
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">llms.txt Generator</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Generate a valid <code class="bg-slate-100 px-1 rounded text-xs font-mono">/llms.txt</code>
+                file following the <a href="https://llmstxt.org" target="_blank"
+                class="text-indigo-600 hover:underline">llmstxt.org</a> specification —
+                helps AI models understand your site structure at inference time.
+            </p>
+        </div>
+        <button @click="showForm = !showForm"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+            <span x-text="showForm ? '✕ Cancel' : '✨ New File'"></span>
+        </button>
+    </div>
+
+    <!-- ── Spec info banner ─────────────────────────────────────────────────── -->
+    <div x-show="jobs.length === 0 && !showForm && !loading"
+         class="bg-indigo-50 border border-indigo-200 rounded-xl p-5 text-sm text-indigo-800">
+        <p class="font-semibold mb-2">What is llms.txt?</p>
+        <p class="mb-3">A <code class="bg-indigo-100 px-1 rounded font-mono">/llms.txt</code> file is a Markdown document placed at your website root that helps large language models efficiently discover and understand your content. It lists your most important pages with brief descriptions, organised into logical sections.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+            <div class="bg-white rounded-lg p-3 border border-indigo-100">
+                <p class="font-semibold text-indigo-700 mb-1">📋 Format</p>
+                <p class="text-xs">Markdown with H1 title, blockquote summary, and H2-sectioned resource lists</p>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-indigo-100">
+                <p class="font-semibold text-indigo-700 mb-1">🤖 Purpose</p>
+                <p class="text-xs">Lets AI assistants answer questions about your site accurately without scraping every page</p>
+            </div>
+            <div class="bg-white rounded-lg p-3 border border-indigo-100">
+                <p class="font-semibold text-indigo-700 mb-1">📍 Placement</p>
+                <p class="text-xs">Upload as <code class="font-mono">llms.txt</code> to your domain root — accessible at <code class="font-mono">https://yourdomain.com/llms.txt</code></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── New Job Form ─────────────────────────────────────────────────────── -->
+    <div x-show="showForm" x-transition
+         class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+        <h2 class="text-base font-semibold text-slate-800">Generate llms.txt</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Site URL -->
+            <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Site URL <span class="text-red-500">*</span></label>
+                <input x-model="form.site_url" type="url"
+                       placeholder="https://example.com"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <p class="text-xs text-slate-400 mt-1">The root URL of the website (required)</p>
+            </div>
+
+            <!-- Site Name -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Site Name <span class="text-slate-400">(optional)</span></label>
+                <input x-model="form.site_name" type="text"
+                       placeholder="My Awesome Website"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                <p class="text-xs text-slate-400 mt-1">Used as the H1 heading; auto-detected if left blank</p>
+            </div>
+
+            <!-- Job Name -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Label <span class="text-slate-400">(optional)</span></label>
+                <input x-model="form.name" type="text"
+                       placeholder="e.g. example.com v1"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+
+            <!-- Audit source -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">📋 Link to Audit <span class="text-slate-400">(optional)</span></label>
+                <select x-model="form.audit_id"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <option value="">— None —</option>
+                    <template x-for="a in sources.audits" :key="a.id">
+                        <option :value="a.id" x-text="a.site_url + ' (' + (a.audit_type || 'audit') + ')'"></option>
+                    </template>
+                </select>
+                <p class="text-xs text-slate-400 mt-1">Uses audited pages as the page list</p>
+            </div>
+
+            <!-- GSC source -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">📈 Link to GSC Property <span class="text-slate-400">(optional)</span></label>
+                <select x-model="form.gsc_property_id"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <option value="">— None —</option>
+                    <template x-for="p in sources.gsc" :key="p.id">
+                        <option :value="p.id" x-text="p.name + (p.total_pages > 0 ? ' (' + p.total_pages + ' pages)' : '')"></option>
+                    </template>
+                </select>
+                <p class="text-xs text-slate-400 mt-1">Enriches pages with click data for smarter ordering</p>
+            </div>
+
+            <!-- LLM Provider -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">AI Provider</label>
+                <select x-model="form.llm_provider"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <option value="anthropic">Anthropic Claude Haiku</option>
+                    <option value="openai">OpenAI GPT-4o-mini</option>
+                    <option value="mistral">Mistral Small</option>
+                    <option value="google">Google Gemini Flash</option>
+                </select>
+            </div>
+        </div>
+
+        <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+
+        <div class="flex gap-3 pt-1">
+            <button @click="createJob()"
+                    :disabled="creating"
+                    class="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                <span x-text="creating ? 'Generating…' : '✨ Generate llms.txt'"></span>
+            </button>
+            <button @click="showForm = false"
+                    class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- ── Jobs list + preview ──────────────────────────────────────────────── -->
+    <div x-show="!loading" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Left: Jobs list -->
+        <div class="space-y-3">
+            <h2 class="text-sm font-semibold text-slate-700 px-1">Generated Files</h2>
+
+            <div x-show="jobs.length === 0" class="text-sm text-slate-400 px-1">
+                No files generated yet.
+            </div>
+
+            <template x-for="job in jobs" :key="job.id">
+                <div @click="selectJob(job)"
+                     :class="selectedJob?.id === job.id ? 'ring-2 ring-indigo-500 bg-indigo-50' : 'bg-white hover:bg-slate-50'"
+                     class="border border-slate-200 rounded-xl p-4 cursor-pointer transition-all">
+
+                    <!-- Status badge -->
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <span class="font-medium text-sm text-slate-800 leading-tight" x-text="job.name"></span>
+                        <span :class="{
+                                'bg-yellow-100 text-yellow-700': job.status === 'pending',
+                                'bg-blue-100 text-blue-700':   job.status === 'running',
+                                'bg-green-100 text-green-700': job.status === 'completed',
+                                'bg-red-100 text-red-700':     job.status === 'failed',
+                              }"
+                              class="text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0"
+                              x-text="job.status">
+                        </span>
+                    </div>
+
+                    <p class="text-xs text-slate-500 mb-1" x-text="job.site_url"></p>
+
+                    <!-- Progress bar (running state) -->
+                    <div x-show="job.status === 'running'" class="mt-2">
+                        <div class="w-full bg-slate-200 rounded-full h-1.5">
+                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all"
+                                 :style="'width:' + job.progress + '%'"></div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1" x-text="job.progress_message"></p>
+                    </div>
+
+                    <!-- Stats (completed state) -->
+                    <div x-show="job.status === 'completed'"
+                         class="flex items-center gap-3 mt-2 text-xs text-slate-500">
+                        <span x-text="job.page_count + ' pages'"></span>
+                        <span x-text="job.llm_provider"></span>
+                        <span x-text="job.created_at ? new Date(job.created_at).toLocaleDateString() : ''"></span>
+                    </div>
+
+                    <!-- Error (failed state) -->
+                    <p x-show="job.status === 'failed'"
+                       class="text-xs text-red-600 mt-1" x-text="job.progress_message"></p>
+                </div>
+            </template>
+        </div>
+
+        <!-- Right: Preview panel -->
+        <div class="lg:col-span-2">
+            <!-- Empty state -->
+            <div x-show="!selectedJob"
+                 class="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-10 text-center text-slate-400 text-sm">
+                Select a generated file to preview it
+            </div>
+
+            <!-- Running state -->
+            <div x-show="selectedJob && (selectedJob.status === 'pending' || selectedJob.status === 'running')"
+                 class="bg-white border border-slate-200 rounded-xl p-8 text-center space-y-4">
+                <div class="flex justify-center">
+                    <svg class="animate-spin h-8 w-8 text-indigo-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                    </svg>
+                </div>
+                <p class="text-sm text-slate-600" x-text="selectedJob?.progress_message || 'Processing…'"></p>
+                <div class="w-full bg-slate-200 rounded-full h-2 max-w-sm mx-auto">
+                    <div class="bg-indigo-500 h-2 rounded-full transition-all"
+                         :style="'width:' + (selectedJob?.progress || 0) + '%'"></div>
+                </div>
+            </div>
+
+            <!-- Failed state -->
+            <div x-show="selectedJob && selectedJob.status === 'failed'"
+                 class="bg-red-50 border border-red-200 rounded-xl p-6 text-sm text-red-700">
+                <p class="font-semibold mb-2">Generation failed</p>
+                <p x-text="selectedJob?.progress_message"></p>
+            </div>
+
+            <!-- Completed: preview -->
+            <div x-show="selectedJob && selectedJob.status === 'completed'"
+                 class="bg-white border border-slate-200 rounded-xl overflow-hidden">
+
+                <!-- Toolbar -->
+                <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm font-mono font-semibold text-slate-700">llms.txt</span>
+                        <span class="text-xs text-slate-400" x-text="selectedJob?.page_count + ' pages'"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <!-- Copy button -->
+                        <button @click="copyContent()"
+                                class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-colors">
+                            <span x-text="copied ? '✓ Copied' : '📋 Copy'"></span>
+                        </button>
+                        <!-- Download button -->
+                        <a :href="'/api/llms-txt/jobs/' + selectedJob?.id + '/download'"
+                           class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
+                            ⬇ Download
+                        </a>
+                        <!-- Delete button -->
+                        <button @click="deleteJob(selectedJob.id, selectedJob.name)"
+                                class="p-1.5 text-slate-400 hover:text-red-600 transition-colors rounded-md hover:bg-red-50"
+                                title="Delete">
+                            🗑
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Rendered preview (tab) + raw (tab) -->
+                <div class="border-b border-slate-100">
+                    <div class="flex">
+                        <button @click="previewTab = 'rendered'"
+                                :class="previewTab === 'rendered' ? 'border-b-2 border-indigo-500 text-indigo-700' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2 text-xs font-medium transition-colors">
+                            Preview
+                        </button>
+                        <button @click="previewTab = 'raw'"
+                                :class="previewTab === 'raw' ? 'border-b-2 border-indigo-500 text-indigo-700' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2 text-xs font-medium transition-colors">
+                            Raw Markdown
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Rendered markdown view -->
+                <div x-show="previewTab === 'rendered'"
+                     class="p-5 prose prose-sm max-w-none overflow-y-auto max-h-[600px]"
+                     x-html="renderMarkdown(selectedJob?.generated_content || '')">
+                </div>
+
+                <!-- Raw text view -->
+                <div x-show="previewTab === 'raw'"
+                     class="overflow-y-auto max-h-[600px]">
+                    <pre class="p-5 text-xs font-mono text-slate-700 whitespace-pre-wrap leading-relaxed"
+                         x-text="selectedJob?.generated_content || ''"></pre>
+                </div>
+
+                <!-- Deployment hint -->
+                <div class="px-5 py-4 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
+                    <strong>Next step:</strong> Upload this file as
+                    <code class="bg-amber-100 px-1 rounded font-mono">llms.txt</code>
+                    to the root of your web server so it's accessible at
+                    <code class="bg-amber-100 px-1 rounded font-mono"
+                          x-text="(selectedJob?.site_url || 'https://yourdomain.com') + '/llms.txt'"></code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading spinner -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin h-7 w-7 text-slate-400" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </div>
+
+</div>
+
+<script>
+function llmsTxtApp() {
+    return {
+        jobs:        [],
+        loading:     true,
+        showForm:    false,
+        creating:    false,
+        formError:   '',
+        selectedJob: null,
+        pollTimer:   null,
+        previewTab:  'rendered',
+        copied:      false,
+
+        form: {
+            name:            '',
+            site_url:        '',
+            site_name:       '',
+            audit_id:        '',
+            gsc_property_id: '',
+            llm_provider:    'anthropic',
+        },
+
+        sources: {
+            audits: [],
+            gsc:    [],
+        },
+
+        async init() {
+            await Promise.all([this.loadJobs(), this.loadSources()]);
+        },
+
+        async loadJobs() {
+            this.loading = true;
+            const res  = await fetch('/api/llms-txt/jobs');
+            this.jobs  = await res.json();
+            this.loading = false;
+        },
+
+        async loadSources() {
+            const [auditRes, gscRes] = await Promise.all([
+                fetch('/api/audits?status=completed&page_size=100'),
+                fetch('/api/gsc/properties'),
+            ]);
+            const auditData    = await auditRes.json();
+            this.sources.audits = auditData.items || auditData || [];
+            this.sources.gsc   = await gscRes.json();
+        },
+
+        async createJob() {
+            this.formError = '';
+            if (!this.form.site_url.trim()) {
+                this.formError = 'Site URL is required.';
+                return;
+            }
+            this.creating = true;
+            try {
+                const res = await fetch('/api/llms-txt/jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name:            this.form.name    || null,
+                        site_url:        this.form.site_url.trim(),
+                        site_name:       this.form.site_name || null,
+                        audit_id:        this.form.audit_id        || null,
+                        gsc_property_id: this.form.gsc_property_id || null,
+                        llm_provider:    this.form.llm_provider,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.formError = err.detail || 'Failed to create job';
+                } else {
+                    const data = await res.json();
+                    this.showForm = false;
+                    this.form = { name: '', site_url: '', site_name: '', audit_id: '', gsc_property_id: '', llm_provider: 'anthropic' };
+                    await this.loadJobs();
+                    const newJob = this.jobs.find(j => j.id === data.job_id);
+                    if (newJob) await this.selectJob(newJob);
+                }
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        async selectJob(job) {
+            if (this.pollTimer) clearInterval(this.pollTimer);
+            // Fetch full detail (includes generated_content)
+            const res    = await fetch('/api/llms-txt/jobs/' + job.id);
+            this.selectedJob = await res.json();
+            this.previewTab = 'rendered';
+
+            if (this.selectedJob.status === 'pending' || this.selectedJob.status === 'running') {
+                this.pollTimer = setInterval(async () => {
+                    const r   = await fetch('/api/llms-txt/jobs/' + this.selectedJob.id);
+                    const upd = await r.json();
+                    this.selectedJob = upd;
+                    // Update in list too
+                    const idx = this.jobs.findIndex(j => j.id === upd.id);
+                    if (idx !== -1) this.jobs[idx] = { ...this.jobs[idx], ...upd };
+                    if (upd.status === 'completed' || upd.status === 'failed') {
+                        clearInterval(this.pollTimer);
+                    }
+                }, 2500);
+            }
+        },
+
+        async deleteJob(id, name) {
+            if (!confirm('Delete "' + name + '"?')) return;
+            if (this.selectedJob?.id === id) {
+                this.selectedJob = null;
+                if (this.pollTimer) clearInterval(this.pollTimer);
+            }
+            await fetch('/api/llms-txt/jobs/' + id, { method: 'DELETE' });
+            await this.loadJobs();
+        },
+
+        async copyContent() {
+            const text = this.selectedJob?.generated_content || '';
+            if (!text) return;
+            await navigator.clipboard.writeText(text);
+            this.copied = true;
+            setTimeout(() => { this.copied = false; }, 2000);
+        },
+
+        renderMarkdown(md) {
+            if (!md) return '';
+            // Simple markdown → HTML renderer (no external deps)
+            let html = md
+                // Escape HTML
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                // H1
+                .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-bold text-slate-900 mt-4 mb-3">$1</h1>')
+                // H2
+                .replace(/^## (.+)$/gm, '<h2 class="text-lg font-semibold text-slate-800 mt-6 mb-2 pb-1 border-b border-slate-200">$1</h2>')
+                // Blockquote
+                .replace(/^&gt; (.+)$/gm, '<blockquote class="border-l-4 border-indigo-400 bg-indigo-50 px-4 py-2 my-3 text-sm text-indigo-800 rounded-r-lg italic">$1</blockquote>')
+                // List items with markdown links: - [Title](url): desc
+                .replace(/^- \[(.+?)\]\((.+?)\)(.*?)$/gm, (_, title, url, desc) =>
+                    '<li class="flex items-start gap-1 py-0.5"><span class="text-slate-300 mt-0.5">•</span>' +
+                    '<span><a href="' + url + '" target="_blank" class="text-indigo-600 hover:underline font-medium">' + title + '</a>' +
+                    (desc ? '<span class="text-slate-500">' + desc + '</span>' : '') + '</span></li>'
+                )
+                // Wrap consecutive li in ul
+                .replace(/(<li[^>]*>[\s\S]*?<\/li>\n?)+/g, m => '<ul class="space-y-0.5 ml-2 my-2">' + m + '</ul>')
+                // Paragraphs
+                .replace(/^(?!<[hbul]|<\/[ul])(.+)$/gm, '<p class="text-sm text-slate-700 my-2">$1</p>')
+                // Inline code
+                .replace(/`([^`]+)`/g, '<code class="bg-slate-100 text-slate-800 px-1 rounded text-xs font-mono">$1</code>');
+            return html;
+        },
+    };
+}
+</script>
+{% endblock %}

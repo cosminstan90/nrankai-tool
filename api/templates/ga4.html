@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}GA4 Analytics — Google Analytics 4 Integration{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="ga4List()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">GA4 Analytics</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Upload Google Analytics 4 exports (pages + channel groups) and cross-reference
+                with your GSC data and audit results.
+            </p>
+        </div>
+        <button @click="showForm = !showForm"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 transition-colors flex-shrink-0">
+            <span x-text="showForm ? '✕ Cancel' : '+ Add Property'"></span>
+        </button>
+    </div>
+
+    <!-- Add property form -->
+    <div x-show="showForm" x-transition
+         class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <h2 class="text-base font-semibold text-slate-800 mb-4">Add GA4 Property</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Property name <span class="text-slate-400">(label for your reference)</span></label>
+                <input x-model="form.name" type="text" placeholder="e.g. My Main Site"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Site URL <span class="text-slate-400">(as shown in GA4)</span></label>
+                <input x-model="form.site_url" type="text" placeholder="https://example.com"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+            </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+            <button @click="createProperty()"
+                    :disabled="!form.name.trim() || !form.site_url.trim() || creating"
+                    class="px-4 py-2 bg-orange-600 text-white text-sm font-medium rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <span x-text="creating ? 'Creating…' : 'Create Property'"></span>
+            </button>
+            <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+        </div>
+    </div>
+
+    <!-- How to export hint -->
+    <div x-show="properties.length === 0 && !loading"
+         class="bg-orange-50 border border-orange-200 rounded-xl p-5 text-sm text-orange-800">
+        <p class="font-semibold mb-2">How to export from Google Analytics 4:</p>
+        <ol class="list-decimal list-inside space-y-1 text-orange-700">
+            <li>Open <a href="https://analytics.google.com" target="_blank" class="underline">Google Analytics 4</a> → select your property</li>
+            <li>Go to <strong>Reports → Engagement → Pages and screens</strong></li>
+            <li>Set your date range (last 3 months recommended)</li>
+            <li>Click <strong>Export → Download CSV</strong> — this gives you the pages report</li>
+            <li>Go to <strong>Reports → Acquisition → Traffic acquisition</strong></li>
+            <li>Export again for the channel groups report</li>
+            <li>Come back here, create a property, and upload both CSV files</li>
+        </ol>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-12 text-slate-400 text-sm">Loading…</div>
+
+    <!-- Properties grid -->
+    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <template x-for="p in properties" :key="p.id">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
+
+                <!-- Card header -->
+                <div class="p-5 flex-1">
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <h3 class="font-semibold text-slate-900 text-base leading-tight" x-text="p.name"></h3>
+                        <button @click="deleteProperty(p.id, p.name)"
+                                class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                                title="Delete property">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-400 truncate mb-3" x-text="p.site_url"></p>
+
+                    <!-- Stats chips -->
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="p.total_pages > 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-400'">
+                            📄 <span x-text="p.total_pages.toLocaleString()"></span> pages
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="p.total_channels > 0 ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-400'">
+                            📊 <span x-text="p.total_channels.toLocaleString()"></span> channels
+                        </span>
+                        <span x-show="p.date_range_start"
+                              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">
+                            📅 <span x-text="(p.date_range_start || '') + ' → ' + (p.date_range_end || '')"></span>
+                        </span>
+                    </div>
+
+                    <!-- Upload zone -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <!-- Pages upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[p.id+'_pages'] ? 'border-orange-300 bg-orange-50' : 'border-slate-200 hover:border-orange-300 hover:bg-orange-50'">
+                            <span class="text-lg">📄</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[p.id+'_pages'] ? 'Uploading…' : 'Pages CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(p.id, $event, 'pages')">
+                        </label>
+                        <!-- Channels upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[p.id+'_channels'] ? 'border-violet-300 bg-violet-50' : 'border-slate-200 hover:border-violet-300 hover:bg-violet-50'">
+                            <span class="text-lg">📊</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[p.id+'_channels'] ? 'Uploading…' : 'Channels CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(p.id, $event, 'channels')">
+                        </label>
+                    </div>
+
+                    <!-- Upload feedback -->
+                    <p x-show="uploadMsg[p.id]" x-text="uploadMsg[p.id]"
+                       :class="uploadErr[p.id] ? 'text-red-600' : 'text-emerald-600'"
+                       class="text-xs mt-2 font-medium"></p>
+                </div>
+
+                <!-- Card footer -->
+                <div class="border-t border-slate-100 px-5 py-3">
+                    <a :href="'/ga4/' + p.id"
+                       class="inline-flex items-center gap-1.5 text-sm font-medium text-orange-600 hover:text-orange-800 transition-colors">
+                        View data & insights →
+                    </a>
+                </div>
+            </div>
+        </template>
+    </div>
+
+</div>
+
+<script>
+function ga4List() {
+    return {
+        properties: [],
+        loading:    true,
+        showForm:   false,
+        creating:   false,
+        formError:  '',
+        form:       { name: '', site_url: '' },
+        uploading:  {},
+        uploadMsg:  {},
+        uploadErr:  {},
+
+        async init() {
+            await this.loadProperties();
+        },
+
+        async loadProperties() {
+            this.loading = true;
+            const res = await fetch('/api/ga4/properties');
+            this.properties = await res.json();
+            this.loading = false;
+        },
+
+        async createProperty() {
+            this.formError = '';
+            if (!this.form.name.trim() || !this.form.site_url.trim()) return;
+            this.creating = true;
+            try {
+                const res = await fetch('/api/ga4/properties', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.form.name.trim(), site_url: this.form.site_url.trim() }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.formError = err.detail || 'Failed to create property';
+                } else {
+                    this.form = { name: '', site_url: '' };
+                    this.showForm = false;
+                    await this.loadProperties();
+                }
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        async deleteProperty(id, name) {
+            if (!confirm(`Delete property "${name}" and all its data?\nThis cannot be undone.`)) return;
+            await fetch('/api/ga4/properties/' + id, { method: 'DELETE' });
+            await this.loadProperties();
+        },
+
+        async uploadCsv(propertyId, event, hint) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const key = propertyId + '_' + hint;
+            this.uploading = { ...this.uploading, [key]: true };
+            this.uploadMsg = { ...this.uploadMsg, [propertyId]: '' };
+            this.uploadErr = { ...this.uploadErr, [propertyId]: false };
+
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res = await fetch('/api/ga4/properties/' + propertyId + '/upload', {
+                    method: 'POST',
+                    body: fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = { ...this.uploadMsg, [propertyId]: data.detail || 'Upload failed' };
+                    this.uploadErr = { ...this.uploadErr, [propertyId]: true };
+                } else {
+                    this.uploadMsg = {
+                        ...this.uploadMsg,
+                        [propertyId]: `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported`,
+                    };
+                    await this.loadProperties();
+                }
+            } catch (e) {
+                this.uploadMsg = { ...this.uploadMsg, [propertyId]: 'Network error' };
+                this.uploadErr = { ...this.uploadErr, [propertyId]: true };
+            } finally {
+                this.uploading = { ...this.uploading, [key]: false };
+                event.target.value = '';   // reset file input
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

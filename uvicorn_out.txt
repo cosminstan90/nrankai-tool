@@ -1,0 +1,25 @@
+==> Starting Website LLM Analyzer API...
+[OK] Database initialized
+[OK] Configured providers: Anthropic, OpenAI
+[WARNING] Authentication disabled (set AUTH_USERNAME & AUTH_PASSWORD in .env to enable)
+[OK] Scheduler started (checks every 60 seconds)
+INFO:     127.0.0.1:52962 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52962 - "GET /briefs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58671 - "GET /briefs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58682 - "GET /llms-txt HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58682 - "GET /api/llms-txt/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63545 - "GET /api/gsc/properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49634 - "GET /api/audits?status=completed&page_size=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58682 - "GET /api/gsc/properties HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57001 - "GET /api/llms-txt/jobs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55446 - "GET /api/audits?status=completed&page_size=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55446 - "GET /briefs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55446 - "GET /api/briefs?audit_id=single_609052b4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57001 - "GET /api/briefs?audit_id=single_609052b4 HTTP/1.1" 200 OK
+Error generating brief for https://ing.ro/imm/Internet-banking/ING-Business: 'tuple' object has no attribute 'strip'
+INFO:     127.0.0.1:54417 - "POST /api/briefs/generate-page HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:56043 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56043 - "GET /new-audit HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56043 - "GET /briefs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56043 - "GET /briefs HTTP/1.1" 200 OK
+ 

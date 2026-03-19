@@ -1,0 +1,806 @@
+{% extends "base.html" %}
+
+{% block title %}Competitor Gap Analysis - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="gapAnalysisApp()" x-init="init()" class="space-y-6">
+    
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Competitor Gap Analysis</h1>
+            <p class="text-gray-600 mt-1">Detailed per-criterion competitive comparison</p>
+        </div>
+        <button 
+            @click="showGenerateForm = !showGenerateForm"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+        >
+            <span x-show="!showGenerateForm">+ New Gap Analysis</span>
+            <span x-show="showGenerateForm">Close Form</span>
+        </button>
+    </div>
+
+    <!-- Generate Form -->
+    <div x-show="showGenerateForm" 
+         x-transition
+         class="bg-white rounded-lg shadow p-6 border border-gray-200">
+        <h2 class="text-xl font-semibold mb-4">Generate New Gap Analysis</h2>
+        
+        <form @submit.prevent="generateGapAnalysis()" class="space-y-4">
+            <!-- Name -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Analysis Name</label>
+                <input 
+                    type="text" 
+                    x-model="newGap.name"
+                    placeholder="ING vs BCR vs BRD - SEO Gaps"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                >
+            </div>
+
+            <!-- Load from Benchmark (Optional) -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Load from Benchmark (Optional)
+                </label>
+                <select 
+                    x-model="selectedBenchmark"
+                    @change="loadFromBenchmark()"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                    <option value="">-- Select a benchmark project --</option>
+                    <template x-for="benchmark in benchmarks" :key="benchmark.id">
+                        <option :value="benchmark.id" x-text="benchmark.name"></option>
+                    </template>
+                </select>
+                <p class="text-xs text-gray-500 mt-1">Auto-fills target and competitors from benchmark</p>
+            </div>
+
+            <!-- Target Audit -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Target Audit (Your Website)</label>
+                <select 
+                    x-model="newGap.target_audit_id"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                >
+                    <option value="">-- Select target audit --</option>
+                    <template x-for="audit in completedAudits" :key="audit.id">
+                        <option :value="audit.id" x-text="`${audit.website} (${audit.audit_type})`"></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Competitor Audits (Multi-select) -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Competitor Audits (Select 1-3)
+                </label>
+                <div class="space-y-2 max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-2">
+                    <template x-for="audit in competitorAudits" :key="audit.id">
+                        <label class="flex items-center space-x-2 hover:bg-gray-50 p-2 rounded cursor-pointer">
+                            <input 
+                                type="checkbox" 
+                                :value="audit.id"
+                                x-model="newGap.competitor_audit_ids"
+                                :disabled="newGap.competitor_audit_ids.length >= 3 && !newGap.competitor_audit_ids.includes(audit.id)"
+                                class="rounded text-blue-600 focus:ring-blue-500"
+                            >
+                            <span class="text-sm" x-text="`${audit.website} (${audit.audit_type})`"></span>
+                        </label>
+                    </template>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">
+                    Selected: <span x-text="newGap.competitor_audit_ids.length"></span> / 3
+                </p>
+            </div>
+
+            <!-- Provider & Model -->
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Provider</label>
+                    <select 
+                        x-model="newGap.provider"
+                        @change="updateModels()"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        <option value="anthropic">Anthropic Claude</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="google">Google Gemini</option>
+                        <option value="mistral">Mistral</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Model</label>
+                    <select 
+                        x-model="newGap.model"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                        <option value="">Use provider default</option>
+                        <option value="claude-haiku-4-5-20251001">Claude 4.5 Haiku (cheap)</option>
+                        <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (recommended)</option>
+                        <option value="gpt-4o-mini">GPT-4o Mini (cheap)</option>
+                        <option value="gpt-4o">GPT-4o</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="flex justify-end space-x-3">
+                <button 
+                    type="button"
+                    @click="showGenerateForm = false"
+                    class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition"
+                >
+                    Cancel
+                </button>
+                <button 
+                    type="submit"
+                    :disabled="generating"
+                    class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                >
+                    <span x-show="!generating">Generate Gap Analysis</span>
+                    <span x-show="generating">Generating...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Gap Analyses List -->
+    <div x-show="!selectedGap" class="space-y-4">
+        <h2 class="text-xl font-semibold">Existing Gap Analyses</h2>
+        
+        <div x-show="gaps.length === 0" class="text-center py-12 bg-gray-50 rounded-lg">
+            <p class="text-gray-500">No gap analyses yet. Create one above!</p>
+        </div>
+
+        <div class="grid gap-4">
+            <template x-for="gap in gaps" :key="gap.id">
+                <div class="bg-white rounded-lg shadow p-6 border border-gray-200 hover:shadow-md transition cursor-pointer"
+                     @click="viewGap(gap.id)">
+                    <div class="flex justify-between items-start">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-gray-900" x-text="gap.name"></h3>
+                            <p class="text-sm text-gray-600 mt-1">
+                                Target: <span x-text="gap.target_website"></span>
+                            </p>
+                            <p class="text-xs text-gray-500 mt-1" x-text="formatDate(gap.created_at)"></p>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <!-- Status Badge -->
+                            <span :class="{
+                                'bg-yellow-100 text-yellow-800': gap.status === 'pending' || gap.status === 'running',
+                                'bg-green-100 text-green-800': gap.status === 'completed',
+                                'bg-red-100 text-red-800': gap.status === 'failed'
+                            }" class="px-3 py-1 rounded-full text-xs font-medium">
+                                <span x-text="gap.status"></span>
+                            </span>
+                            
+                            <!-- Overall Gap Score -->
+                            <div x-show="gap.overall_gap_score !== null" class="text-center">
+                                <div :class="{
+                                    'text-green-600': gap.overall_gap_score < 20,
+                                    'text-yellow-600': gap.overall_gap_score >= 20 && gap.overall_gap_score < 50,
+                                    'text-red-600': gap.overall_gap_score >= 50
+                                }" class="text-2xl font-bold" x-text="gap.overall_gap_score"></div>
+                                <div class="text-xs text-gray-500">Gap Score</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Gap Analysis Detail View -->
+    <div x-show="selectedGap" class="space-y-6">
+        <!-- Back Button -->
+        <button @click="selectedGap = null" class="text-blue-600 hover:text-blue-800 flex items-center space-x-1">
+            <span>←</span>
+            <span>Back to list</span>
+        </button>
+
+        <!-- Header with Export Buttons -->
+        <div class="bg-white rounded-lg shadow p-6 border border-gray-200">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h2 class="text-2xl font-bold text-gray-900" x-text="selectedGap?.name"></h2>
+                    <p class="text-gray-600 mt-1">
+                        Target: <span class="font-medium" x-text="selectedGap?.target_website"></span>
+                    </p>
+                </div>
+                <div class="flex space-x-2">
+                    <button 
+                        @click="exportJSON(selectedGap.id)"
+                        class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                    >
+                        Export JSON
+                    </button>
+                    <button 
+                        class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                    >
+                        Export PDF
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overall Gap Score (Donut Chart) -->
+        <div x-show="selectedGap?.status === 'completed'" class="bg-white rounded-lg shadow p-6 border border-gray-200">
+            <h3 class="text-lg font-semibold mb-4">Overall Gap Score</h3>
+            <div class="flex items-center justify-center">
+                <div class="text-center">
+                    <div :class="{
+                        'text-green-600': selectedGap?.overall_gap_score < 20,
+                        'text-yellow-600': selectedGap?.overall_gap_score >= 20 && selectedGap?.overall_gap_score < 50,
+                        'text-red-600': selectedGap?.overall_gap_score >= 50
+                    }" class="text-6xl font-bold" x-text="selectedGap?.overall_gap_score"></div>
+                    <div class="text-gray-600 mt-2">
+                        <span x-show="selectedGap?.overall_gap_score < 20">✅ Leading competitors</span>
+                        <span x-show="selectedGap?.overall_gap_score >= 20 && selectedGap?.overall_gap_score < 50">⚠️ Moderate gaps</span>
+                        <span x-show="selectedGap?.overall_gap_score >= 50">🔴 Significant gaps</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Summary — Chart.js grouped bar + detail bars -->
+        <div x-show="selectedGap?.status === 'completed' && selectedGap?.gaps" class="bg-white rounded-lg shadow p-6 border border-gray-200">
+            <h3 class="text-lg font-semibold mb-4">Category Summary</h3>
+            <!-- Chart.js grouped bar chart -->
+            <div class="relative mb-6" style="height:220px">
+                <canvas id="categoryChart"></canvas>
+            </div>
+            <!-- Detail bars per category -->
+            <div class="space-y-4">
+                <template x-for="(summary, category) in getCategorySummary(selectedGap?.gaps)" :key="category">
+                    <div>
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm font-medium capitalize" x-text="category.replace(/_/g, ' ')"></span>
+                            <span class="text-sm text-gray-600">
+                                Gap: <span class="font-semibold" x-text="summary.gap"></span> pts
+                            </span>
+                        </div>
+                        <div class="flex space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-6 relative overflow-hidden">
+                                <div :style="`width: ${summary.client_avg}%`"
+                                     class="bg-blue-500 h-full rounded-full flex items-center justify-end pr-2">
+                                    <span class="text-xs text-white font-medium" x-text="summary.client_avg"></span>
+                                </div>
+                            </div>
+                            <div class="flex-1 bg-gray-200 rounded-full h-6 relative overflow-hidden">
+                                <div :style="`width: ${summary.competitor_avg}%`"
+                                     class="bg-green-500 h-full rounded-full flex items-center justify-end pr-2">
+                                    <span class="text-xs text-white font-medium" x-text="summary.competitor_avg"></span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex justify-between text-xs text-gray-500 mt-1">
+                            <span>🔵 You</span>
+                            <span>🟢 Competitors</span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Gap Details Table -->
+        <div x-show="selectedGap?.status === 'completed' && selectedGap?.gaps" class="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-lg font-semibold">Detailed Gap Analysis</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Criterion</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Your Score</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Best Competitor</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gap</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Severity</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200">
+                        <template x-for="(gap, index) in sortedGaps(selectedGap?.gaps)" :key="index">
+                            <tr @click="expandedGap = expandedGap === index ? null : index" 
+                                class="hover:bg-gray-50 cursor-pointer">
+                                <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="gap.criterion"></td>
+                                <td class="px-6 py-4 text-sm text-gray-700" x-text="gap.client_score"></td>
+                                <td class="px-6 py-4 text-sm text-gray-700">
+                                    <div x-text="gap.best_competitor_score"></div>
+                                    <div class="text-xs text-gray-500" x-text="gap.best_competitor"></div>
+                                </td>
+                                <td class="px-6 py-4 text-sm font-semibold" 
+                                    :class="gap.gap_size > 0 ? 'text-red-600' : 'text-green-600'"
+                                    x-text="gap.gap_size"></td>
+                                <td class="px-6 py-4 text-sm">
+                                    <span :class="{
+                                        'bg-red-100 text-red-800': gap.severity === 'critical',
+                                        'bg-orange-100 text-orange-800': gap.severity === 'high',
+                                        'bg-yellow-100 text-yellow-800': gap.severity === 'medium',
+                                        'bg-green-100 text-green-800': gap.severity === 'low'
+                                    }" class="px-2 py-1 rounded-full text-xs font-medium">
+                                        <span x-show="gap.severity === 'critical'">🔴</span>
+                                        <span x-show="gap.severity === 'high'">🟠</span>
+                                        <span x-show="gap.severity === 'medium'">🟡</span>
+                                        <span x-show="gap.severity === 'low'">🟢</span>
+                                        <span x-text="gap.severity"></span>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-sm">
+                                    <span class="text-blue-600 hover:text-blue-800">View details →</span>
+                                </td>
+                            </tr>
+                            <tr x-show="expandedGap === index" x-transition>
+                                <td colspan="6" class="px-6 py-4 bg-gray-50">
+                                    <div class="space-y-3 text-sm">
+                                        <div>
+                                            <span class="font-medium text-gray-700">Details:</span>
+                                            <p class="text-gray-600 mt-1" x-text="gap.details"></p>
+                                        </div>
+                                        <div>
+                                            <span class="font-medium text-gray-700">Competitor Example:</span>
+                                            <p class="text-gray-600 mt-1 italic" x-text="gap.competitor_example"></p>
+                                        </div>
+                                        <div>
+                                            <span class="font-medium text-gray-700">Fix Action:</span>
+                                            <p class="text-blue-700 mt-1 font-medium" x-text="gap.fix_action"></p>
+                                        </div>
+                                        <div class="flex space-x-4">
+                                            <span class="text-gray-600">
+                                                Effort: <span class="font-medium capitalize" x-text="gap.effort"></span>
+                                            </span>
+                                            <span class="text-gray-600">
+                                                Impact: <span class="font-medium capitalize" x-text="gap.impact"></span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Strengths Section -->
+        <div x-show="selectedGap?.status === 'completed' && selectedGap?.strengths && selectedGap.strengths.length > 0" 
+             class="bg-white rounded-lg shadow p-6 border border-gray-200">
+            <h3 class="text-lg font-semibold mb-4 text-green-700">✅ Your Strengths</h3>
+            <div class="grid gap-4">
+                <template x-for="strength in selectedGap?.strengths" :key="strength.criterion">
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <div class="flex justify-between items-start">
+                            <div class="flex-1">
+                                <h4 class="font-semibold text-green-900" x-text="strength.criterion"></h4>
+                                <p class="text-sm text-green-700 mt-1" x-text="strength.details"></p>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-2xl font-bold text-green-700">+<span x-text="strength.advantage"></span></div>
+                                <div class="text-xs text-green-600">advantage</div>
+                            </div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Recommendations Panel -->
+        <div x-show="selectedGap?.status === 'completed' && selectedGap?.recommendations"
+             class="bg-white rounded-lg shadow p-6 border border-gray-200">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold">Prioritized Recommendations</h3>
+                <button @click="copyAllRecs()"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                        title="Copy all recommendations to clipboard">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                    <span x-text="copyAllLabel">Copy All</span>
+                </button>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-6">
+                <!-- Quick Wins -->
+                <div>
+                    <h4 class="font-semibold text-green-700 mb-3">🚀 Quick Wins</h4>
+                    <div class="space-y-3">
+                        <template x-for="rec in selectedGap?.recommendations?.quick_wins || []" :key="rec.action">
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-3 relative group">
+                                <button @click="copyRec(rec)"
+                                        class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-green-500 hover:bg-green-100"
+                                        title="Copy this recommendation">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                </button>
+                                <p class="text-sm font-medium text-gray-900 pr-5" x-text="rec.action"></p>
+                                <div class="flex justify-between mt-2 text-xs text-gray-600">
+                                    <span>Impact: <span class="font-semibold" x-text="rec.impact"></span></span>
+                                    <span>Effort: <span class="font-semibold" x-text="rec.effort"></span></span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1" x-text="rec.estimated_time"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Medium Term -->
+                <div>
+                    <h4 class="font-semibold text-blue-700 mb-3">📅 Medium Term</h4>
+                    <div class="space-y-3">
+                        <template x-for="rec in selectedGap?.recommendations?.medium_term || []" :key="rec.action">
+                            <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 relative group">
+                                <button @click="copyRec(rec)"
+                                        class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-blue-500 hover:bg-blue-100"
+                                        title="Copy this recommendation">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                </button>
+                                <p class="text-sm font-medium text-gray-900 pr-5" x-text="rec.action"></p>
+                                <div class="flex justify-between mt-2 text-xs text-gray-600">
+                                    <span>Impact: <span class="font-semibold" x-text="rec.impact"></span></span>
+                                    <span>Effort: <span class="font-semibold" x-text="rec.effort"></span></span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1" x-text="rec.estimated_time"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Strategic -->
+                <div>
+                    <h4 class="font-semibold text-purple-700 mb-3">🎯 Strategic</h4>
+                    <div class="space-y-3">
+                        <template x-for="rec in selectedGap?.recommendations?.strategic || []" :key="rec.action">
+                            <div class="bg-purple-50 border border-purple-200 rounded-lg p-3 relative group">
+                                <button @click="copyRec(rec)"
+                                        class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-purple-500 hover:bg-purple-100"
+                                        title="Copy this recommendation">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                </button>
+                                <p class="text-sm font-medium text-gray-900 pr-5" x-text="rec.action"></p>
+                                <div class="flex justify-between mt-2 text-xs text-gray-600">
+                                    <span>Impact: <span class="font-semibold" x-text="rec.impact"></span></span>
+                                    <span>Effort: <span class="font-semibold" x-text="rec.effort"></span></span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-1" x-text="rec.estimated_time"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function gapAnalysisApp() {
+    return {
+        gaps: [],
+        completedAudits: [],
+        competitorAudits: [],
+        benchmarks: [],
+        selectedGap: null,
+        selectedBenchmark: '',
+        showGenerateForm: false,
+        generating: false,
+        expandedGap: null,
+        copyAllLabel: 'Copy All',
+        _categoryChart: null,
+        newGap: {
+            name: '',
+            target_audit_id: '',
+            competitor_audit_ids: [],
+            benchmark_id: '',
+            provider: 'anthropic',
+            model: ''
+        },
+
+        async init() {
+            await this.loadGapAnalyses();
+            await this.loadAudits();
+            await this.loadBenchmarks();
+            
+            // Check for benchmark_id in URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const benchmarkId = urlParams.get('benchmark_id');
+            if (benchmarkId) {
+                this.selectedBenchmark = benchmarkId;
+                await this.loadFromBenchmark();
+                this.showGenerateForm = true;
+            }
+            
+            // Auto-refresh if any gap is running
+            setInterval(() => {
+                const hasRunning = this.gaps.some(g => g.status === 'running' || g.status === 'pending');
+                if (hasRunning || this.selectedGap?.status === 'running' || this.selectedGap?.status === 'pending') {
+                    this.refreshData();
+                }
+            }, 5000);
+        },
+
+        async loadGapAnalyses() {
+            try {
+                const response = await fetch('/api/gap-analysis');
+                this.gaps = await response.json();
+            } catch (error) {
+                console.error('Error loading gap analyses:', error);
+            }
+        },
+
+        async loadAudits() {
+            try {
+                const response = await fetch('/api/audits?status=completed');
+                const audits = await response.json();
+                this.completedAudits = audits;
+                this.competitorAudits = audits;
+            } catch (error) {
+                console.error('Error loading audits:', error);
+            }
+        },
+
+        async loadBenchmarks() {
+            try {
+                const response = await fetch('/api/benchmarks');
+                this.benchmarks = await response.json();
+            } catch (error) {
+                console.error('Error loading benchmarks:', error);
+            }
+        },
+
+        async loadFromBenchmark() {
+            if (!this.selectedBenchmark) return;
+            
+            const benchmark = this.benchmarks.find(b => b.id === this.selectedBenchmark);
+            if (benchmark) {
+                this.newGap.target_audit_id = benchmark.target_audit_id;
+                this.newGap.competitor_audit_ids = benchmark.competitor_audit_ids || [];
+                this.newGap.benchmark_id = benchmark.id;
+                if (!this.newGap.name) {
+                    this.newGap.name = `${benchmark.name} - Gap Analysis`;
+                }
+            }
+        },
+
+        async generateGapAnalysis() {
+            if (this.newGap.competitor_audit_ids.length === 0) {
+                alert('Please select at least 1 competitor audit');
+                return;
+            }
+
+            this.generating = true;
+            try {
+                const response = await fetch('/api/gap-analysis/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(this.newGap)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    alert('Gap analysis generation started! Refresh in a few moments.');
+                    this.showGenerateForm = false;
+                    this.resetForm();
+                    await this.loadGapAnalyses();
+                } else {
+                    const error = await response.json();
+                    alert(`Error: ${error.detail}`);
+                }
+            } catch (error) {
+                console.error('Error generating gap analysis:', error);
+                alert('Error generating gap analysis');
+            } finally {
+                this.generating = false;
+            }
+        },
+
+        async viewGap(gapId) {
+            try {
+                const response = await fetch(`/api/gap-analysis/${gapId}`);
+                this.selectedGap = await response.json();
+                // Render chart after Alpine has updated the DOM
+                this.$nextTick(() => this.renderCategoryChart(this.selectedGap?.gaps));
+            } catch (error) {
+                console.error('Error loading gap details:', error);
+            }
+        },
+
+        renderCategoryChart(gaps) {
+            const canvas = document.getElementById('categoryChart');
+            if (!canvas || !gaps || !gaps.length) return;
+
+            // Destroy previous instance to avoid overlap
+            if (this._categoryChart) {
+                this._categoryChart.destroy();
+                this._categoryChart = null;
+            }
+
+            const summary = this.getCategorySummary(gaps);
+            const labels  = Object.keys(summary).map(k => k.replace(/_/g, ' '));
+            const youData = Object.values(summary).map(s => s.client_avg);
+            const cmpData = Object.values(summary).map(s => s.competitor_avg);
+
+            this._categoryChart = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: 'You',
+                            data: youData,
+                            backgroundColor: 'rgba(59,130,246,0.75)',
+                            borderRadius: 4,
+                        },
+                        {
+                            label: 'Best Competitor',
+                            data: cmpData,
+                            backgroundColor: 'rgba(34,197,94,0.75)',
+                            borderRadius: 4,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+                        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.raw}/100` } }
+                    },
+                    scales: {
+                        y: { min: 0, max: 100, grid: { color: '#f1f5f9' }, ticks: { font: { size: 10 } } },
+                        x: { grid: { display: false }, ticks: { font: { size: 10 } } }
+                    }
+                }
+            });
+        },
+
+        async copyRec(rec) {
+            const text = [
+                rec.action,
+                rec.impact  ? `Impact: ${rec.impact}`  : '',
+                rec.effort  ? `Effort: ${rec.effort}`  : '',
+                rec.estimated_time ? `Time: ${rec.estimated_time}` : '',
+            ].filter(Boolean).join(' | ');
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (_) {
+                // fallback for non-secure contexts
+                const el = document.createElement('textarea');
+                el.value = text;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            }
+        },
+
+        async copyAllRecs() {
+            const recs = this.selectedGap?.recommendations;
+            if (!recs) return;
+            const sections = [
+                { label: '🚀 Quick Wins', items: recs.quick_wins || [] },
+                { label: '📅 Medium Term', items: recs.medium_term || [] },
+                { label: '🎯 Strategic', items: recs.strategic || [] },
+            ];
+            const lines = [];
+            for (const { label, items } of sections) {
+                if (!items.length) continue;
+                lines.push(label);
+                items.forEach(r => {
+                    lines.push(`• ${r.action} | Impact: ${r.impact} | Effort: ${r.effort}`);
+                });
+                lines.push('');
+            }
+            const text = lines.join('\n');
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch (_) {
+                const el = document.createElement('textarea');
+                el.value = text;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            }
+            this.copyAllLabel = 'Copied!';
+            setTimeout(() => { this.copyAllLabel = 'Copy All'; }, 2000);
+        },
+
+        async refreshData() {
+            await this.loadGapAnalyses();
+            if (this.selectedGap) {
+                await this.viewGap(this.selectedGap.id);
+            }
+        },
+
+        async exportJSON(gapId) {
+            try {
+                const response = await fetch(`/api/gap-analysis/${gapId}/export`);
+                const data = await response.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `gap-analysis-${gapId}.json`;
+                a.click();
+            } catch (error) {
+                console.error('Error exporting:', error);
+            }
+        },
+
+        getCategorySummary(gaps) {
+            if (!gaps || gaps.length === 0) return {};
+            
+            const categories = {};
+            gaps.forEach(gap => {
+                const cat = gap.category;
+                if (!categories[cat]) {
+                    categories[cat] = {
+                        client_scores: [],
+                        competitor_scores: []
+                    };
+                }
+                categories[cat].client_scores.push(gap.client_score);
+                categories[cat].competitor_scores.push(gap.best_competitor_score);
+            });
+            
+            const summary = {};
+            Object.keys(categories).forEach(cat => {
+                const client_avg = Math.round(
+                    categories[cat].client_scores.reduce((a, b) => a + b, 0) / categories[cat].client_scores.length
+                );
+                const competitor_avg = Math.round(
+                    categories[cat].competitor_scores.reduce((a, b) => a + b, 0) / categories[cat].competitor_scores.length
+                );
+                summary[cat] = {
+                    client_avg,
+                    competitor_avg,
+                    gap: competitor_avg - client_avg
+                };
+            });
+            
+            return summary;
+        },
+
+        sortedGaps(gaps) {
+            if (!gaps) return [];
+            return [...gaps].sort((a, b) => b.gap_size - a.gap_size);
+        },
+
+        resetForm() {
+            this.newGap = {
+                name: '',
+                target_audit_id: '',
+                competitor_audit_ids: [],
+                benchmark_id: '',
+                provider: 'anthropic',
+                model: ''
+            };
+            this.selectedBenchmark = '';
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        },
+
+        updateModels() {
+            // Reset model when provider changes
+            this.newGap.model = '';
+        }
+    };
+}
+</script>
+{% endblock %}

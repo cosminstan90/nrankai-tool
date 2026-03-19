@@ -1,0 +1,63 @@
+<td class="px-6 py-4 whitespace-nowrap">
+    <div class="flex items-center">
+        <div class="text-sm font-medium text-slate-900">{{ audit.website }}</div>
+    </div>
+</td>
+<td class="px-6 py-4 whitespace-nowrap">
+    <div class="text-sm text-slate-900">{{ audit.audit_type }}</div>
+</td>
+<td class="px-6 py-4 whitespace-nowrap">
+    <div class="text-sm text-slate-500 capitalize">{{ audit.provider }}</div>
+</td>
+<td class="px-6 py-4 whitespace-nowrap">
+    {% if audit.status == 'pending' %}
+    <span class="badge badge-pending">
+        <svg class="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 8 8"><circle cx="4" cy="4" r="3"/></svg>
+        Pending
+    </span>
+    {% elif audit.status in ['scraping', 'converting', 'analyzing'] %}
+    <span class="badge badge-{{ audit.status }}">
+        <svg class="animate-spin mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        {{ audit.current_step }}
+    </span>
+    <div class="mt-1 w-full bg-slate-200 rounded-full h-1.5">
+        <div class="bg-yellow-500 h-1.5 rounded-full progress-bar" style="width: {{ audit.progress_percent }}%"></div>
+    </div>
+    {% elif audit.status == 'completed' %}
+    <span class="badge badge-completed">
+        <svg class="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+        </svg>
+        Completed
+    </span>
+    {% elif audit.status == 'failed' %}
+    <span class="badge badge-failed">
+        <svg class="mr-1 h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+        </svg>
+        Failed
+    </span>
+    {% endif %}
+</td>
+<td class="px-6 py-4 whitespace-nowrap">
+    {% if audit.average_score is not none %}
+    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium
+        {% if audit.average_score >= 85 %}score-excellent
+        {% elif audit.average_score >= 70 %}score-good
+        {% elif audit.average_score >= 50 %}score-needs-work
+        {% else %}score-poor{% endif %}">
+        {{ audit.average_score }}
+    </span>
+    {% else %}
+    <span class="text-sm text-slate-400">—</span>
+    {% endif %}
+</td>
+<td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+    {{ audit.created_at.strftime('%b %d, %H:%M') if audit.created_at else '—' }}
+</td>
+<td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+    <a href="/audits/{{ audit.id }}" class="text-primary-600 hover:text-primary-900">View</a>
+</td>

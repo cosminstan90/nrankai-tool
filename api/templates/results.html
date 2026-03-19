@@ -1,0 +1,802 @@
+{% extends "base.html" %}
+
+{% block title %}Results - {{ audit.website }} {{ audit.audit_type }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-start">
+        <div>
+            <nav class="flex mb-4" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2">
+                    <li><a href="/" class="text-slate-400 hover:text-slate-500">Dashboard</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li><a href="/audits/{{ audit.id }}" class="text-slate-400 hover:text-slate-500">{{ audit.website }}</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li class="text-slate-700 font-medium">Results</li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-slate-900">Audit Results</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                {{ audit.audit_type }} audit for {{ audit.website }} &bull; {{ total }} pages analyzed
+            </p>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <button onclick="generateBriefsTop10()"
+                    class="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-lg shadow-sm text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Generate Briefs (Top 10)
+            </button>
+            <a href="/audits/{{ audit.id }}/report" target="_blank"
+               class="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-lg shadow-sm text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Report
+            </a>
+            <a href="/api/reports/{{ audit.id }}/pdf?include_summary=true"
+               class="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-lg shadow-sm text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Download PDF
+            </a>
+            <a href="/api/audits/{{ audit.id }}/results/csv"
+               class="inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-lg shadow-sm text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Export CSV
+            </a>
+            <a href="/api/audits/{{ audit.id }}/export"
+               class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Export Excel
+            </a>
+        </div>
+    </div>
+    
+    <!-- Score Distribution Chart -->
+    {% if score_distribution %}
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-slate-700">Score Distribution</h3>
+            <div class="flex gap-4 text-xs text-slate-500">
+                <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-red-400 mr-1"></span>Poor (0–49): <strong class="text-slate-700">{{ score_distribution['0-49'] }}</strong></span>
+                <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-yellow-400 mr-1"></span>Needs Work (50–69): <strong class="text-slate-700">{{ score_distribution['50-69'] }}</strong></span>
+                <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-emerald-400 mr-1"></span>Good (70–84): <strong class="text-slate-700">{{ score_distribution['70-84'] }}</strong></span>
+                <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-green-500 mr-1"></span>Excellent (85–100): <strong class="text-slate-700">{{ score_distribution['85-100'] }}</strong></span>
+            </div>
+        </div>
+        <div class="relative" style="height:120px">
+            <canvas id="distChart"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Filter Bar -->
+    <form method="GET" action="" class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <div class="flex flex-wrap gap-3 items-end">
+            <!-- URL search -->
+            <div class="flex-1 min-w-[200px]">
+                <label class="block text-xs font-medium text-slate-600 mb-1">URL contains</label>
+                <input type="text" name="url_search" value="{{ url_search }}"
+                       placeholder="e.g. /blog"
+                       class="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-transparent">
+            </div>
+            <!-- Min score -->
+            <div class="w-28">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Min score</label>
+                <input type="number" name="min_score" value="{{ min_score }}"
+                       min="0" max="100" placeholder="0"
+                       class="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-sky-500 focus:border-transparent">
+            </div>
+            <!-- Max score -->
+            <div class="w-28">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Max score</label>
+                <input type="number" name="max_score" value="{{ max_score }}"
+                       min="0" max="100" placeholder="100"
+                       class="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm font-mono focus:ring-2 focus:ring-sky-500 focus:border-transparent">
+            </div>
+            <!-- Classification -->
+            <div class="w-44">
+                <label class="block text-xs font-medium text-slate-600 mb-1">Classification</label>
+                <select name="classification"
+                        class="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:ring-2 focus:ring-sky-500 focus:border-transparent">
+                    <option value="">All</option>
+                    <option value="excellent"    {% if classification == 'excellent' %}selected{% endif %}>Excellent</option>
+                    <option value="good"         {% if classification == 'good' %}selected{% endif %}>Good</option>
+                    <option value="needs_work"   {% if classification == 'needs_work' %}selected{% endif %}>Needs Work</option>
+                    <option value="poor"         {% if classification == 'poor' %}selected{% endif %}>Poor</option>
+                </select>
+            </div>
+            <!-- Buttons -->
+            <div class="flex gap-2">
+                <button type="submit"
+                        class="inline-flex items-center px-4 py-1.5 bg-sky-600 text-white text-sm font-medium rounded-md hover:bg-sky-700 transition-colors">
+                    Filter
+                </button>
+                {% if url_search or min_score != '' or max_score != '' or classification %}
+                <a href="?page=1"
+                   class="inline-flex items-center px-4 py-1.5 bg-slate-100 text-slate-700 text-sm font-medium rounded-md hover:bg-slate-200 transition-colors">
+                    Clear
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+
+    <!-- Bulk Actions Bar (sticky, appears when rows are checked) -->
+    <div id="bulk-bar" class="hidden sticky top-2 z-30 bg-sky-600 text-white rounded-lg shadow-lg px-5 py-3 flex items-center justify-between">
+        <span class="text-sm font-medium"><span id="bulk-count">0</span> page<span id="bulk-plural">s</span> selected</span>
+        <div class="flex items-center gap-3">
+            <button onclick="generateBriefsBulk()"
+                    class="inline-flex items-center px-4 py-1.5 bg-white text-sky-700 text-sm font-semibold rounded-md hover:bg-sky-50 transition-colors">
+                <svg class="-ml-0.5 mr-1.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Generate Briefs
+            </button>
+            <button onclick="clearSelection()"
+                    class="text-sky-200 hover:text-white text-sm underline transition-colors">
+                Clear
+            </button>
+        </div>
+    </div>
+
+    <!-- Results Table -->
+    <div class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th scope="col" class="px-4 py-3 w-10">
+                            <input type="checkbox" id="select-all-cb" onchange="toggleAll(this.checked)"
+                                   title="Select all on this page"
+                                   class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer">
+                        </th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Page URL</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Score</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Classification</th>
+                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Details</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-slate-200">
+                    {% for result in results %}
+                    <tr class="hover:bg-slate-50 transition-colors result-row" data-result-id="{{ result.id }}">
+                        <td class="px-4 py-4 w-10">
+                            <input type="checkbox" class="result-cb rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+                                   data-result-id="{{ result.id }}"
+                                   onchange="toggleResult({{ result.id }}, this.checked)">
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="text-sm text-slate-900 max-w-md truncate" title="{{ result.page_url }}">
+                                <a href="/pages?url={{ result.page_url | urlencode }}"
+                                   class="hover:text-primary-600 hover:underline"
+                                   title="View all audit types for this page">
+                                    {{ result.page_url }}
+                                </a>
+                            </div>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="text-xs text-slate-500">{{ result.filename }}</span>
+                                <a href="/pages?url={{ result.page_url | urlencode }}"
+                                   class="text-xs text-primary-500 hover:text-primary-700">↗ all audits</a>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if result.score is not none %}
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium
+                                {% if result.score >= 85 %}score-excellent
+                                {% elif result.score >= 70 %}score-good
+                                {% elif result.score >= 50 %}score-needs-work
+                                {% else %}score-poor{% endif %}">
+                                {{ result.score }}
+                            </span>
+                            {% else %}
+                            <span class="text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if result.classification %}
+                            <span class="text-sm text-slate-700 capitalize">{{ result.classification | replace('_', ' ') }}</span>
+                            {% else %}
+                            <span class="text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex gap-2">
+                                <button onclick="showResultDetails('{{ result.id }}')"
+                                        class="text-primary-600 hover:text-primary-900 text-sm font-medium">
+                                    View
+                                </button>
+                                <button onclick="generateBrief('{{ result.id }}', this)"
+                                        class="text-emerald-600 hover:text-emerald-900 text-sm font-medium"
+                                        title="Generate content brief for this page">
+                                    Brief
+                                </button>
+                                <button onclick="rerunPage('{{ result.id }}', this)"
+                                        class="text-amber-600 hover:text-amber-900 text-sm font-medium"
+                                        title="Re-analyze this page">
+                                    Re-run
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Pagination -->
+        {% if total_pages > 1 %}
+        <div class="bg-slate-50 px-6 py-3 flex items-center justify-between border-t border-slate-200">
+            <div class="flex-1 flex justify-between sm:hidden">
+                {% if page > 1 %}
+                <a href="?{{ filter_qs }}page={{ page - 1 }}" class="relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50">
+                    Previous
+                </a>
+                {% endif %}
+                {% if page < total_pages %}
+                <a href="?{{ filter_qs }}page={{ page + 1 }}" class="ml-3 relative inline-flex items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50">
+                    Next
+                </a>
+                {% endif %}
+            </div>
+            <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <p class="text-sm text-slate-700">
+                        Showing page <span class="font-medium">{{ page }}</span> of <span class="font-medium">{{ total_pages }}</span>
+                        (<span class="font-medium">{{ total }}</span> total results)
+                    </p>
+                </div>
+                <div>
+                    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                        {% if page > 1 %}
+                        <a href="?{{ filter_qs }}page={{ page - 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50">
+                            <span class="sr-only">Previous</span>
+                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </a>
+                        {% endif %}
+
+                        {% for p in range(1, total_pages + 1) %}
+                            {% if p == page %}
+                            <span class="relative inline-flex items-center px-4 py-2 border border-slate-300 bg-primary-50 text-sm font-medium text-primary-600">
+                                {{ p }}
+                            </span>
+                            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                            <a href="?{{ filter_qs }}page={{ p }}" class="relative inline-flex items-center px-4 py-2 border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+                                {{ p }}
+                            </a>
+                            {% elif p == page - 3 or p == page + 3 %}
+                            <span class="relative inline-flex items-center px-4 py-2 border border-slate-300 bg-white text-sm font-medium text-slate-700">
+                                ...
+                            </span>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if page < total_pages %}
+                        <a href="?{{ filter_qs }}page={{ page + 1 }}" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-slate-300 bg-white text-sm font-medium text-slate-500 hover:bg-slate-50">
+                            <span class="sr-only">Next</span>
+                            <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                            </svg>
+                        </a>
+                        {% endif %}
+                    </nav>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Result Details Modal -->
+<div id="result-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-slate-500 bg-opacity-75 transition-opacity" onclick="closeResultModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen">&#8203;</span>
+        <div class="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full sm:p-6">
+            <div class="absolute top-0 right-0 pt-4 pr-4">
+                <button type="button" onclick="closeResultModal()" class="bg-white rounded-md text-slate-400 hover:text-slate-500">
+                    <span class="sr-only">Close</span>
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="modal-content">
+                <div class="flex justify-center">
+                    <svg class="animate-spin h-8 w-8 text-primary-600" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+            </div>
+            <!-- Analyst Notes -->
+            <div class="mt-5 border-t border-slate-200 pt-4">
+                <div class="flex items-center justify-between mb-1.5">
+                    <label class="text-xs font-semibold text-slate-600 uppercase tracking-wide">Analyst Note</label>
+                    <span id="note-status" class="text-xs text-slate-400"></span>
+                </div>
+                <textarea id="note-textarea" rows="3"
+                          placeholder="Add a note for this page (saved per result)…"
+                          class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-sky-500 focus:border-transparent resize-none"></textarea>
+                <div class="mt-2 flex justify-end">
+                    <button id="note-save-btn" onclick="saveNote()"
+                            class="px-4 py-1.5 text-xs font-medium rounded-md bg-sky-600 text-white hover:bg-sky-700 transition-colors">
+                        Save Note
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if score_distribution %}
+(function () {
+    const dist = {{ score_distribution | tojson }};
+    const labels  = ['Poor (0–49)', 'Needs Work (50–69)', 'Good (70–84)', 'Excellent (85–100)'];
+    const values  = [dist['0-49'], dist['50-69'], dist['70-84'], dist['85-100']];
+    const colors  = ['#f87171', '#facc15', '#34d399', '#22c55e'];
+    const ctx = document.getElementById('distChart');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ` ${ctx.parsed.y} pages`
+                        }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: '#f1f5f9' }, ticks: { precision: 0 } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+    }
+})();
+{% endif %}
+</script>
+
+<script>
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function scoreColor(val) {
+    if (val >= 85) return 'text-green-600';
+    if (val >= 70) return 'text-emerald-600';
+    if (val >= 50) return 'text-yellow-600';
+    return 'text-red-600';
+}
+
+function scoreBg(val) {
+    if (val >= 85) return 'bg-green-50 border-green-200';
+    if (val >= 70) return 'bg-emerald-50 border-emerald-200';
+    if (val >= 50) return 'bg-yellow-50 border-yellow-200';
+    return 'bg-red-50 border-red-200';
+}
+
+function showResultDetails(resultId) {
+    const modal = document.getElementById('result-modal');
+    const content = document.getElementById('modal-content');
+
+    modal.classList.remove('hidden');
+    content.innerHTML = '<div class="flex justify-center py-8"><svg class="animate-spin h-8 w-8 text-primary-600" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
+
+    fetch(`/api/audits/{{ audit.id }}/results/${resultId}`)
+        .then(res => res.json())
+        .then(data => {
+            const score = data.score;
+            const scoreNum = typeof score === 'number' ? score : null;
+            const scoreBgClass = scoreNum !== null ? scoreBg(scoreNum) : 'bg-slate-50 border-slate-200';
+            const scoreColorClass = scoreNum !== null ? scoreColor(scoreNum) : 'text-slate-400';
+            const classLabel = (data.classification || '—').replace(/_/g, ' ');
+
+            let html = `
+                <h3 class="text-lg font-semibold text-slate-900 mb-1 pr-8">${escapeHtml(data.page_url || '')}</h3>
+                <p class="text-xs text-slate-500 mb-4">${escapeHtml(data.filename || '')}</p>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="p-4 rounded-lg border ${scoreBgClass}">
+                        <span class="text-xs text-slate-500 block mb-1">Score</span>
+                        <div class="text-3xl font-bold ${scoreColorClass}">${scoreNum !== null ? scoreNum : '—'}<span class="text-base font-normal text-slate-400">/100</span></div>
+                    </div>
+                    <div class="p-4 rounded-lg bg-slate-50 border border-slate-200">
+                        <span class="text-xs text-slate-500 block mb-1">Classification</span>
+                        <div class="text-lg capitalize mt-1 font-medium text-slate-800">${escapeHtml(classLabel)}</div>
+                    </div>
+                </div>
+            `;
+
+            if (data.result_json) {
+                html += renderStructuredResult(data.result_json);
+            }
+
+            content.innerHTML = html;
+            loadNote(resultId);
+        })
+        .catch(err => {
+            content.innerHTML = `<div class="text-red-600 p-4">Error loading details: ${escapeHtml(err.message)}</div>`;
+        });
+}
+
+function renderStructuredResult(json) {
+    let html = '';
+
+    // Find the main audit object: prefer keys ending in '_audit' or containing 'audit',
+    // falling back to any object value with the most keys.
+    let mainKey = null;
+    let mainObj = null;
+    let maxKeys = 0;
+    for (const [key, val] of Object.entries(json)) {
+        if (typeof val === 'object' && val !== null && !Array.isArray(val)) {
+            const keyCount = Object.keys(val).length;
+            const isAuditKey = key.includes('audit') || key.includes('score') || key.includes('analysis');
+            if (isAuditKey || keyCount > maxKeys) {
+                if (isAuditKey || keyCount > maxKeys) {
+                    mainKey = key;
+                    mainObj = val;
+                    maxKeys = keyCount;
+                }
+                if (isAuditKey) break; // prefer audit-named keys
+            }
+        }
+    }
+
+    // Render main audit object (scores, short strings, small arrays)
+    if (mainObj && typeof mainObj === 'object') {
+        const title = mainKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        html += `<div class="mb-5">
+            <h4 class="text-sm font-semibold text-slate-900 mb-3 pb-1 border-b border-slate-200">${escapeHtml(title)}</h4>
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">`;
+
+        for (const [key, val] of Object.entries(mainObj)) {
+            const label = key.replace(/_/g, ' ');
+            if (typeof val === 'number') {
+                const isScore = /score|likelihood|readability|rating|index/i.test(key);
+                const colorClass = isScore ? scoreColor(val) : 'text-slate-900';
+                html += `<div class="p-2 rounded bg-slate-50 border border-slate-100">
+                    <span class="text-[10px] text-slate-500 block uppercase tracking-wide">${escapeHtml(label)}</span>
+                    <span class="text-lg font-semibold ${colorClass}">${val}</span>
+                </div>`;
+            } else if (typeof val === 'boolean') {
+                html += `<div class="p-2 rounded bg-slate-50 border border-slate-100">
+                    <span class="text-[10px] text-slate-500 block uppercase tracking-wide">${escapeHtml(label)}</span>
+                    <span class="text-sm font-medium ${val ? 'text-green-600' : 'text-red-600'}">${val ? '✓ Yes' : '✗ No'}</span>
+                </div>`;
+            } else if (typeof val === 'string' && val.length <= 120) {
+                html += `<div class="p-2 rounded bg-slate-50 border border-slate-100 col-span-2">
+                    <span class="text-[10px] text-slate-500 block uppercase tracking-wide">${escapeHtml(label)}</span>
+                    <span class="text-sm text-slate-700">${escapeHtml(val)}</span>
+                </div>`;
+            } else if (Array.isArray(val) && val.length > 0 && val.length <= 12 && typeof val[0] === 'string') {
+                html += `<div class="p-2 rounded bg-slate-50 border border-slate-100 col-span-3">
+                    <span class="text-[10px] text-slate-500 block uppercase tracking-wide mb-1">${escapeHtml(label)}</span>
+                    <div class="flex flex-wrap gap-1">${val.map(v => `<span class="px-1.5 py-0.5 bg-white border border-slate-200 rounded text-xs text-slate-700">${escapeHtml(String(v))}</span>`).join('')}</div>
+                </div>`;
+            }
+        }
+        html += '</div></div>';
+    }
+
+    // Render top-level string fields that are not in mainObj and not well-known list keys
+    const listKeys = new Set(['optimization_opportunities', 'recommendations', 'issues', 'suggestions',
+                              'blockers', 'critical_issues', 'action_items']);
+    for (const [key, val] of Object.entries(json)) {
+        if (key === mainKey || listKeys.has(key)) continue;
+        if (typeof val === 'string' && val.length > 0 && val.length <= 500) {
+            html += `<div class="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-100">
+                <span class="text-[10px] text-slate-500 block uppercase tracking-wide mb-1">${escapeHtml(key.replace(/_/g, ' '))}</span>
+                <p class="text-sm text-slate-700">${escapeHtml(val)}</p>
+            </div>`;
+        }
+    }
+
+    // Render optimization opportunities / recommendations / issues
+    const opps = json.optimization_opportunities || json.recommendations || json.issues || json.suggestions ||
+                 json.blockers || json.critical_issues || json.action_items || [];
+    const oppsLabel = json.optimization_opportunities ? 'Optimization Opportunities' :
+                      json.recommendations ? 'Recommendations' :
+                      json.issues ? 'Issues Found' :
+                      json.suggestions ? 'Suggestions' :
+                      json.blockers ? 'Blockers' :
+                      json.critical_issues ? 'Critical Issues' : 'Action Items';
+
+    if (Array.isArray(opps) && opps.length > 0) {
+        html += `<div class="mb-4">
+            <h4 class="text-sm font-semibold text-slate-900 mb-3 pb-1 border-b border-slate-200">${oppsLabel} <span class="text-xs font-normal text-slate-400">(${opps.length})</span></h4>
+            <div class="space-y-2 max-h-80 overflow-y-auto pr-1">`;
+
+        for (const opp of opps) {
+            if (typeof opp === 'object' && opp !== null) {
+                const priority = (opp.priority || opp.severity || '').toLowerCase();
+                const pBorderBg = priority === 'high' || priority === 'critical' ? 'border-red-300 bg-red-50' :
+                                  priority === 'medium' ? 'border-yellow-300 bg-yellow-50' :
+                                  priority === 'low' ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50';
+                const pBadge = priority ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                    priority === 'high' || priority === 'critical' ? 'bg-red-100 text-red-700' :
+                    priority === 'medium' ? 'bg-yellow-100 text-yellow-700' :
+                    priority === 'low' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'
+                }">${escapeHtml(priority)}</span>` : '';
+                const category = opp.category || opp.area || opp.type || '';
+                const text = opp.recommendation || opp.suggestion || opp.description || opp.issue || opp.text || '';
+                const currentState = opp.current_state || opp.current || '';
+                const impact = opp.impact || opp.expected_impact || '';
+
+                html += `<div class="p-3 rounded-lg border ${pBorderBg}">
+                    <div class="flex items-center gap-2 mb-1.5">
+                        ${pBadge}
+                        ${category ? `<span class="text-xs font-medium text-slate-600 uppercase tracking-wide">${escapeHtml(category)}</span>` : ''}
+                    </div>
+                    ${text ? `<p class="text-sm text-slate-700">${escapeHtml(text)}</p>` : ''}
+                    ${currentState ? `<p class="text-xs text-slate-500 mt-1.5 italic">Current: ${escapeHtml(currentState)}</p>` : ''}
+                    ${impact ? `<p class="text-xs text-emerald-700 mt-1 font-medium">Impact: ${escapeHtml(impact)}</p>` : ''}
+                </div>`;
+            } else if (typeof opp === 'string' && opp.trim()) {
+                html += `<div class="p-2 rounded border border-slate-200 bg-slate-50 text-sm text-slate-700">• ${escapeHtml(opp)}</div>`;
+            }
+        }
+        html += '</div></div>';
+    }
+
+    // Collapsible raw JSON
+    html += `<details class="mt-4">
+        <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-600 select-none">▶ View raw JSON</summary>
+        <pre class="mt-2 bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto text-xs max-h-64 overflow-y-auto">${escapeHtml(JSON.stringify(json, null, 2))}</pre>
+    </details>`;
+
+    return html;
+}
+
+// ── Result Notes ──────────────────────────────────────────────────────────────
+let _currentNoteResultId = null;
+
+async function loadNote(resultId) {
+    _currentNoteResultId = resultId;
+    const area = document.getElementById('note-textarea');
+    const status = document.getElementById('note-status');
+    if (!area) return;
+    area.value = '';
+    status.textContent = 'Loading…';
+    try {
+        const resp = await fetch(`/api/notes/${resultId}`);
+        const data = await resp.json();
+        area.value = data.note || '';
+        status.textContent = data.updated_at ? `Last saved: ${data.updated_at.slice(0,16).replace('T',' ')}` : '';
+    } catch {
+        status.textContent = 'Could not load note.';
+    }
+}
+
+async function saveNote() {
+    if (!_currentNoteResultId) return;
+    const area = document.getElementById('note-textarea');
+    const status = document.getElementById('note-status');
+    const btn  = document.getElementById('note-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Saving…';
+    try {
+        const resp = await fetch(`/api/notes/${_currentNoteResultId}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ note: area.value })
+        });
+        const data = await resp.json();
+        status.textContent = `Saved at ${data.updated_at.slice(0,16).replace('T',' ')}`;
+        btn.textContent = '✓ Saved';
+        setTimeout(() => { btn.textContent = 'Save Note'; btn.disabled = false; }, 1500);
+    } catch {
+        status.textContent = 'Save failed.';
+        btn.textContent = 'Save Note';
+        btn.disabled = false;
+    }
+}
+
+function closeResultModal() {
+    document.getElementById('result-modal').classList.add('hidden');
+}
+
+async function rerunPage(resultId, btn) {
+    if (!confirm('Re-analyze this page? This will call the LLM API again.')) return;
+    
+    const originalText = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    
+    try {
+        const resp = await fetch(`/api/audits/{{ audit.id }}/rerun/${resultId}`, { method: 'POST' });
+        const data = await resp.json();
+        
+        if (resp.ok) {
+            btn.textContent = '✓';
+            btn.className = 'text-green-600 text-sm font-medium';
+            // Reload page to show updated score
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            alert(data.detail || 'Re-run failed');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function generateBrief(resultId, btn) {
+    if (!confirm('Generate content brief for this page? This will call the LLM API.')) return;
+    
+    const originalText = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    
+    try {
+        const resp = await fetch('/api/briefs/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                audit_id: '{{ audit.id }}',
+                page_ids: [parseInt(resultId)],
+                max_pages: 1,
+                language: 'Romanian'
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (resp.ok) {
+            btn.textContent = '✓';
+            btn.className = 'text-green-600 text-sm font-medium';
+            alert('Brief generation started! Check the Briefs page in a few moments.');
+        } else {
+            alert(data.detail || 'Brief generation failed');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function generateBriefsTop10() {
+    if (!confirm('Generate content briefs for top 10 low-scoring pages? This will call the LLM API multiple times.')) return;
+    
+    try {
+        const resp = await fetch('/api/briefs/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                audit_id: '{{ audit.id }}',
+                max_pages: 10,
+                language: 'Romanian'
+            })
+        });
+        
+        const data = await resp.json();
+        
+        if (resp.ok) {
+            alert('Brief generation started for top 10 pages! Check the Briefs page in a few minutes.');
+        } else {
+            alert(data.detail || 'Brief generation failed');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeResultModal();
+});
+
+// ── Bulk Selection ──────────────────────────────────────────────────────────
+const selectedResults = new Set();
+
+function updateBulkBar() {
+    const bar = document.getElementById('bulk-bar');
+    const countEl = document.getElementById('bulk-count');
+    const pluralEl = document.getElementById('bulk-plural');
+    const n = selectedResults.size;
+    countEl.textContent = n;
+    if (pluralEl) pluralEl.textContent = n === 1 ? '' : 's';
+    bar.classList.toggle('hidden', n === 0);
+}
+
+function toggleAll(checked) {
+    document.querySelectorAll('.result-cb').forEach(cb => {
+        cb.checked = checked;
+        const id = parseInt(cb.dataset.resultId);
+        if (checked) selectedResults.add(id);
+        else selectedResults.delete(id);
+    });
+    updateBulkBar();
+}
+
+function toggleResult(id, checked) {
+    if (checked) selectedResults.add(id);
+    else selectedResults.delete(id);
+    // Sync the select-all checkbox state
+    const allCbs = document.querySelectorAll('.result-cb');
+    const checkedCbs = document.querySelectorAll('.result-cb:checked');
+    const selectAllCb = document.getElementById('select-all-cb');
+    if (selectAllCb) {
+        selectAllCb.indeterminate = checkedCbs.length > 0 && checkedCbs.length < allCbs.length;
+        selectAllCb.checked = allCbs.length > 0 && checkedCbs.length === allCbs.length;
+    }
+    updateBulkBar();
+}
+
+function clearSelection() {
+    selectedResults.clear();
+    document.querySelectorAll('.result-cb').forEach(cb => cb.checked = false);
+    const selectAllCb = document.getElementById('select-all-cb');
+    if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
+    updateBulkBar();
+}
+
+async function generateBriefsBulk() {
+    if (selectedResults.size === 0) return;
+    const count = selectedResults.size;
+    if (!confirm(`Generate content briefs for ${count} selected page${count !== 1 ? 's' : ''}?\nThis will call the LLM API.`)) return;
+
+    const bar = document.getElementById('bulk-bar');
+    const originalHtml = bar.innerHTML;
+    bar.innerHTML = '<span class="text-sm font-medium animate-pulse">⏳ Starting brief generation…</span>';
+
+    try {
+        const resp = await fetch('/api/briefs/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                audit_id: '{{ audit.id }}',
+                page_ids: [...selectedResults],
+                max_pages: selectedResults.size,
+                language: 'Romanian'
+            })
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            bar.innerHTML = '<span class="text-sm font-medium">✓ Brief generation started! Check the <a href="/briefs" class="underline font-semibold">Briefs page</a> in a few moments.</span>';
+            setTimeout(() => clearSelection(), 4000);
+        } else {
+            alert(data.detail || 'Brief generation failed');
+            bar.innerHTML = originalHtml;
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+        bar.innerHTML = originalHtml;
+    }
+}
+</script>
+{% endblock %}

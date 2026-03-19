@@ -1,0 +1,820 @@
+{% extends "base.html" %}
+
+{% block title %}AI Citation Tracker{% endblock %}
+
+{% block content %}
+<div x-data="citationTrackerApp()" x-init="init()">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">AI Citation Tracker</h1>
+        <p class="text-gray-600">Monitor how often your website URLs are cited across AI platforms</p>
+    </div>
+
+    <!-- Create Tracker Button -->
+    <div class="mb-6">
+        <button 
+            @click="showCreateForm = true" 
+            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+        >
+            + Create Citation Tracker
+        </button>
+    </div>
+
+    <!-- Create Tracker Form Modal -->
+    <div 
+        x-show="showCreateForm" 
+        x-cloak
+        class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4"
+        @click.self="showCreateForm = false"
+    >
+        <div class="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center sticky top-0 bg-white">
+                <h2 class="text-2xl font-bold text-gray-900">Create Citation Tracker</h2>
+                <button @click="showCreateForm = false" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+            
+            <div class="p-6">
+                <form @submit.prevent="createTracker()">
+                    <!-- Name -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Tracker Name</label>
+                        <input 
+                            type="text" 
+                            x-model="newTracker.name" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="ING.ro Citation Tracking"
+                            required
+                        >
+                    </div>
+
+                    <!-- Website -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Website Domain</label>
+                        <input 
+                            type="text" 
+                            x-model="newTracker.website" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="ing.ro"
+                            required
+                        >
+                        <p class="text-xs text-gray-500 mt-1">Just the domain, e.g., "ing.ro" or "example.com"</p>
+                    </div>
+
+                    <!-- URL Patterns -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">URL Patterns to Track</label>
+                        <div class="space-y-2">
+                            <template x-for="(pattern, index) in newTracker.url_patterns" :key="index">
+                                <div class="flex items-center gap-2">
+                                    <input 
+                                        type="text" 
+                                        x-model="newTracker.url_patterns[index]" 
+                                        class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                        placeholder="ing.ro"
+                                    >
+                                    <button 
+                                        type="button"
+                                        @click="newTracker.url_patterns.splice(index, 1)"
+                                        class="text-red-500 hover:text-red-700"
+                                        x-show="newTracker.url_patterns.length > 1"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </template>
+                            <button 
+                                type="button"
+                                @click="newTracker.url_patterns.push('')"
+                                class="text-sm text-blue-600 hover:text-blue-700"
+                            >
+                                + Add URL Pattern
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Different variations: "ing.ro", "www.ing.ro", "ing.ro/"</p>
+                    </div>
+
+                    <!-- Tracking Queries -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Tracking Queries</label>
+                        <div class="mb-2">
+                            <button 
+                                type="button"
+                                @click="generateQueries()"
+                                class="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded hover:bg-purple-200 transition"
+                                :disabled="generatingQueries"
+                            >
+                                <span x-show="!generatingQueries">✨ Generate Query Suggestions</span>
+                                <span x-show="generatingQueries">Generating...</span>
+                            </button>
+                        </div>
+                        <textarea 
+                            x-model="newTracker.queries_text" 
+                            rows="8"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                            placeholder="One query per line...&#10;Ce este ING&#10;Cum funcționează ING&#10;Cel mai bun servicii bancare România"
+                            required
+                        ></textarea>
+                        <p class="text-xs text-gray-500 mt-1">One query per line. Minimum 5, maximum 100 queries.</p>
+                    </div>
+
+                    <!-- Industry (optional, for query generation) -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Industry (for query suggestions)</label>
+                        <input 
+                            type="text" 
+                            x-model="newTracker.industry" 
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                            placeholder="e.g., banking, e-commerce, healthcare"
+                        >
+                    </div>
+
+                    <!-- Providers -->
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">AI Providers to Track</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="newTracker.providers.chatgpt" class="mr-2">
+                                <span class="text-gray-700">ChatGPT (GPT-4)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="newTracker.providers.claude" class="mr-2">
+                                <span class="text-gray-700">Claude (Sonnet 3.5)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="newTracker.providers.perplexity" class="mr-2">
+                                <span class="text-gray-700">Perplexity (Sonar)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Schedule -->
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Scan Schedule</label>
+                        <select 
+                            x-model="newTracker.schedule_preset"
+                            @change="updateScheduleCron()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value="">Manual only (no auto-scan)</option>
+                            <option value="weekly">Weekly (Monday 9 AM)</option>
+                            <option value="biweekly">Biweekly (1st & 15th at 9 AM)</option>
+                            <option value="monthly">Monthly (1st at 9 AM)</option>
+                            <option value="custom">Custom cron expression</option>
+                        </select>
+                        
+                        <div x-show="newTracker.schedule_preset === 'custom'" class="mt-2">
+                            <input 
+                                type="text" 
+                                x-model="newTracker.schedule_cron" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                                placeholder="0 9 * * 1"
+                            >
+                            <p class="text-xs text-gray-500 mt-1">Cron format: minute hour day month weekday</p>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="flex justify-end gap-3">
+                        <button 
+                            type="button"
+                            @click="showCreateForm = false"
+                            class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="submit"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                            :disabled="creatingTracker"
+                        >
+                            <span x-show="!creatingTracker">Create Tracker</span>
+                            <span x-show="creatingTracker">Creating...</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="text-center py-12">
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p class="mt-4 text-gray-600">Loading trackers...</p>
+    </div>
+
+    <!-- Trackers List -->
+    <div x-show="!loading && trackers.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <template x-for="tracker in trackers" :key="tracker.id">
+            <div class="bg-white rounded-xl shadow-md hover:shadow-lg transition p-6">
+                <!-- Header -->
+                <div class="flex justify-between items-start mb-4">
+                    <div class="flex-1">
+                        <h3 class="font-bold text-lg text-gray-900 mb-1" x-text="tracker.name"></h3>
+                        <p class="text-sm text-gray-500" x-text="tracker.website"></p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button 
+                            @click="toggleTracker(tracker.id)"
+                            :class="tracker.is_active ? 'text-green-600 hover:text-green-700' : 'text-gray-400 hover:text-gray-600'"
+                            :title="tracker.is_active ? 'Active' : 'Paused'"
+                        >
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Citation Rate KPI -->
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                    <div class="text-center">
+                        <div class="text-4xl font-bold text-blue-600" x-text="tracker.latest_citation_rate !== null ? tracker.latest_citation_rate.toFixed(1) + '%' : 'N/A'"></div>
+                        <div class="text-sm text-gray-600 mt-1">Citation Rate</div>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="space-y-2 mb-4 text-sm">
+                    <div class="flex justify-between text-gray-600">
+                        <span>Total Scans:</span>
+                        <span class="font-medium" x-text="tracker.scan_count || 0"></span>
+                    </div>
+                    <div class="flex justify-between text-gray-600">
+                        <span>Last Scan:</span>
+                        <span class="font-medium" x-text="tracker.last_scan_at ? formatDate(tracker.last_scan_at) : 'Never'"></span>
+                    </div>
+                    <div class="flex justify-between text-gray-600">
+                        <span>Schedule:</span>
+                        <span class="font-medium" x-text="tracker.schedule_cron || 'Manual'"></span>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex gap-2">
+                    <button 
+                        @click="viewTracker(tracker.id)"
+                        class="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition text-sm"
+                    >
+                        View Details
+                    </button>
+                    <button 
+                        @click="startScan(tracker.id)"
+                        class="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition text-sm"
+                        title="Scan Now"
+                    >
+                        ▶
+                    </button>
+                    <button 
+                        @click="deleteTracker(tracker.id)"
+                        class="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition text-sm"
+                        title="Delete"
+                    >
+                        🗑
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && trackers.length === 0" class="text-center py-12">
+        <div class="text-6xl mb-4">📊</div>
+        <h3 class="text-xl font-semibold text-gray-900 mb-2">No Citation Trackers Yet</h3>
+        <p class="text-gray-600 mb-6">Create your first tracker to monitor how AI platforms cite your URLs</p>
+        <button 
+            @click="showCreateForm = true"
+            class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition"
+        >
+            Create First Tracker
+        </button>
+    </div>
+
+    <!-- Tracker Detail View (replaces list when viewing) -->
+    <div x-show="viewingTracker" x-cloak class="mt-8">
+        <div class="mb-4">
+            <button 
+                @click="viewingTracker = null; loadTrackers()"
+                class="text-blue-600 hover:text-blue-700 flex items-center gap-2"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                </svg>
+                Back to Trackers
+            </button>
+        </div>
+
+        <template x-if="viewingTracker">
+            <div>
+                <!-- Header -->
+                <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2" x-text="viewingTracker.name"></h2>
+                    <p class="text-gray-600" x-text="viewingTracker.website"></p>
+                </div>
+
+                <!-- KPI Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                    <!-- Overall Citation Rate -->
+                    <div class="bg-white rounded-xl shadow-md p-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-600">Citation Rate</span>
+                        </div>
+                        <div class="text-4xl font-bold text-blue-600" x-text="getLatestScanMetric('citation_rate')"></div>
+                        <p class="text-xs text-gray-500 mt-2">Your URLs were cited in responses</p>
+                    </div>
+
+                    <!-- Total Citations -->
+                    <div class="bg-white rounded-xl shadow-md p-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-600">Total Citations</span>
+                        </div>
+                        <div class="text-4xl font-bold text-green-600" x-text="getLatestScanMetric('total_citations')"></div>
+                        <p class="text-xs text-gray-500 mt-2">URL citations found</p>
+                    </div>
+
+                    <!-- Total Mentions -->
+                    <div class="bg-white rounded-xl shadow-md p-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-600">Total Mentions</span>
+                        </div>
+                        <div class="text-4xl font-bold text-purple-600" x-text="getLatestScanMetric('total_mentions')"></div>
+                        <p class="text-xs text-gray-500 mt-2">Brand mentions (broader)</p>
+                    </div>
+                </div>
+
+                <!-- Provider Breakdown -->
+                <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Provider Breakdown</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4" x-html="renderProviderBreakdown()"></div>
+                </div>
+
+                <!-- Trend Chart -->
+                <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Citation Rate Trend</h3>
+                    <canvas id="trendChart" height="100"></canvas>
+                </div>
+
+                <!-- Top Cited URLs -->
+                <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Top Cited URLs</h3>
+                    <div x-html="renderTopCitedUrls()"></div>
+                </div>
+
+                <!-- Query Performance -->
+                <div class="bg-white rounded-xl shadow-md p-6">
+                    <h3 class="text-lg font-bold text-gray-900 mb-4">Query Performance</h3>
+                    <div x-html="renderQueryPerformance()"></div>
+                </div>
+            </div>
+        </template>
+    </div>
+</div>
+
+<script>
+function citationTrackerApp() {
+    return {
+        loading: false,
+        trackers: [],
+        showCreateForm: false,
+        creatingTracker: false,
+        generatingQueries: false,
+        viewingTracker: null,
+        trendChart: null,
+        
+        newTracker: {
+            name: '',
+            website: '',
+            url_patterns: [''],
+            queries_text: '',
+            industry: '',
+            providers: {
+                chatgpt: true,
+                claude: true,
+                perplexity: true
+            },
+            schedule_preset: '',
+            schedule_cron: null
+        },
+
+        async init() {
+            await this.loadTrackers();
+        },
+
+        async loadTrackers() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/citations/trackers');
+                const data = await response.json();
+                if (data.success) {
+                    this.trackers = data.trackers;
+                }
+            } catch (error) {
+                console.error('Error loading trackers:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async createTracker() {
+            // Validate
+            const queries = this.newTracker.queries_text.split('\n').filter(q => q.trim().length > 0);
+            if (queries.length < 5) {
+                alert('Please provide at least 5 tracking queries');
+                return;
+            }
+
+            if (queries.length > 100) {
+                alert('Maximum 100 tracking queries allowed');
+                return;
+            }
+
+            // Clean URL patterns
+            const url_patterns = this.newTracker.url_patterns.filter(p => p.trim().length > 0);
+            if (url_patterns.length === 0) {
+                alert('Please provide at least one URL pattern');
+                return;
+            }
+
+            this.creatingTracker = true;
+            try {
+                const response = await fetch('/api/citations/trackers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: this.newTracker.name,
+                        website: this.newTracker.website,
+                        url_patterns: url_patterns,
+                        tracking_queries: queries,
+                        providers_config: this.newTracker.providers,
+                        schedule_cron: this.newTracker.schedule_cron
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json();
+                    const msg = Array.isArray(errData.detail)
+                        ? errData.detail.map(e => e.msg).join('\n')
+                        : (errData.detail || 'Unknown error');
+                    alert('Error creating tracker:\n' + msg);
+                    return;
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    alert('✓ Citation tracker created successfully!');
+                    this.showCreateForm = false;
+                    this.resetNewTracker();
+                    await this.loadTrackers();
+                } else {
+                    alert('Error creating tracker');
+                }
+            } catch (error) {
+                console.error('Error creating tracker:', error);
+                alert('Error creating tracker: ' + error.message);
+            } finally {
+                this.creatingTracker = false;
+            }
+        },
+
+        async generateQueries() {
+            if (!this.newTracker.website) {
+                alert('Please enter a website domain first');
+                return;
+            }
+
+            this.generatingQueries = true;
+            try {
+                const response = await fetch('/api/citations/generate-queries', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        website: this.newTracker.website,
+                        industry: this.newTracker.industry || null
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    // Group by category
+                    const queries = data.suggestions.map(s => s.query);
+                    this.newTracker.queries_text = queries.join('\n');
+                    alert(`✨ Generated ${queries.length} query suggestions!`);
+                }
+            } catch (error) {
+                console.error('Error generating queries:', error);
+                alert('Error generating queries');
+            } finally {
+                this.generatingQueries = false;
+            }
+        },
+
+        updateScheduleCron() {
+            const presets = {
+                'weekly': '0 9 * * 1',
+                'biweekly': '0 9 1,15 * *',
+                'monthly': '0 9 1 * *'
+            };
+
+            if (this.newTracker.schedule_preset === 'custom') {
+                this.newTracker.schedule_cron = '';
+            } else if (presets[this.newTracker.schedule_preset]) {
+                this.newTracker.schedule_cron = presets[this.newTracker.schedule_preset];
+            } else {
+                this.newTracker.schedule_cron = null;
+            }
+        },
+
+        resetNewTracker() {
+            this.newTracker = {
+                name: '',
+                website: '',
+                url_patterns: [''],
+                queries_text: '',
+                industry: '',
+                providers: {
+                    chatgpt: true,
+                    claude: true,
+                    perplexity: true
+                },
+                schedule_preset: '',
+                schedule_cron: null
+            };
+        },
+
+        async viewTracker(trackerId) {
+            try {
+                const response = await fetch(`/api/citations/trackers/${trackerId}`);
+                const data = await response.json();
+                if (data.success) {
+                    this.viewingTracker = data.tracker;
+                    
+                    // Load trend chart
+                    this.$nextTick(() => {
+                        this.loadTrendChart(trackerId);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading tracker:', error);
+            }
+        },
+
+        async loadTrendChart(trackerId) {
+            try {
+                const response = await fetch(`/api/citations/trackers/${trackerId}/trend`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const ctx = document.getElementById('trendChart');
+                    if (!ctx) return;
+
+                    // Destroy existing chart
+                    if (this.trendChart) {
+                        this.trendChart.destroy();
+                    }
+
+                    // Create new chart
+                    this.trendChart = new Chart(ctx, {
+                        type: 'line',
+                        data: data.chart_data,
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 100,
+                                    title: {
+                                        display: true,
+                                        text: 'Citation Rate (%)'
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading trend chart:', error);
+            }
+        },
+
+        async startScan(trackerId) {
+            if (!confirm('Start a new citation scan? This may take several minutes.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/citations/trackers/${trackerId}/scan`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('✓ Citation scan started! Check back in a few minutes.');
+                    await this.loadTrackers();
+                }
+            } catch (error) {
+                console.error('Error starting scan:', error);
+                alert('Error starting scan');
+            }
+        },
+
+        async toggleTracker(trackerId) {
+            try {
+                const response = await fetch(`/api/citations/trackers/${trackerId}/toggle`, {
+                    method: 'PATCH'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    await this.loadTrackers();
+                }
+            } catch (error) {
+                console.error('Error toggling tracker:', error);
+            }
+        },
+
+        async deleteTracker(trackerId) {
+            if (!confirm('Delete this tracker and all its scan data? This cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/citations/trackers/${trackerId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('✓ Tracker deleted');
+                    await this.loadTrackers();
+                }
+            } catch (error) {
+                console.error('Error deleting tracker:', error);
+                alert('Error deleting tracker');
+            }
+        },
+
+        getLatestScanMetric(metric) {
+            if (!this.viewingTracker || !this.viewingTracker.scans || this.viewingTracker.scans.length === 0) {
+                return 'N/A';
+            }
+
+            const latestScan = this.viewingTracker.scans[0];
+            const value = latestScan[metric];
+
+            if (metric === 'citation_rate' && value !== null) {
+                return value.toFixed(1) + '%';
+            }
+
+            return value !== null ? value : 'N/A';
+        },
+
+        renderProviderBreakdown() {
+            if (!this.viewingTracker || !this.viewingTracker.scans || this.viewingTracker.scans.length === 0) {
+                return '<p class="text-gray-500">No scan data available</p>';
+            }
+
+            const latestScan = this.viewingTracker.scans[0];
+            if (!latestScan.provider_breakdown) {
+                return '<p class="text-gray-500">No provider data available</p>';
+            }
+
+            const breakdown = latestScan.provider_breakdown;
+            let html = '';
+
+            for (const [provider, stats] of Object.entries(breakdown)) {
+                const citationRate = stats.citation_rate ? stats.citation_rate.toFixed(1) : '0.0';
+                const mentionRate = stats.mention_rate ? stats.mention_rate.toFixed(1) : '0.0';
+                
+                html += `
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <h4 class="font-semibold text-gray-900 capitalize mb-2">${provider}</h4>
+                        <div class="space-y-1 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Citations:</span>
+                                <span class="font-medium">${citationRate}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Mentions:</span>
+                                <span class="font-medium">${mentionRate}%</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Queries:</span>
+                                <span class="font-medium">${stats.queries || 0}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            return html;
+        },
+
+        renderTopCitedUrls() {
+            if (!this.viewingTracker || !this.viewingTracker.scans || this.viewingTracker.scans.length === 0) {
+                return '<p class="text-gray-500">No scan data available</p>';
+            }
+
+            const latestScan = this.viewingTracker.scans[0];
+            if (!latestScan.top_cited_urls || latestScan.top_cited_urls.length === 0) {
+                return '<p class="text-gray-500">No URLs cited yet</p>';
+            }
+
+            let html = '<div class="space-y-2">';
+            
+            for (const item of latestScan.top_cited_urls.slice(0, 10)) {
+                html += `
+                    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div class="flex-1 truncate">
+                            <a href="${item.url}" target="_blank" class="text-blue-600 hover:underline text-sm">${item.url}</a>
+                        </div>
+                        <div class="ml-4 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                            ${item.count}×
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            return html;
+        },
+
+        renderQueryPerformance() {
+            if (!this.viewingTracker || !this.viewingTracker.scans || this.viewingTracker.scans.length === 0) {
+                return '<p class="text-gray-500">No scan data available</p>';
+            }
+
+            const latestScan = this.viewingTracker.scans[0];
+            if (!latestScan.results_json || latestScan.results_json.length === 0) {
+                return '<p class="text-gray-500">No query results available</p>';
+            }
+
+            // Get worst performing queries first (fewest citations)
+            const sorted = [...latestScan.results_json].sort((a, b) => {
+                const aCitations = Object.values(a.providers).filter(p => p.cited).length;
+                const bCitations = Object.values(b.providers).filter(p => p.cited).length;
+                return aCitations - bCitations;
+            });
+
+            let html = '<div class="overflow-x-auto"><table class="min-w-full text-sm">';
+            html += '<thead class="bg-gray-50"><tr>';
+            html += '<th class="px-4 py-2 text-left font-medium text-gray-700">Query</th>';
+            
+            // Provider columns
+            const providers = Object.keys(sorted[0].providers);
+            for (const provider of providers) {
+                html += `<th class="px-4 py-2 text-center font-medium text-gray-700 capitalize">${provider}</th>`;
+            }
+            
+            html += '<th class="px-4 py-2 text-center font-medium text-gray-700">Total</th>';
+            html += '</tr></thead><tbody>';
+
+            // Show top 20 worst performing
+            for (const result of sorted.slice(0, 20)) {
+                html += '<tr class="border-t border-gray-200">';
+                html += `<td class="px-4 py-2 text-gray-900">${result.query}</td>`;
+                
+                let totalCitations = 0;
+                for (const provider of providers) {
+                    const providerResult = result.providers[provider];
+                    if (providerResult.cited) {
+                        html += '<td class="px-4 py-2 text-center">🔗</td>';
+                        totalCitations++;
+                    } else if (providerResult.mentioned) {
+                        html += '<td class="px-4 py-2 text-center">✓</td>';
+                    } else {
+                        html += '<td class="px-4 py-2 text-center text-gray-300">✗</td>';
+                    }
+                }
+                
+                html += `<td class="px-4 py-2 text-center font-medium">${totalCitations}</td>`;
+                html += '</tr>';
+            }
+
+            html += '</tbody></table></div>';
+            return html;
+        },
+
+        formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+        }
+    }
+}
+</script>
+
+<style>
+[x-cloak] { display: none !important; }
+</style>
+{% endblock %}

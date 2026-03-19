@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block title %}GSC Data — Search Console Integration{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="gscList()" x-init="init()">
+
+    <!-- Toast notification -->
+    <div x-show="toast" x-transition
+         class="fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-white border border-slate-200 text-slate-800"
+         x-text="toast"></div>
+
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">GSC Data</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Upload Google Search Console exports (queries + pages) and cross-reference
+                with your audits and keyword research sessions.
+            </p>
+        </div>
+        <button @click="showForm = !showForm"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-lg hover:bg-sky-700 transition-colors flex-shrink-0">
+            <span x-text="showForm ? '✕ Cancel' : '+ Add Property'"></span>
+        </button>
+    </div>
+
+    <!-- Google OAuth status bar -->
+    <div class="rounded-xl border px-5 py-3 flex items-center justify-between gap-4 text-sm"
+         :class="oauth.connected ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200'">
+        <div class="flex items-center gap-2">
+            <span x-text="oauth.connected ? '✅' : '🔗'"></span>
+            <span x-show="oauth.connected" class="text-emerald-800 font-medium">
+                Connected as <span x-text="oauth.email" class="font-semibold"></span>
+                <span class="text-emerald-600 font-normal ml-1">— live sync enabled</span>
+            </span>
+            <span x-show="!oauth.connected" class="text-slate-600">
+                Connect Google account to sync data directly from Search Console (no CSV needed)
+            </span>
+        </div>
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <template x-if="oauth.connected">
+                <button @click="oauthDisconnect()"
+                        class="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                    Disconnect
+                </button>
+            </template>
+            <template x-if="!oauth.connected">
+                <a href="/api/gsc/oauth/authorize"
+                   class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+                    Connect Google
+                </a>
+            </template>
+        </div>
+    </div>
+
+    <!-- Google Sites panel (visible when connected) -->
+    <div x-show="oauth.connected" x-transition
+         class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div>
+                <h2 class="text-sm font-semibold text-slate-800">Your Search Console sites</h2>
+                <p class="text-xs text-slate-500 mt-0.5">Sites accessible via your connected Google account. Click to add as a property.</p>
+            </div>
+            <button @click="loadSites()" :disabled="sitesLoading"
+                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors">
+                <svg class="w-3 h-3" :class="sitesLoading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Refresh
+            </button>
+        </div>
+
+        <!-- Loading state -->
+        <div x-show="sitesLoading" class="px-5 py-6 text-center text-sm text-slate-400">Fetching sites…</div>
+
+        <!-- Error state -->
+        <div x-show="sitesError && !sitesLoading" class="px-5 py-4 text-sm text-red-600" x-text="sitesError"></div>
+
+        <!-- Sites list -->
+        <div x-show="!sitesLoading && !sitesError && sites.length > 0"
+             class="divide-y divide-slate-100">
+            <template x-for="siteUrl in sites" :key="siteUrl">
+                <div class="px-5 py-3 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-base" x-text="siteUrl.startsWith('sc-domain:') ? '🌐' : '🔗'"></span>
+                        <span class="text-sm text-slate-700 font-medium truncate" x-text="siteUrl"></span>
+                    </div>
+                    <template x-if="isAlreadyAdded(siteUrl)">
+                        <span class="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-emerald-50 text-emerald-700 rounded-full">
+                            ✓ Added
+                        </span>
+                    </template>
+                    <template x-if="!isAlreadyAdded(siteUrl)">
+                        <button @click="addSiteAsProperty(siteUrl)"
+                                :disabled="addingsite === siteUrl"
+                                class="flex-shrink-0 inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium bg-sky-600 text-white rounded-lg hover:bg-sky-700 disabled:opacity-50 transition-colors">
+                            <span x-text="addingsite === siteUrl ? 'Adding…' : '+ Add property'"></span>
+                        </button>
+                    </template>
+                </div>
+            </template>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!sitesLoading && !sitesError && sites.length === 0"
+             class="px-5 py-6 text-center text-sm text-slate-400">
+            No Search Console sites found for this Google account.
+        </div>
+    </div>
+
+    <!-- Add property form -->
+    <div x-show="showForm" x-transition
+         class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <h2 class="text-base font-semibold text-slate-800 mb-4">Add GSC Property</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Property name <span class="text-slate-400">(label for your reference)</span></label>
+                <input x-model="form.name" type="text" placeholder="e.g. My Main Site"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Site URL <span class="text-slate-400">(as shown in Search Console)</span></label>
+                <input x-model="form.site_url" type="text" placeholder="https://example.com/ or sc-domain:example.com"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+            </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+            <button @click="createProperty()"
+                    :disabled="!form.name.trim() || !form.site_url.trim() || creating"
+                    class="px-4 py-2 bg-sky-600 text-white text-sm font-medium rounded-lg hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                <span x-text="creating ? 'Creating…' : 'Create Property'"></span>
+            </button>
+            <p x-show="formError" x-text="formError" class="text-sm text-red-600"></p>
+        </div>
+    </div>
+
+    <!-- How to export hint -->
+    <div x-show="properties.length === 0 && !loading"
+         class="bg-sky-50 border border-sky-200 rounded-xl p-5 text-sm text-sky-800">
+        <p class="font-semibold mb-2">How to export from Google Search Console:</p>
+        <ol class="list-decimal list-inside space-y-1 text-sky-700">
+            <li>Open <a href="https://search.google.com/search-console" target="_blank" class="underline">Search Console</a> → select your property</li>
+            <li>Go to <strong>Performance → Search results</strong></li>
+            <li>Set your date range (last 3 months recommended)</li>
+            <li>Click <strong>Export → Download CSV</strong> — this gives you the queries report</li>
+            <li>Click the <strong>Pages</strong> tab, then export again for the pages report</li>
+            <li>Come back here, create a property, and upload both CSV files</li>
+        </ol>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-12 text-slate-400 text-sm">Loading…</div>
+
+    <!-- Properties grid -->
+    <div x-show="!loading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <template x-for="p in properties" :key="p.id">
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm flex flex-col">
+
+                <!-- Card header -->
+                <div class="p-5 flex-1">
+                    <div class="flex items-start justify-between gap-2 mb-1">
+                        <h3 class="font-semibold text-slate-900 text-base leading-tight" x-text="p.name"></h3>
+                        <button @click="deleteProperty(p.id, p.name)"
+                                class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0 mt-0.5"
+                                title="Delete property">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        </button>
+                    </div>
+                    <p class="text-xs text-slate-400 truncate mb-3" x-text="p.site_url"></p>
+
+                    <!-- Stats chips -->
+                    <div class="flex flex-wrap gap-2 mb-3">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="p.total_queries > 0 ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-400'">
+                            🔍 <span x-text="p.total_queries.toLocaleString()"></span> queries
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="p.total_pages > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'">
+                            📄 <span x-text="p.total_pages.toLocaleString()"></span> pages
+                        </span>
+                        <span x-show="p.date_range_start"
+                              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">
+                            📅 <span x-text="(p.date_range_start || '') + ' → ' + (p.date_range_end || '')"></span>
+                        </span>
+                        <span x-show="p.sync_type === 'api'"
+                              class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-100 text-emerald-600">
+                            🔄 API sync
+                        </span>
+                    </div>
+
+                    <!-- Upload zone -->
+                    <div class="grid grid-cols-2 gap-2">
+                        <!-- Queries upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[p.id+'_q'] ? 'border-sky-300 bg-sky-50' : 'border-slate-200 hover:border-sky-300 hover:bg-sky-50'">
+                            <span class="text-lg">🔍</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[p.id+'_q'] ? 'Uploading…' : 'Queries CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(p.id, $event, 'queries')">
+                        </label>
+                        <!-- Pages upload -->
+                        <label class="flex flex-col items-center justify-center gap-1 border-2 border-dashed rounded-lg px-3 py-3 cursor-pointer transition-colors text-center"
+                               :class="uploading[p.id+'_p'] ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 hover:bg-emerald-50'">
+                            <span class="text-lg">📄</span>
+                            <span class="text-xs font-medium text-slate-600" x-text="uploading[p.id+'_p'] ? 'Uploading…' : 'Pages CSV'"></span>
+                            <span class="text-[10px] text-slate-400">click to upload</span>
+                            <input type="file" accept=".csv" class="hidden"
+                                   @change="uploadCsv(p.id, $event, 'pages')">
+                        </label>
+                    </div>
+
+                    <!-- Upload feedback -->
+                    <p x-show="uploadMsg[p.id]" x-text="uploadMsg[p.id]"
+                       :class="uploadErr[p.id] ? 'text-red-600' : 'text-emerald-600'"
+                       class="text-xs mt-2 font-medium"></p>
+                </div>
+
+                <!-- Card footer -->
+                <div class="border-t border-slate-100 px-5 py-3 flex items-center justify-between gap-3">
+                    <a :href="'/gsc/' + p.id"
+                       class="inline-flex items-center gap-1.5 text-sm font-medium text-sky-600 hover:text-sky-800 transition-colors">
+                        View data & insights →
+                    </a>
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <!-- Sync button — only when OAuth connected -->
+                        <template x-if="oauth.connected">
+                            <button @click="syncProperty(p.id)"
+                                    :disabled="syncing[p.id]"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    :title="p.last_synced_at ? 'Last synced: ' + p.last_synced_at : 'Sync from Google'">
+                                <svg class="w-3 h-3" :class="syncing[p.id] ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                <span x-text="syncing[p.id] ? 'Syncing…' : '🔄 Sync'"></span>
+                            </button>
+                        </template>
+                        <!-- Sync status message -->
+                        <span x-show="syncMsg[p.id]" x-text="syncMsg[p.id]"
+                              :class="syncErr[p.id] ? 'text-red-500' : 'text-emerald-600'"
+                              class="text-[10px] font-medium max-w-[120px] truncate"></span>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+</div>
+
+<script>
+function gscList() {
+    return {
+        properties: [],
+        loading:    true,
+        showForm:   false,
+        creating:   false,
+        formError:  '',
+        form:       { name: '', site_url: '' },
+        uploading:  {},
+        uploadMsg:  {},
+        uploadErr:  {},
+        oauth:       { connected: false, email: null },
+        syncing:     {},
+        syncMsg:     {},
+        syncErr:     {},
+        toast:       '',
+        toastTimer:  null,
+        sites:       [],
+        sitesLoading: false,
+        sitesError:  '',
+        addingsite:  null,
+
+        async init() {
+            // Check for OAuth redirect params
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('oauth_connected') === '1') {
+                this.showToast('✅ Google account connected successfully!');
+                window.history.replaceState({}, '', '/gsc');
+            } else if (params.get('oauth_error')) {
+                this.showToast('❌ OAuth error: ' + decodeURIComponent(params.get('oauth_error')), true);
+                window.history.replaceState({}, '', '/gsc');
+            }
+            await Promise.all([this.loadProperties(), this.checkOauth()]);
+            if (this.oauth.connected) await this.loadSites();
+        },
+
+        showToast(msg, isError = false) {
+            this.toast = msg;
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = setTimeout(() => { this.toast = ''; }, 4000);
+        },
+
+        async checkOauth() {
+            try {
+                const res = await fetch('/api/gsc/oauth/status');
+                if (res.ok) this.oauth = await res.json();
+            } catch (e) { /* ignore */ }
+        },
+
+        async oauthDisconnect() {
+            if (!confirm('Disconnect your Google account? Live sync will be disabled.')) return;
+            await fetch('/api/gsc/oauth/disconnect', { method: 'DELETE' });
+            this.oauth = { connected: false, email: null };
+            this.sites = [];
+            this.showToast('Google account disconnected.');
+        },
+
+        async loadSites() {
+            this.sitesLoading = true;
+            this.sitesError = '';
+            try {
+                const res = await fetch('/api/gsc/oauth/sites');
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.sitesError = err.detail || 'Failed to load sites';
+                } else {
+                    const data = await res.json();
+                    this.sites = data.sites || [];
+                }
+            } catch (e) {
+                this.sitesError = 'Network error loading sites';
+            } finally {
+                this.sitesLoading = false;
+            }
+        },
+
+        isAlreadyAdded(siteUrl) {
+            return this.properties.some(p => p.site_url === siteUrl);
+        },
+
+        async addSiteAsProperty(siteUrl) {
+            this.addingsite = siteUrl;
+            // Derive a readable name: strip protocol + trailing slash
+            const name = siteUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') || siteUrl;
+            try {
+                const res = await fetch('/api/gsc/properties', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, site_url: siteUrl }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.showToast('❌ ' + (err.detail || 'Failed to add property'));
+                    return;
+                }
+                const prop = await res.json();
+                this.showToast('✅ Added — syncing data from Search Console…');
+                await this.loadProperties();
+
+                // Auto-sync so data is immediately available
+                try {
+                    const syncRes = await fetch(`/api/gsc/properties/${prop.id}/sync`, { method: 'POST' });
+                    const syncData = await syncRes.json();
+                    if (syncRes.ok) {
+                        this.showToast(`✅ Synced: ${(syncData.queries||0).toLocaleString()} queries, ${(syncData.pages||0).toLocaleString()} pages`);
+                        await this.loadProperties();
+                    } else {
+                        this.showToast('⚠️ Property added but sync failed: ' + (syncData.detail || 'unknown error'));
+                    }
+                } catch (e) {
+                    this.showToast('⚠️ Property added but sync failed (network error)');
+                }
+            } catch (e) {
+                this.showToast('❌ Network error');
+            } finally {
+                this.addingsite = null;
+            }
+        },
+
+        async syncProperty(id) {
+            this.syncing = { ...this.syncing, [id]: true };
+            this.syncMsg = { ...this.syncMsg, [id]: '' };
+            this.syncErr = { ...this.syncErr, [id]: false };
+            try {
+                const res = await fetch('/api/gsc/properties/' + id + '/sync', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.syncMsg = { ...this.syncMsg, [id]: data.detail || 'Sync failed' };
+                    this.syncErr = { ...this.syncErr, [id]: true };
+                } else {
+                    this.syncMsg = {
+                        ...this.syncMsg,
+                        [id]: `✓ ${(data.queries || 0).toLocaleString()}q / ${(data.pages || 0).toLocaleString()}p`,
+                    };
+                    await this.loadProperties();
+                }
+            } catch (e) {
+                this.syncMsg = { ...this.syncMsg, [id]: 'Network error' };
+                this.syncErr = { ...this.syncErr, [id]: true };
+            } finally {
+                this.syncing = { ...this.syncing, [id]: false };
+            }
+        },
+
+        async loadProperties() {
+            this.loading = true;
+            const res = await fetch('/api/gsc/properties');
+            this.properties = await res.json();
+            this.loading = false;
+        },
+
+        async createProperty() {
+            this.formError = '';
+            if (!this.form.name.trim() || !this.form.site_url.trim()) return;
+            this.creating = true;
+            try {
+                const res = await fetch('/api/gsc/properties', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: this.form.name.trim(), site_url: this.form.site_url.trim() }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.formError = err.detail || 'Failed to create property';
+                } else {
+                    this.form = { name: '', site_url: '' };
+                    this.showForm = false;
+                    await this.loadProperties();
+                }
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        async deleteProperty(id, name) {
+            if (!confirm(`Delete property "${name}" and all its data?\nThis cannot be undone.`)) return;
+            await fetch('/api/gsc/properties/' + id, { method: 'DELETE' });
+            await this.loadProperties();
+        },
+
+        async uploadCsv(propertyId, event, hint) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const key = propertyId + (hint === 'queries' ? '_q' : '_p');
+            this.uploading = { ...this.uploading, [key]: true };
+            this.uploadMsg = { ...this.uploadMsg, [propertyId]: '' };
+            this.uploadErr = { ...this.uploadErr, [propertyId]: false };
+
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res = await fetch('/api/gsc/properties/' + propertyId + '/upload', {
+                    method: 'POST',
+                    body: fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = { ...this.uploadMsg, [propertyId]: data.detail || 'Upload failed' };
+                    this.uploadErr = { ...this.uploadErr, [propertyId]: true };
+                } else {
+                    this.uploadMsg = {
+                        ...this.uploadMsg,
+                        [propertyId]: `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported`,
+                    };
+                    await this.loadProperties();
+                }
+            } catch (e) {
+                this.uploadMsg = { ...this.uploadMsg, [propertyId]: 'Network error' };
+                this.uploadErr = { ...this.uploadErr, [propertyId]: true };
+            } finally {
+                this.uploading = { ...this.uploading, [key]: false };
+                event.target.value = '';   // reset file input
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

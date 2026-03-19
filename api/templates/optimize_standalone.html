@@ -1,0 +1,762 @@
+{% extends "base.html" %}
+{% block title %}Page Optimizer{% endblock %}
+
+{% block content %}
+<div class="space-y-6"
+     x-data="standaloneOptimize()"
+     x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+            <h1 class="text-xl font-bold text-slate-900">Page Optimizer</h1>
+            <p class="mt-1 text-sm text-slate-500">Audit any URL with your own keyword list — no GSC connection required.</p>
+        </div>
+    </div>
+
+    <!-- Two-column layout: left = inputs, right = history -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- ── LEFT: URL + Keywords ─────────────────────────────────────────── -->
+        <div class="lg:col-span-2 space-y-5">
+
+            <!-- URL input -->
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+                <label class="block text-sm font-semibold text-slate-700 mb-2">Page URL</label>
+                <input x-model="pageUrl"
+                       type="url"
+                       placeholder="https://example.com/your-page"
+                       class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 font-mono">
+            </div>
+
+            <!-- Keywords / Queries -->
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+                <div class="flex items-center justify-between mb-3">
+                    <div>
+                        <h2 class="text-sm font-semibold text-slate-700">Keywords / Queries</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Paste keywords this page should rank for. One per line, or tab-separated with metrics.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-slate-400">Format:</span>
+                        <button @click="parseMode = 'simple'"
+                                :class="parseMode === 'simple' ? 'bg-violet-100 text-violet-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-2 py-1 text-xs rounded transition-colors">Simple</button>
+                        <button @click="parseMode = 'tsv'"
+                                :class="parseMode === 'tsv' ? 'bg-violet-100 text-violet-700 font-semibold' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-2 py-1 text-xs rounded transition-colors">With metrics</button>
+                    </div>
+                </div>
+
+                <!-- Simple mode hint -->
+                <p x-show="parseMode === 'simple'" class="text-xs text-slate-400 mb-2">
+                    One keyword per line. Example:<br>
+                    <code class="bg-slate-50 px-1 rounded">calculator pensie privata<br>pensie suplimentara varsta</code>
+                </p>
+                <!-- TSV mode hint -->
+                <p x-show="parseMode === 'tsv'" class="text-xs text-slate-400 mb-2">
+                    Tab-separated: <code class="bg-slate-50 px-1 rounded">query [tab] clicks [tab] impressions [tab] ctr [tab] position</code>
+                    — paste directly from a spreadsheet or GSC export.
+                </p>
+
+                <textarea x-model="queryInput"
+                          rows="8"
+                          placeholder="keyword one&#10;keyword two&#10;keyword three"
+                          class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-400 resize-y"></textarea>
+
+                <div class="flex items-center gap-3 mt-3">
+                    <button @click="parseQueries()"
+                            :disabled="!queryInput.trim()"
+                            class="px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                        Parse Keywords →
+                    </button>
+                    <span x-show="queries.length > 0" class="text-xs text-slate-500">
+                        <b x-text="queries.length"></b> keywords parsed,
+                        <b x-text="selectedQueries.length"></b> selected
+                    </span>
+                    <button x-show="queries.length > 0" @click="queries = []; selectedQueries = []; queriesParsed = false; queryInput = ''"
+                            class="text-xs text-slate-400 hover:text-red-500 transition-colors ml-auto">Clear</button>
+                </div>
+
+                <!-- Parsed keywords table -->
+                <div x-show="queriesParsed && queries.length > 0" class="mt-4">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-xs font-medium text-slate-500 uppercase tracking-wider">Parsed keywords</span>
+                        <div class="flex gap-2 ml-auto">
+                            <button @click="selectedQueries = [...queries]" class="text-xs text-sky-600 hover:text-sky-800">Select all</button>
+                            <button @click="selectedQueries = queries.slice(0,10)" class="text-xs text-sky-600 hover:text-sky-800">Top 10</button>
+                            <button @click="selectedQueries = []" class="text-xs text-slate-400 hover:text-red-500">Clear</button>
+                        </div>
+                    </div>
+                    <div class="border border-slate-100 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-slate-50 sticky top-0">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-slate-500 font-medium w-8">
+                                        <input type="checkbox"
+                                               :checked="selectedQueries.length === queries.length"
+                                               @change="$event.target.checked ? selectedQueries = [...queries] : selectedQueries = []"
+                                               class="rounded border-slate-300 text-violet-600">
+                                    </th>
+                                    <th class="px-3 py-2 text-left text-slate-500 font-medium">Keyword</th>
+                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Clicks</th>
+                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Impr.</th>
+                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">CTR%</th>
+                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Pos.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="(q, i) in queries" :key="i">
+                                    <tr @click="toggleQuery(q)"
+                                        :class="isQuerySelected(q) ? 'bg-violet-50' : 'hover:bg-slate-50'"
+                                        class="cursor-pointer border-t border-slate-50 transition-colors">
+                                        <td class="px-3 py-1.5">
+                                            <input type="checkbox" :checked="isQuerySelected(q)"
+                                                   @click.stop="toggleQuery(q)"
+                                                   class="rounded border-slate-300 text-violet-600 pointer-events-none">
+                                        </td>
+                                        <td class="px-3 py-1.5 text-slate-700" x-text="q.query"></td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.clicks || '—'"></td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.impressions || '—'"></td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.ctr ? q.ctr + '%' : '—'"></td>
+                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.position || '—'"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LLM settings + run -->
+            <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+                <h2 class="text-sm font-semibold text-slate-700 mb-4">LLM Settings</h2>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                    <!-- Provider -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Provider</label>
+                        <select x-model="form.provider" @change="updateDefaultModel()"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
+                            <option value="anthropic">Anthropic</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="mistral">Mistral</option>
+                        </select>
+                    </div>
+                    <!-- Model -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                        <select x-model="form.model"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
+                            <template x-for="m in modelOptions()" :key="m.value">
+                                <option :value="m.value" x-text="m.label"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <!-- Audit Types -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-600 mb-1">Audit Types</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                                <input type="checkbox" :checked="hasAuditType('SEO_AUDIT')"
+                                       @change="toggleAuditType('SEO_AUDIT')" :disabled="optimizing"
+                                       class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                                SEO
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                                <input type="checkbox" :checked="hasAuditType('GEO_AUDIT')"
+                                       @change="toggleAuditType('GEO_AUDIT')" :disabled="optimizing"
+                                       class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                                GEO
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                                <input type="checkbox" :checked="hasAuditType('FAQ_KEYWORDS')"
+                                       @change="toggleAuditType('FAQ_KEYWORDS')" :disabled="optimizing"
+                                       class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                                FAQ
+                            </label>
+                            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
+                                <input type="checkbox" :checked="hasAuditType('SCHEMA_GEN')"
+                                       @change="toggleAuditType('SCHEMA_GEN')" :disabled="optimizing"
+                                       class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
+                                Schema
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3">
+                    <button @click="optimize()"
+                            :disabled="optimizing || !form.audit_types.length || !pageUrl.trim()"
+                            class="px-5 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                        <span x-show="!optimizing">⚡ Optimize Page</span>
+                        <span x-show="optimizing" class="inline-flex items-center gap-2">
+                            <span class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
+                            <span x-text="jobStatus === 'running' ? 'Running LLM…' : 'Starting…'"></span>
+                        </span>
+                    </button>
+                    <span x-show="optimizing && jobStatus === 'running'" class="text-xs text-slate-400">
+                        Fetching page content &amp; running audit prompts…
+                    </span>
+                </div>
+                <p x-show="jobError" x-text="jobError" class="mt-3 text-sm text-red-600"></p>
+            </div>
+        </div>
+
+        <!-- ── RIGHT: History ────────────────────────────────────────────────── -->
+        <div class="space-y-3">
+            <h2 class="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1">Past Reports
+                <span x-show="pastGuides.length > 0"
+                      class="ml-1.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold normal-case tracking-normal"
+                      x-text="pastGuides.length"></span>
+            </h2>
+
+            <!-- Empty state -->
+            <div x-show="pastGuides.length === 0"
+                 class="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-400">
+                No reports yet. Optimize a page to get started.
+            </div>
+
+            <!-- History list -->
+            <template x-for="(g, idx) in pastGuides" :key="g.id">
+                <div @click="loadGuideByIdx(idx)"
+                     :class="activeGuideIdx === idx ? 'border-violet-300 bg-violet-50/40 shadow-sm' : 'border-slate-200 hover:border-slate-300 bg-white'"
+                     class="border rounded-xl p-3.5 cursor-pointer transition-colors">
+                    <div class="flex items-start justify-between gap-2">
+                        <span class="font-mono text-[11px] text-sky-700 break-all leading-relaxed"
+                              x-text="(g.url || '').replace(/^https?:\/\//, '')"></span>
+                        <span x-show="g.reviewed"
+                              class="flex-shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-1.5 flex-wrap">
+                        <span class="text-[10px] text-slate-400" x-text="g.created_at"></span>
+                        <span class="text-[10px] text-slate-300">·</span>
+                        <span class="text-[10px] text-slate-400" x-text="g.model"></span>
+                    </div>
+                    <!-- Score pills -->
+                    <div class="flex gap-1.5 mt-2 flex-wrap" x-show="g.guide_json && g.guide_json.results">
+                        <template x-if="g.guide_json && g.guide_json.results && g.guide_json.results.SEO_AUDIT && g.guide_json.results.SEO_AUDIT.seo_audit">
+                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  :class="scoreBg(g.guide_json.results.SEO_AUDIT.seo_audit.overall_score)">
+                                SEO <span x-text="g.guide_json.results.SEO_AUDIT.seo_audit.overall_score"></span>
+                            </span>
+                        </template>
+                        <template x-if="g.guide_json && g.guide_json.results && g.guide_json.results.GEO_AUDIT && g.guide_json.results.GEO_AUDIT.geo_audit">
+                            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  :class="scoreBg(g.guide_json.results.GEO_AUDIT.geo_audit.overall_score)">
+                                GEO <span x-text="g.guide_json.results.GEO_AUDIT.geo_audit.overall_score"></span>
+                            </span>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ── Results section ──────────────────────────────────────────────────── -->
+
+    <!-- Spinner while running -->
+    <div x-show="optimizing"
+         class="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
+        <div class="flex flex-col items-center gap-3">
+            <div class="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin"></div>
+            <p class="text-sm font-medium text-slate-700">
+                <span x-text="jobStatus === 'running' ? 'LLM is analysing the page…' : 'Queued…'"></span>
+            </p>
+            <p class="text-xs text-slate-400">Usually takes 15–45 seconds per audit type.</p>
+        </div>
+    </div>
+
+    <!-- Active guide results -->
+    <template x-if="activeGuide && !optimizing">
+        <div class="space-y-4">
+
+            <!-- Report header bar -->
+            <div class="flex items-center gap-3 flex-wrap bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm">
+                <span class="font-mono text-xs text-sky-700 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded break-all"
+                      x-text="activeGuide.url || pageUrl"></span>
+                <span x-show="activeGuide.reviewed"
+                      class="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ Done</span>
+                <span class="text-xs text-slate-400 ml-auto" x-text="activeGuide.created_at"></span>
+                <span class="text-xs text-slate-400" x-text="activeGuide.model"></span>
+                <button @click="toggleReviewed()"
+                        :class="activeGuide.reviewed
+                            ? 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                            : 'bg-emerald-600 text-white hover:bg-emerald-700'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">
+                    <span x-text="activeGuide.reviewed ? 'Mark undone' : '✓ Mark as done'"></span>
+                </button>
+            </div>
+
+            <!-- Per-audit result cards -->
+            <template x-for="[auditType, result] in Object.entries(activeGuide.results)" :key="auditType">
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+
+                    <!-- Card header -->
+                    <div class="px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-wrap">
+                        <h3 class="font-semibold text-slate-800" x-text="auditTypeLabel(auditType)"></h3>
+                        <template x-if="getAuditBlock(auditType, result).overall_score !== undefined">
+                            <span class="inline-flex items-baseline gap-0.5 px-3 py-1 rounded-full text-base font-bold"
+                                  :class="scoreBg(getAuditBlock(auditType, result).overall_score)">
+                                <span x-text="getAuditBlock(auditType, result).overall_score"></span>
+                                <span class="text-xs font-normal opacity-70">/100</span>
+                            </span>
+                        </template>
+                        <template x-if="getAuditBlock(auditType, result).classification">
+                            <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 capitalize"
+                                  x-text="getAuditBlock(auditType, result).classification"></span>
+                        </template>
+                    </div>
+
+                    <!-- SEO sub-scores -->
+                    <template x-if="auditType === 'SEO_AUDIT' && result.seo_audit">
+                        <div class="border-b border-slate-100 bg-slate-50/60">
+                            <div class="px-5 py-3 flex flex-wrap gap-3">
+                                <template x-for="[label, key] in [['Content','content_depth_score'],['E-E-A-T','eeat_score'],['Keywords','keyword_optimization_score'],['Technical','technical_onpage_score'],['Snippet','featured_snippet_score'],['Authority','topical_authority_score'],['Images','image_seo_score']]" :key="key">
+                                    <template x-if="result.seo_audit[key] !== undefined">
+                                        <div class="flex items-center gap-1.5 text-xs">
+                                            <span class="text-slate-400" x-text="label"></span>
+                                            <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                                  :class="scoreBg(result.seo_audit[key])"
+                                                  x-text="result.seo_audit[key]"></span>
+                                        </div>
+                                    </template>
+                                </template>
+                            </div>
+                            <div class="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1">
+                                <template x-if="result.seo_audit.primary_keyword_detected">
+                                    <span class="text-xs text-slate-500">Keyword: <b class="text-slate-700" x-text="result.seo_audit.primary_keyword_detected"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.search_intent">
+                                    <span class="text-xs text-slate-500">Intent: <b class="text-slate-700" x-text="result.seo_audit.search_intent"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.helpful_content_assessment">
+                                    <span class="text-xs text-slate-500">Helpful: <b class="text-slate-700" x-text="result.seo_audit.helpful_content_assessment"></b></span>
+                                </template>
+                                <template x-if="result.seo_audit.estimated_useful_word_count">
+                                    <span class="text-xs text-slate-500">Words: <b class="text-slate-700" x-text="result.seo_audit.estimated_useful_word_count"></b></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- GEO sub-scores -->
+                    <template x-if="auditType === 'GEO_AUDIT' && result.geo_audit">
+                        <div class="border-b border-slate-100 bg-slate-50/60">
+                            <div class="px-5 py-3 flex flex-wrap gap-3">
+                                <template x-for="[label, key] in [['Citation','citation_probability'],['Info Gain','information_gain_score'],['Authority','authority_score'],['Structure','structure_score'],['Factual','factual_density_score'],['Anti-Halluc.','anti_hallucination_score']]" :key="key">
+                                    <template x-if="result.geo_audit[key] !== undefined">
+                                        <div class="flex items-center gap-1.5 text-xs">
+                                            <span class="text-slate-400" x-text="label"></span>
+                                            <span class="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                                                  :class="scoreBg(result.geo_audit[key])"
+                                                  x-text="result.geo_audit[key]"></span>
+                                        </div>
+                                    </template>
+                                </template>
+                            </div>
+                            <div class="px-5 pb-3 flex flex-wrap gap-x-5 gap-y-1">
+                                <template x-if="result.geo_audit.would_perplexity_cite">
+                                    <span class="text-xs text-slate-500">Perplexity cite: <b class="text-slate-700" x-text="result.geo_audit.would_perplexity_cite"></b></span>
+                                </template>
+                                <template x-if="result.geo_audit.detected_language">
+                                    <span class="text-xs text-slate-500">Language: <b class="text-slate-700" x-text="result.geo_audit.detected_language"></b></span>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Score justification -->
+                    <template x-if="result.seo_score_justification || result.geo_score_justification">
+                        <div class="px-5 py-3 border-b border-slate-100 bg-amber-50/40">
+                            <p class="text-sm text-slate-600 leading-relaxed"
+                               x-text="result.seo_score_justification || result.geo_score_justification"></p>
+                        </div>
+                    </template>
+
+                    <!-- SCHEMA_GEN result -->
+                    <template x-if="auditType === 'SCHEMA_GEN' && result.schemas">
+                        <div>
+                            <!-- Schema types detected -->
+                            <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/60">
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="s in result.schemas" :key="s.type">
+                                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border"
+                                             :class="s.rich_result_eligible
+                                                 ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                                 : 'bg-slate-100 border-slate-200 text-slate-700'">
+                                            <span class="font-semibold" x-text="s.type"></span>
+                                            <span x-show="s.rich_result_eligible" class="text-[10px] opacity-70">Rich Result ✓</span>
+                                            <span class="text-[10px] opacity-60 capitalize" x-text="s.priority"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                            <!-- Per-schema JSON blocks -->
+                            <div class="px-5 py-4 space-y-4 border-b border-slate-100">
+                                <template x-for="(s, i) in result.schemas" :key="i">
+                                    <div>
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <span class="text-xs font-semibold text-slate-600" x-text="s.type"></span>
+                                            <button @click="copyText(JSON.stringify(s.json_ld, null, 2))"
+                                                    class="text-[10px] text-slate-400 hover:text-sky-600 transition-colors">Copy JSON</button>
+                                        </div>
+                                        <pre class="bg-slate-900 text-emerald-300 text-[11px] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed"
+                                             x-text="JSON.stringify(s.json_ld, null, 2)"></pre>
+                                        <p x-show="s.notes" class="mt-1.5 text-xs text-slate-500 italic" x-text="s.notes"></p>
+                                    </div>
+                                </template>
+                            </div>
+                            <!-- HTML implementation snippet -->
+                            <div x-show="result.implementation_html" class="px-5 py-4 border-b border-slate-100">
+                                <div class="flex items-center justify-between mb-1.5">
+                                    <span class="text-xs font-semibold text-slate-600">HTML Implementation (paste in &lt;head&gt;)</span>
+                                    <button @click="copyText(result.implementation_html)"
+                                            class="text-[10px] px-2 py-1 bg-sky-600 text-white rounded hover:bg-sky-700 transition-colors font-medium">
+                                        Copy HTML
+                                    </button>
+                                </div>
+                                <pre class="bg-slate-900 text-sky-200 text-[11px] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed"
+                                     x-text="result.implementation_html"></pre>
+                            </div>
+                            <!-- Implementation notes -->
+                            <div x-show="result.implementation_notes" class="px-5 py-4">
+                                <p class="text-sm text-slate-600 leading-relaxed" x-text="result.implementation_notes"></p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- FAQ & Keywords result -->
+                    <template x-if="auditType === 'FAQ_KEYWORDS'">
+                        <div>
+                            <template x-if="result.related_keywords && result.related_keywords.length > 0">
+                                <div class="px-5 py-5 border-b border-slate-100">
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                                        Related Keywords <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal" x-text="result.related_keywords.length"></span>
+                                    </h4>
+                                    <div class="flex flex-wrap gap-2">
+                                        <template x-for="(kw, i) in result.related_keywords" :key="i">
+                                            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs"
+                                                 :class="{'bg-purple-50 border-purple-200 text-purple-800': kw.type==='lsi','bg-sky-50 border-sky-200 text-sky-800': kw.type==='long_tail','bg-amber-50 border-amber-200 text-amber-800': kw.type==='synonym','bg-teal-50 border-teal-200 text-teal-800': kw.type==='semantic','bg-slate-50 border-slate-200 text-slate-700': !['lsi','long_tail','synonym','semantic'].includes(kw.type)}">
+                                                <span x-text="kw.keyword" class="font-medium"></span>
+                                                <span class="opacity-60 text-[10px]" x-text="kw.type"></span>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="result.faq_questions && result.faq_questions.length > 0">
+                                <div class="px-5 py-5">
+                                    <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                        FAQ Questions <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal" x-text="result.faq_questions.length"></span>
+                                    </h4>
+                                    <div class="space-y-3">
+                                        <template x-for="(faq, i) in result.faq_questions" :key="i">
+                                            <div class="border border-slate-100 rounded-xl p-4">
+                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                          :class="priorityBg(faq.priority)" x-text="faq.priority"></span>
+                                                    <p class="text-sm font-semibold text-slate-800" x-text="faq.question"></p>
+                                                </div>
+                                                <p class="text-xs text-slate-500 leading-relaxed ml-0" x-text="faq.answer_hint"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Issues -->
+                    <template x-if="result.issues && result.issues.length > 0">
+                        <div class="px-5 py-5 border-b border-slate-100">
+                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                Issues <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal" x-text="result.issues.length"></span>
+                            </h4>
+                            <div class="space-y-3">
+                                <template x-for="(issue, idx) in result.issues" :key="idx">
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 mt-0.5" x-text="idx+1"></span>
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                      :class="severityBg(issue.severity)" x-text="issue.severity"></span>
+                                                <p class="text-sm font-medium text-slate-800" x-text="issue.finding"></p>
+                                            </div>
+                                            <p x-show="issue.evidence || issue.impact" class="text-xs text-slate-500 leading-relaxed"
+                                               x-text="issue.evidence || issue.impact"></p>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Recommendations -->
+                    <template x-if="result.recommendations && result.recommendations.length > 0">
+                        <div class="px-5 py-5">
+                            <h4 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4">
+                                Recommendations <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-bold normal-case tracking-normal" x-text="result.recommendations.length"></span>
+                            </h4>
+                            <div class="space-y-3">
+                                <template x-for="(rec, idx) in result.recommendations" :key="idx">
+                                    <div class="border border-slate-100 rounded-xl p-4 hover:border-slate-200 transition-colors">
+                                        <div class="flex items-start gap-3 mb-2">
+                                            <span class="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 mt-0.5" x-text="idx+1"></span>
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 mb-1 flex-wrap">
+                                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                                                          :class="priorityBg(rec.priority)" x-text="rec.priority"></span>
+                                                    <p class="text-sm font-semibold text-slate-800" x-text="rec.recommendation"></p>
+                                                </div>
+                                                <p x-show="rec.expected_impact" class="text-xs text-slate-500" x-text="rec.expected_impact"></p>
+                                            </div>
+                                        </div>
+                                        <template x-if="rec.before_example || rec.after_example">
+                                            <div class="ml-8 mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                <template x-if="rec.before_example">
+                                                    <div class="bg-red-50 border border-red-100 rounded-lg p-3">
+                                                        <p class="text-[10px] font-semibold text-red-500 uppercase mb-1">Before</p>
+                                                        <p class="text-xs text-red-800 leading-relaxed" x-text="rec.before_example"></p>
+                                                    </div>
+                                                </template>
+                                                <template x-if="rec.after_example">
+                                                    <div class="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
+                                                        <p class="text-[10px] font-semibold text-emerald-600 uppercase mb-1">After</p>
+                                                        <p class="text-xs text-emerald-800 leading-relaxed" x-text="rec.after_example"></p>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Raw fallback -->
+                    <template x-if="result.raw">
+                        <div class="px-5 py-4 bg-amber-50 border-t border-amber-100">
+                            <p class="text-xs font-medium text-amber-700 mb-2">⚠ Response could not be parsed as structured JSON:</p>
+                            <pre class="text-xs text-slate-600 whitespace-pre-wrap break-all" x-text="result.raw"></pre>
+                        </div>
+                    </template>
+
+                </div>
+            </template>
+        </div>
+    </template>
+
+</div>
+
+<script>
+function standaloneOptimize() {
+    return {
+        pageUrl:        '',
+        queryInput:     '',
+        parseMode:      'simple',
+        queries:        [],
+        selectedQueries:[],
+        queriesParsed:  false,
+
+        form: {
+            provider:    'anthropic',
+            model:       'claude-haiku-4-5-20251001',
+            audit_types: ['SEO_AUDIT', 'GEO_AUDIT', 'FAQ_KEYWORDS', 'SCHEMA_GEN'],
+        },
+
+        pastGuides:     {{ past_guides | tojson }},
+        activeGuideIdx: -1,
+        activeGuide:    null,
+
+        optimizing:  false,
+        guideId:     null,
+        jobStatus:   null,
+        jobError:    '',
+        pollTimer:   null,
+
+        init() {
+            if (this.pastGuides.length > 0) this.loadGuideByIdx(0);
+        },
+
+        parseQueries() {
+            const lines = this.queryInput.trim().split('\n').filter(l => l.trim());
+            this.queries = lines.map(line => {
+                const parts = line.split('\t');
+                if (parts.length >= 2) {
+                    return {
+                        query:       parts[0].trim(),
+                        clicks:      parseInt(parts[1]) || 0,
+                        impressions: parseInt(parts[2]) || 0,
+                        ctr:         parseFloat(parts[3]) || 0,
+                        position:    parseFloat(parts[4]) || 0,
+                    };
+                }
+                return { query: line.trim(), clicks: 0, impressions: 0, ctr: 0, position: 0 };
+            }).filter(q => q.query);
+            this.selectedQueries = [...this.queries];
+            this.queriesParsed = true;
+        },
+
+        isQuerySelected(q) {
+            return this.selectedQueries.some(s => s.query === q.query);
+        },
+
+        toggleQuery(q) {
+            const idx = this.selectedQueries.findIndex(s => s.query === q.query);
+            if (idx >= 0) this.selectedQueries.splice(idx, 1);
+            else          this.selectedQueries.push(q);
+        },
+
+        _tryParseRaw(r) {
+            if (!r || typeof r !== 'object' || !r.raw || typeof r.raw !== 'string') return r;
+            try {
+                const s = r.raw, start = s.indexOf('{'), end = s.lastIndexOf('}');
+                if (start !== -1 && end > start) return JSON.parse(s.slice(start, end + 1));
+            } catch(e) {}
+            return r;
+        },
+
+        _processResults(rawResults) {
+            const out = {};
+            for (const [type, r] of Object.entries(rawResults || {})) out[type] = this._tryParseRaw(r);
+            return out;
+        },
+
+        loadGuideByIdx(idx) {
+            const g = this.pastGuides[idx];
+            if (!g || !g.guide_json) return;
+            const gj = g.guide_json;
+            this.pageUrl = g.url || '';
+            this.activeGuide = {
+                id:         g.id,
+                url:        g.url,
+                reviewed:   g.reviewed,
+                created_at: g.created_at,
+                model:      g.model,
+                results:    this._processResults(gj.results),
+            };
+            this.activeGuideIdx = idx;
+        },
+
+        async toggleReviewed() {
+            if (!this.activeGuide) return;
+            const newVal = !this.activeGuide.reviewed;
+            await fetch(`/api/guide/${this.activeGuide.id}/reviewed?reviewed=${newVal}`, { method: 'PATCH' });
+            this.activeGuide.reviewed = newVal;
+            const g = this.pastGuides[this.activeGuideIdx];
+            if (g) g.reviewed = newVal;
+        },
+
+        toggleAuditType(type) {
+            const idx = this.form.audit_types.indexOf(type);
+            if (idx >= 0) this.form.audit_types.splice(idx, 1);
+            else          this.form.audit_types.push(type);
+        },
+
+        hasAuditType(type) { return this.form.audit_types.includes(type); },
+
+        modelOptions() {
+            return ({
+                anthropic: [
+                    { value: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku 4.5 (fast)' },
+                    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5' },
+                    { value: 'claude-sonnet-4-20250514',   label: 'Claude Sonnet 4' },
+                ],
+                openai:   [{ value: 'gpt-4o-mini', label: 'GPT-4o Mini' }, { value: 'gpt-4o', label: 'GPT-4o' }],
+                mistral:  [{ value: 'mistral-small-latest', label: 'Mistral Small' }, { value: 'mistral-large-latest', label: 'Mistral Large' }],
+            })[this.form.provider] || [];
+        },
+
+        updateDefaultModel() {
+            this.form.model = ({ anthropic: 'claude-haiku-4-5-20251001', openai: 'gpt-4o-mini', mistral: 'mistral-small-latest' })[this.form.provider] || '';
+        },
+
+        async optimize() {
+            if (this.optimizing || !this.form.audit_types.length || !this.pageUrl.trim()) return;
+            this.optimizing  = true;
+            this.jobStatus   = null;
+            this.activeGuide = null;
+            this.jobError    = '';
+            if (this.pollTimer) clearInterval(this.pollTimer);
+            try {
+                const res = await fetch('/api/gsc/optimize', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        url:         this.pageUrl.trim(),
+                        queries:     this.selectedQueries.length > 0 ? this.selectedQueries : [],
+                        provider:    this.form.provider,
+                        model:       this.form.model,
+                        audit_types: this.form.audit_types,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) { this.jobError = data.detail || 'Failed to start'; this.optimizing = false; return; }
+                this.guideId = data.guide_id;
+                this.startPolling();
+            } catch(e) {
+                this.jobError = 'Network error'; this.optimizing = false;
+            }
+        },
+
+        startPolling() {
+            this.pollTimer = setInterval(async () => {
+                try {
+                    const data = await (await fetch(`/api/guide/${this.guideId}`)).json();
+                    this.jobStatus = data.status;
+                    if (data.status === 'completed') {
+                        clearInterval(this.pollTimer);
+                        this.optimizing = false;
+                        const gj = data.guide_json;
+                        if (gj && gj.type === 'optimization') {
+                            const newGuide = {
+                                id:         data.id,
+                                url:        this.pageUrl,
+                                reviewed:   false,
+                                created_at: (data.updated_at || '').replace('T',' ').slice(0,16),
+                                model:      data.model,
+                                results:    this._processResults(gj.results),
+                            };
+                            this.pastGuides.unshift({ id: data.id, url: this.pageUrl, reviewed: false,
+                                created_at: newGuide.created_at, model: data.model, guide_json: gj });
+                            this.activeGuideIdx = 0;
+                            this.activeGuide = newGuide;
+                        }
+                    } else if (data.status === 'failed') {
+                        clearInterval(this.pollTimer);
+                        this.optimizing = false;
+                        this.jobError = data.error_message || 'Optimization failed';
+                    }
+                } catch(e) {}
+            }, 2000);
+        },
+
+        async copyText(text) {
+            try { await navigator.clipboard.writeText(text); } catch(e) {}
+        },
+
+        scoreBg(score) {
+            if (score == null) return 'bg-slate-100 text-slate-500';
+            if (score >= 81)   return 'bg-emerald-100 text-emerald-800';
+            if (score >= 61)   return 'bg-sky-100 text-sky-800';
+            if (score >= 41)   return 'bg-amber-100 text-amber-800';
+            if (score >= 21)   return 'bg-orange-100 text-orange-800';
+            return 'bg-red-100 text-red-800';
+        },
+        severityBg(s) {
+            return s==='critical' ? 'bg-red-100 text-red-700' : s==='major' ? 'bg-orange-100 text-orange-700' : 'bg-slate-100 text-slate-600';
+        },
+        priorityBg(p) {
+            return p==='high' ? 'bg-red-100 text-red-700' : p==='medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600';
+        },
+        getAuditBlock(auditType, result) {
+            if (auditType === 'SEO_AUDIT') return result.seo_audit || {};
+            if (auditType === 'GEO_AUDIT') return result.geo_audit || {};
+            return {};
+        },
+        auditTypeLabel(t) {
+            return { SEO_AUDIT: 'SEO Audit', GEO_AUDIT: 'GEO Audit', FAQ_KEYWORDS: 'FAQ & Keywords', SCHEMA_GEN: 'Schema Generator' }[t] || t;
+        },
+    };
+}
+</script>
+{% endblock %}

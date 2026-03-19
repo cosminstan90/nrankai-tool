@@ -1,0 +1,552 @@
+{% extends "base.html" %}
+{% block title %}{{ account.name }} — Google Ads{% endblock %}
+
+{% block content %}
+<div class="space-y-5"
+     x-data="adsDetail('{{ account.id }}')"
+     x-init="init()">
+
+    <!-- Header -->
+    <div>
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm">
+                <li><a href="/ads" class="text-slate-400 hover:text-slate-600">Google Ads</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li class="text-slate-700 font-medium truncate max-w-xs">{{ account.name }}</li>
+            </ol>
+        </nav>
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">{{ account.name }}</h1>
+                <p class="mt-1 text-sm text-slate-500">
+                    {% if account.account_id %}<span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{{ account.account_id }}</span>{% endif %}
+                    {% if account.currency %}<span class="ml-1 text-xs">{{ account.currency }}</span>{% endif %}
+                    &bull; {{ account.total_terms | default(0) }} search terms
+                    &bull; {{ account.total_campaigns | default(0) }} campaigns
+                </p>
+            </div>
+            <!-- Upload shortcut -->
+            <div class="flex gap-2">
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Search Terms CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Campaigns CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+            </div>
+        </div>
+        <p x-show="uploadMsg" x-text="uploadMsg"
+           :class="uploadErr ? 'text-red-600' : 'text-emerald-600'"
+           class="text-xs mt-2 font-medium"></p>
+    </div>
+
+    <!-- Tab navigation -->
+    <div class="flex border-b border-slate-200 gap-1">
+        <button @click="switchTab('terms')"
+                :class="activeTab === 'terms'
+                    ? 'border-b-2 border-blue-600 text-blue-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔑 Search Terms
+            <span x-show="{{ account.total_terms | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ account.total_terms | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('campaigns')"
+                :class="activeTab === 'campaigns'
+                    ? 'border-b-2 border-violet-600 text-violet-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            📋 Campaigns
+            <span x-show="{{ account.total_campaigns | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ account.total_campaigns | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('xref')"
+                :class="activeTab === 'xref'
+                    ? 'border-b-2 border-emerald-600 text-emerald-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔗 Paid vs. Organic
+        </button>
+    </div>
+
+    <!-- ── SEARCH TERMS TAB ───────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'terms'">
+
+        {% if account.total_terms == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No search terms data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Search Terms CSV</strong> from Ads → Keywords → Search terms → Download.</p>
+        </div>
+        {% else %}
+
+        <div class="flex flex-wrap gap-3 items-center">
+            <input x-model="tSearch" @input.debounce.400ms="tPage = 0; loadTerms()"
+                   type="text" placeholder="Filter search terms…"
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <input x-model="tCampaign" @input.debounce.400ms="tPage = 0; loadTerms()"
+                   type="text" placeholder="Filter by campaign…"
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <select x-model="tSort" @change="tPage = 0; loadTerms()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+                <option value="clicks_desc">Clicks ↓</option>
+                <option value="impressions_desc">Impressions ↓</option>
+                <option value="cost_desc">Cost ↓</option>
+                <option value="conv_desc">Conversions ↓</option>
+                <option value="ctr_desc">CTR ↓</option>
+                <option value="term_asc">Term A→Z</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="tTotal.toLocaleString() + ' terms'"></span>
+        </div>
+
+        <div x-show="tLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <div x-show="!tLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Search Term</th>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Campaign</th>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Match</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Clicks</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Impr.</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">CTR%</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Cost</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conv.</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="row in tRows" :key="row.id">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-4 py-2.5 font-medium text-slate-800 max-w-xs" x-text="row.search_term"></td>
+                            <td class="px-4 py-2.5 text-slate-500 text-xs max-w-xs truncate" x-text="row.campaign || '—'"></td>
+                            <td class="px-4 py-2.5">
+                                <span x-show="row.match_type" class="inline-flex px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-600" x-text="row.match_type"></span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.clicks || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-500 tabular-nums" x-text="(row.impressions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums font-medium text-blue-700"
+                                x-text="row.cost !== null ? row.cost.toFixed(2) : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-600"
+                                x-text="row.conversions !== null ? row.conversions : '—'"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="!tLoading && tRows.length === 0">
+                        <td colspan="8" class="px-4 py-8 text-center text-slate-400">No terms match your filter.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(tPage * tPageSize + 1, tTotal) + '–' + Math.min((tPage + 1) * tPageSize, tTotal) + ' of ' + tTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="tPage--; loadTerms()" :disabled="tPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="tPage++; loadTerms()" :disabled="(tPage + 1) * tPageSize >= tTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── CAMPAIGNS TAB ─────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'campaigns'">
+
+        {% if account.total_campaigns == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No campaign data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Campaigns CSV</strong> from Ads → Campaigns → Download.</p>
+        </div>
+        {% else %}
+
+        <div class="flex flex-wrap gap-3 items-center">
+            <select x-model="cSort" @change="cPage = 0; loadCampaigns()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                <option value="clicks_desc">Clicks ↓</option>
+                <option value="cost_desc">Cost ↓</option>
+                <option value="impressions_desc">Impressions ↓</option>
+                <option value="conv_desc">Conversions ↓</option>
+                <option value="campaign_asc">Campaign A→Z</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="cTotal.toLocaleString() + ' campaigns'"></span>
+        </div>
+
+        <div x-show="cLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <div x-show="!cLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Campaign</th>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Type</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Clicks</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Impressions</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">CTR%</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Cost</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conv.</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conv.%</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="row in cRows" :key="row.id">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-4 py-2.5 font-medium text-slate-800 max-w-xs" x-text="row.campaign"></td>
+                            <td class="px-4 py-2.5 text-slate-500 text-xs" x-text="row.campaign_type || '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums font-medium text-blue-700"
+                                x-text="row.cost !== null ? row.cost.toFixed(2) : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums text-slate-600"
+                                x-text="row.conversions !== null ? row.conversions : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums"
+                                :class="row.conv_rate !== null && row.conv_rate > 5 ? 'text-emerald-700 font-semibold' : 'text-slate-600'"
+                                x-text="row.conv_rate !== null ? row.conv_rate + '%' : '—'"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="!cLoading && cRows.length === 0">
+                        <td colspan="8" class="px-4 py-8 text-center text-slate-400">No campaign data.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(cPage * cPageSize + 1, cTotal) + '–' + Math.min((cPage + 1) * cPageSize, cTotal) + ' of ' + cTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="cPage--; loadCampaigns()" :disabled="cPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="cPage++; loadCampaigns()" :disabled="(cPage + 1) * cPageSize >= cTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── PAID vs. ORGANIC TAB ──────────────────────────────────────────── -->
+    <div x-show="activeTab === 'xref'">
+
+        {% if account.total_terms == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">Upload search terms data first to see paid vs. organic cross-reference.</p>
+        </div>
+        {% else %}
+
+        <div x-show="xrefLoading" class="py-12 text-center text-slate-400 text-sm">Computing paid vs. organic cross-reference…</div>
+
+        <div x-show="!xrefLoading && xref" class="space-y-6">
+
+            <!-- Summary strip -->
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-slate-700" x-text="(xref?.summary?.total_ads_terms || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Ads terms</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-slate-500" x-text="(xref?.summary?.total_gsc_queries || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">GSC queries</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-violet-700" x-text="(xref?.summary?.paid_and_organic || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Paid + organic</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-amber-600" x-text="(xref?.summary?.paid_only || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Paid only</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-emerald-700" x-text="(xref?.summary?.organic_only || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Organic only</div>
+                </div>
+            </div>
+
+            <!-- ① Paid + Organic overlap -->
+            <div x-show="xref?.paid_and_organic?.length > 0" class="bg-white rounded-xl border border-violet-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-2">
+                    <span class="text-base">🔄</span>
+                    <div>
+                        <h3 class="font-semibold text-violet-900 text-sm">Paying for clicks you also get organically</h3>
+                        <p class="text-xs text-violet-700 mt-0.5">These terms appear in both Ads and GSC. Review if paid spend is justified by organic rank.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-violet-200 text-violet-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.paid_and_organic?.length || 0) + ' terms'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Search Term</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-blue-500">Ads Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-blue-500">Ads Cost</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-emerald-500">GSC Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-emerald-500">GSC Pos.</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.paid_and_organic || []).slice(0, xrefPaidOrgShow)" :key="i">
+                                <tr class="hover:bg-violet-50 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-slate-800" x-text="row.search_term"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-blue-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums font-semibold text-blue-700"
+                                        x-text="row.cost !== null ? row.cost.toFixed(2) : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-emerald-700" x-text="(row.gsc_clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums">
+                                        <span :class="{
+                                            'text-emerald-700 font-bold': row.gsc_position <= 3,
+                                            'text-sky-700':   row.gsc_position > 3  && row.gsc_position <= 10,
+                                            'text-amber-600': row.gsc_position > 10 && row.gsc_position <= 20,
+                                            'text-slate-400': !row.gsc_position || row.gsc_position > 20,
+                                        }" x-text="row.gsc_position || '—'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.paid_and_organic?.length || 0) > xrefPaidOrgShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefPaidOrgShow += 50"
+                            class="text-sm text-violet-600 hover:text-violet-800 font-medium">
+                        Show more (<span x-text="(xref?.paid_and_organic?.length || 0) - xrefPaidOrgShow"></span> remaining)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ② Paid only (blind spend) -->
+            <div x-show="xref?.paid_only?.length > 0" class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+                    <span class="text-base">💸</span>
+                    <div>
+                        <h3 class="font-semibold text-amber-900 text-sm">Paid only — no organic presence</h3>
+                        <p class="text-xs text-amber-700 mt-0.5">You pay for these terms but don't appear organically. Consider creating content to reduce dependency.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.paid_only?.length || 0) + ' terms'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Search Term</th>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Campaign</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Cost</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Conv.</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.paid_only || []).slice(0, xrefPaidOnlyShow)" :key="i">
+                                <tr class="hover:bg-amber-50 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-slate-800" x-text="row.search_term"></td>
+                                    <td class="px-4 py-2 text-slate-500 text-xs" x-text="row.campaign || '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums font-semibold text-amber-700"
+                                        x-text="row.cost !== null ? row.cost.toFixed(2) : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600"
+                                        x-text="row.conversions !== null ? row.conversions : '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.paid_only?.length || 0) > xrefPaidOnlyShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefPaidOnlyShow += 50"
+                            class="text-sm text-amber-600 hover:text-amber-800 font-medium">Show more</button>
+                </div>
+            </div>
+
+            <!-- ③ Organic only (Ads opportunities) -->
+            <div x-show="xref?.organic_only?.length > 0" class="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
+                    <span class="text-base">🌱</span>
+                    <div>
+                        <h3 class="font-semibold text-emerald-900 text-sm">Organic only — potential Ads opportunities</h3>
+                        <p class="text-xs text-emerald-700 mt-0.5">You rank for these organically but aren't running Ads on them. High-traffic terms may be worth adding.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.organic_only?.length || 0) + ' queries'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Query</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">GSC Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impressions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Position</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.organic_only || []).slice(0, xrefOrgOnlyShow)" :key="i">
+                                <tr class="hover:bg-emerald-50 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-slate-800" x-text="row.query"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-emerald-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums">
+                                        <span :class="{
+                                            'text-emerald-700 font-bold': row.position <= 3,
+                                            'text-sky-700':   row.position > 3  && row.position <= 10,
+                                            'text-amber-600': row.position > 10 && row.position <= 20,
+                                            'text-slate-400': !row.position || row.position > 20,
+                                        }" x-text="row.position || '—'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.organic_only?.length || 0) > xrefOrgOnlyShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefOrgOnlyShow += 50"
+                            class="text-sm text-emerald-600 hover:text-emerald-800 font-medium">Show more</button>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!xref?.paid_and_organic?.length && !xref?.paid_only?.length && !xref?.organic_only?.length"
+                 class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+                <p class="text-slate-500 text-sm">No cross-reference data found.</p>
+                <p class="text-slate-400 text-xs mt-1">Make sure you have GSC data uploaded to cross-reference against.</p>
+            </div>
+
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+function adsDetail(accountId) {
+    return {
+        accountId,
+        activeTab: 'terms',
+
+        // Search terms state
+        tRows:     [],
+        tTotal:    0,
+        tPage:     0,
+        tPageSize: 50,
+        tSearch:   '',
+        tCampaign: '',
+        tSort:     'clicks_desc',
+        tLoading:  false,
+
+        // Campaigns state
+        cRows:     [],
+        cTotal:    0,
+        cPage:     0,
+        cPageSize: 50,
+        cSort:     'clicks_desc',
+        cLoading:  false,
+
+        // Cross-reference state
+        xref:        null,
+        xrefLoading: false,
+
+        // "Show more" caps
+        xrefPaidOrgShow:  20,
+        xrefPaidOnlyShow: 20,
+        xrefOrgOnlyShow:  20,
+
+        // Upload
+        uploadMsg: '',
+        uploadErr: false,
+
+        async init() {
+            await this.loadTerms();
+        },
+
+        async switchTab(tab) {
+            this.activeTab = tab;
+            if (tab === 'terms'     && !this.tRows.length) await this.loadTerms();
+            if (tab === 'campaigns' && !this.cRows.length) await this.loadCampaigns();
+            if (tab === 'xref'     && !this.xref)          await this.loadXref();
+        },
+
+        async loadTerms() {
+            this.tLoading = true;
+            const params = new URLSearchParams({
+                q:         this.tSearch,
+                campaign:  this.tCampaign,
+                sort:      this.tSort,
+                page:      this.tPage,
+                page_size: this.tPageSize,
+            });
+            const res  = await fetch(`/api/ads/accounts/${this.accountId}/search-terms?${params}`);
+            const data = await res.json();
+            this.tRows  = data.items;
+            this.tTotal = data.total;
+            this.tLoading = false;
+        },
+
+        async loadCampaigns() {
+            this.cLoading = true;
+            const params = new URLSearchParams({
+                sort:      this.cSort,
+                page:      this.cPage,
+                page_size: this.cPageSize,
+            });
+            const res  = await fetch(`/api/ads/accounts/${this.accountId}/campaigns?${params}`);
+            const data = await res.json();
+            this.cRows  = data.items;
+            this.cTotal = data.total;
+            this.cLoading = false;
+        },
+
+        async loadXref() {
+            this.xrefLoading = true;
+            const res  = await fetch(`/api/ads/accounts/${this.accountId}/cross-reference`);
+            this.xref  = await res.json();
+            this.xrefLoading = false;
+        },
+
+        async quickUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            this.uploadMsg = '';
+            this.uploadErr = false;
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res  = await fetch(`/api/ads/accounts/${this.accountId}/upload`, {
+                    method: 'POST',
+                    body:   fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = data.detail || 'Upload failed';
+                    this.uploadErr = true;
+                } else {
+                    this.uploadMsg = `✓ ${data.rows_imported.toLocaleString()} ${data.report_type.replace('_', ' ')} rows imported`;
+                    if (data.report_type === 'search_terms') {
+                        this.tPage = 0;
+                        await this.loadTerms();
+                    } else {
+                        this.cPage = 0;
+                        await this.loadCampaigns();
+                    }
+                    this.xref = null;
+                }
+            } catch(e) {
+                this.uploadMsg = 'Network error during upload';
+                this.uploadErr = true;
+            } finally {
+                event.target.value = '';
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

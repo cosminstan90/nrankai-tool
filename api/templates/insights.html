@@ -1,0 +1,561 @@
+{% extends "base.html" %}
+{% block title %}AI Insights — Multi-Source Analysis{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="insightsList()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-4">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">AI Insights</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Join GSC, GA4, Google Ads, and audit data — Claude Haiku analyses each page and
+                generates prioritised, actionable recommendations.
+            </p>
+        </div>
+        <button @click="showNewRun = true"
+                class="inline-flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors flex-shrink-0">
+            🧠 New Insight Run
+        </button>
+    </div>
+
+    <!-- ── New Run Modal ──────────────────────────────────────────────────── -->
+    <div x-show="showNewRun" x-transition
+         class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+         @click.self="showNewRun = false">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-lg font-bold text-slate-900">New Insight Run</h2>
+                <button @click="showNewRun = false" class="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Run name</label>
+                <input x-model="newRun.name" type="text"
+                       :placeholder="'Insights ' + new Date().toLocaleDateString()"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            </div>
+
+            <p class="text-xs text-slate-500">Select at least one data source to analyse:</p>
+
+            <div class="grid grid-cols-1 gap-3">
+                <!-- GSC Property -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">📈 GSC Property <span class="text-slate-400">(optional)</span></label>
+                    <select x-model="newRun.gsc_property_id"
+                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <option value="">— None —</option>
+                        <template x-for="p in sources.gsc" :key="p.id">
+                            <option :value="p.id" x-text="p.name + (p.total_pages > 0 ? ' (' + p.total_pages + ' pages)' : '')"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <!-- GA4 Property -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">📊 GA4 Property <span class="text-slate-400">(optional)</span></label>
+                    <select x-model="newRun.ga4_property_id"
+                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <option value="">— None —</option>
+                        <template x-for="p in sources.ga4" :key="p.id">
+                            <option :value="p.id" x-text="p.name + (p.total_pages > 0 ? ' (' + p.total_pages + ' pages)' : '')"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <!-- Ads Account -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">💰 Google Ads Account <span class="text-slate-400">(optional)</span></label>
+                    <select x-model="newRun.ads_account_id"
+                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <option value="">— None —</option>
+                        <template x-for="a in sources.ads" :key="a.id">
+                            <option :value="a.id" x-text="a.name + (a.total_terms > 0 ? ' (' + a.total_terms + ' terms)' : '')"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <!-- Audit -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-600 mb-1">🔍 Audit <span class="text-slate-400">(optional)</span></label>
+                    <select x-model="newRun.audit_id"
+                            class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <option value="">— None —</option>
+                        <template x-for="a in sources.audits" :key="a.id">
+                            <option :value="a.id" x-text="a.site_url + ' — ' + a.audit_type + ' (' + new Date(a.completed_at).toLocaleDateString() + ')'"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+            <p x-show="newRunError" x-text="newRunError" class="text-sm text-red-600"></p>
+
+            <div class="flex gap-3 pt-2">
+                <button @click="startRun()"
+                        :disabled="creating"
+                        class="flex-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors">
+                    <span x-text="creating ? '⏳ Starting…' : '🚀 Start Analysis'"></span>
+                </button>
+                <button @click="showNewRun = false"
+                        class="px-4 py-2 border border-slate-300 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Runs list (left pane) + Cards (right pane) ────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Runs list -->
+        <div class="space-y-3">
+            <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Runs</h2>
+
+            <div x-show="runsLoading" class="text-center py-8 text-slate-400 text-sm">Loading…</div>
+
+            <div x-show="!runsLoading && runs.length === 0"
+                 class="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center">
+                <p class="text-slate-500 text-sm">No insight runs yet.</p>
+                <p class="text-slate-400 text-xs mt-1">Click "New Insight Run" to get started.</p>
+            </div>
+
+            <template x-for="run in runs" :key="run.id">
+                <div @click="selectRun(run)"
+                     class="bg-white border rounded-xl p-4 cursor-pointer transition-all"
+                     :class="selectedRun?.id === run.id
+                         ? 'border-indigo-400 shadow-md ring-1 ring-indigo-300'
+                         : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'">
+
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <p class="font-medium text-sm text-slate-900 leading-tight" x-text="run.name"></p>
+                        <button @click.stop="deleteRun(run.id, run.name)"
+                                class="text-slate-300 hover:text-red-500 transition-colors flex-shrink-0">
+                            <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Status badge -->
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                              :class="{
+                                  'bg-amber-100 text-amber-700':  run.status === 'pending',
+                                  'bg-sky-100 text-sky-700':     run.status === 'running',
+                                  'bg-emerald-100 text-emerald-700': run.status === 'completed',
+                                  'bg-red-100 text-red-700':    run.status === 'failed',
+                              }"
+                              x-text="run.status.charAt(0).toUpperCase() + run.status.slice(1)">
+                        </span>
+                        <span x-show="run.status === 'completed'"
+                              class="text-xs text-slate-500"
+                              x-text="run.total_cards + ' insights'"></span>
+                    </div>
+
+                    <!-- Progress bar (running/pending) -->
+                    <div x-show="run.status === 'running' || run.status === 'pending'" class="mb-2">
+                        <div class="w-full bg-slate-100 rounded-full h-1.5">
+                            <div class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                                 :style="'width: ' + run.progress + '%'"></div>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-1" x-text="run.progress_message"></p>
+                    </div>
+
+                    <!-- Data source chips -->
+                    <div class="flex flex-wrap gap-1">
+                        <span x-show="run.gsc_property_id" class="text-[10px] px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">GSC</span>
+                        <span x-show="run.ga4_property_id" class="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">GA4</span>
+                        <span x-show="run.ads_account_id"  class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">Ads</span>
+                        <span x-show="run.audit_id"        class="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">Audit</span>
+                        <span class="text-[10px] text-slate-400" x-text="run.created_at ? new Date(run.created_at).toLocaleDateString() : ''"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Insight cards panel -->
+        <div class="lg:col-span-2 space-y-4">
+
+            <!-- No run selected -->
+            <div x-show="!selectedRun" class="bg-slate-50 border border-slate-200 rounded-xl p-12 text-center">
+                <p class="text-3xl mb-3">🧠</p>
+                <p class="text-slate-600 font-medium">Select a run to view insights</p>
+                <p class="text-slate-400 text-sm mt-1">Or create a new run using the button above.</p>
+            </div>
+
+            <!-- Run selected -->
+            <div x-show="selectedRun" class="space-y-4">
+
+                <!-- Run still processing -->
+                <div x-show="selectedRun?.status === 'running' || selectedRun?.status === 'pending'"
+                     class="bg-sky-50 border border-sky-200 rounded-xl p-5 text-center">
+                    <div class="flex items-center justify-center gap-2 text-sky-700 mb-2">
+                        <svg class="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <span class="text-sm font-medium">Analysis in progress…</span>
+                    </div>
+                    <div class="w-full max-w-sm mx-auto bg-sky-100 rounded-full h-2 mb-2">
+                        <div class="bg-sky-500 h-2 rounded-full transition-all duration-500"
+                             :style="'width: ' + (selectedRun?.progress || 0) + '%'"></div>
+                    </div>
+                    <p class="text-xs text-sky-600" x-text="selectedRun?.progress_message"></p>
+                    <p class="text-xs text-sky-400 mt-1">Auto-refreshing every 3 seconds…</p>
+                </div>
+
+                <!-- Failed -->
+                <div x-show="selectedRun?.status === 'failed'"
+                     class="bg-red-50 border border-red-200 rounded-xl p-5">
+                    <p class="text-sm font-semibold text-red-800">Run failed</p>
+                    <p class="text-xs text-red-600 mt-1" x-text="selectedRun?.progress_message"></p>
+                </div>
+
+                <!-- Completed — filters + cards -->
+                <div x-show="selectedRun?.status === 'completed'" class="space-y-4">
+
+                    <!-- Filter bar -->
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <span class="text-xs text-slate-500 font-medium">Filter:</span>
+
+                        <!-- Issue type chips -->
+                        <template x-for="[key, label] in Object.entries(issueLabels)" :key="key">
+                            <button @click="toggleIssue(key)"
+                                    class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+                                    :class="filterIssue === key
+                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                        : 'bg-white border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600'"
+                                    x-text="label">
+                            </button>
+                        </template>
+
+                        <span class="text-slate-300">|</span>
+
+                        <!-- Priority chips -->
+                        <template x-for="[p, pc] in [['high', 'text-red-700 border-red-300'], ['medium', 'text-amber-700 border-amber-300'], ['low', 'text-slate-600 border-slate-300']]" :key="p">
+                            <button @click="togglePriority(p)"
+                                    class="px-2.5 py-1 rounded-full text-xs font-medium border transition-colors"
+                                    :class="filterPriority === p
+                                        ? 'bg-slate-800 border-slate-800 text-white'
+                                        : 'bg-white ' + pc + ' hover:bg-slate-50'"
+                                    x-text="p.charAt(0).toUpperCase() + p.slice(1)">
+                            </button>
+                        </template>
+
+                        <input x-model="filterQ" @input.debounce.400ms="cardPage = 0; loadCards()"
+                               type="text" placeholder="Search URLs…"
+                               class="ml-auto border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+
+                        <span class="text-xs text-slate-500" x-text="cardTotal.toLocaleString() + ' insights'"></span>
+                    </div>
+
+                    <!-- Cards loading -->
+                    <div x-show="cardsLoading" class="py-8 text-center text-slate-400 text-sm">Loading insights…</div>
+
+                    <!-- Cards grid -->
+                    <div x-show="!cardsLoading" class="space-y-3">
+                        <template x-for="card in cards" :key="card.id">
+                            <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+
+                                <!-- Card header -->
+                                <div class="flex items-start gap-3 mb-3">
+                                    <div class="flex-1 min-w-0">
+                                        <a :href="card.page_or_query.startsWith('http') ? card.page_or_query : '#'"
+                                           :target="card.page_or_query.startsWith('http') ? '_blank' : '_self'"
+                                           class="text-xs font-mono text-sky-600 hover:underline break-all"
+                                           x-text="card.page_or_query"></a>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-shrink-0">
+                                        <!-- Issue type badge -->
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold"
+                                              :class="{
+                                                  'bg-red-100 text-red-800':     card.issue_type === 'low_ctr' || card.issue_type === 'poor_engagement',
+                                                  'bg-orange-100 text-orange-800': card.issue_type === 'ranks_but_bounces' || card.issue_type === 'paid_dependency',
+                                                  'bg-emerald-100 text-emerald-800': card.issue_type === 'organic_opportunity' || card.issue_type === 'near_miss',
+                                                  'bg-amber-100 text-amber-800':  card.issue_type === 'no_audit' || card.issue_type === 'content_gap',
+                                              }"
+                                              x-text="card.issue_label"></span>
+                                        <!-- Priority badge -->
+                                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold"
+                                              :class="{
+                                                  'bg-red-600 text-white':    card.priority === 'high',
+                                                  'bg-amber-500 text-white':  card.priority === 'medium',
+                                                  'bg-slate-300 text-slate-700': card.priority === 'low',
+                                              }"
+                                              x-text="card.priority.charAt(0).toUpperCase() + card.priority.slice(1)"></span>
+                                    </div>
+                                </div>
+
+                                <!-- Reason + Action -->
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                                    <div>
+                                        <p class="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Why</p>
+                                        <p class="text-xs text-slate-700" x-text="card.reason"></p>
+                                    </div>
+                                    <div class="bg-indigo-50 rounded-lg px-3 py-2">
+                                        <p class="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-1">Action</p>
+                                        <p class="text-xs text-indigo-800 font-medium" x-text="card.action"></p>
+                                    </div>
+                                </div>
+
+                                <!-- Metrics row -->
+                                <div class="flex flex-wrap gap-3 border-t border-slate-100 pt-3">
+                                    <template x-if="card.gsc_clicks !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold text-sky-700" x-text="(card.gsc_clicks || 0).toLocaleString()"></div>
+                                            <div class="text-[10px] text-slate-400">GSC clicks</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.gsc_position !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold"
+                                                 :class="card.gsc_position <= 3 ? 'text-emerald-700' : card.gsc_position <= 10 ? 'text-sky-700' : 'text-amber-600'"
+                                                 x-text="'#' + card.gsc_position"></div>
+                                            <div class="text-[10px] text-slate-400">GSC pos.</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.gsc_ctr !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold"
+                                                 :class="card.gsc_ctr < 2 ? 'text-red-600' : 'text-slate-700'"
+                                                 x-text="card.gsc_ctr + '%'"></div>
+                                            <div class="text-[10px] text-slate-400">CTR</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.ga4_sessions !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold text-orange-700" x-text="(card.ga4_sessions || 0).toLocaleString()"></div>
+                                            <div class="text-[10px] text-slate-400">GA4 sessions</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.ga4_bounce_rate !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold"
+                                                 :class="card.ga4_bounce_rate > 60 ? 'text-red-600' : 'text-slate-700'"
+                                                 x-text="card.ga4_bounce_rate + '%'"></div>
+                                            <div class="text-[10px] text-slate-400">Bounce</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.ads_cost !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold text-blue-700" x-text="card.ads_cost.toFixed(2)"></div>
+                                            <div class="text-[10px] text-slate-400">Ads cost</div>
+                                        </div>
+                                    </template>
+                                    <template x-if="card.audit_score !== null">
+                                        <div class="text-center">
+                                            <div class="text-xs font-semibold"
+                                                 :class="card.audit_score >= 75 ? 'text-emerald-700' : card.audit_score >= 50 ? 'text-amber-600' : 'text-red-600'"
+                                                 x-text="card.audit_score + '/100'"></div>
+                                            <div class="text-[10px] text-slate-400">Audit</div>
+                                        </div>
+                                    </template>
+                                </div>
+
+                            </div>
+                        </template>
+
+                        <!-- Empty state -->
+                        <div x-show="!cardsLoading && cards.length === 0"
+                             class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+                            <p class="text-slate-500 text-sm">No insights match your filters.</p>
+                        </div>
+                    </div>
+
+                    <!-- Pagination -->
+                    <div x-show="cardTotal > 0" class="flex items-center justify-between text-sm text-slate-500">
+                        <span x-text="'Showing ' + Math.min(cardPage * cardPageSize + 1, cardTotal) + '–' + Math.min((cardPage + 1) * cardPageSize, cardTotal) + ' of ' + cardTotal.toLocaleString()"></span>
+                        <div class="flex gap-2">
+                            <button @click="cardPage--; loadCards()" :disabled="cardPage === 0"
+                                    class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                            <button @click="cardPage++; loadCards()" :disabled="(cardPage + 1) * cardPageSize >= cardTotal"
+                                    class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+<script>
+function insightsList() {
+    return {
+        // Runs state
+        runs:        [],
+        runsLoading: true,
+        selectedRun: null,
+        pollTimer:   null,
+
+        // New run modal
+        showNewRun:   false,
+        creating:     false,
+        newRunError:  '',
+        newRun: {
+            name:             '',
+            gsc_property_id:  '',
+            ga4_property_id:  '',
+            ads_account_id:   '',
+            audit_id:         '',
+        },
+        sources: {
+            gsc:    [],
+            ga4:    [],
+            ads:    [],
+            audits: [],
+        },
+
+        // Cards state
+        cards:       [],
+        cardsLoading:false,
+        cardTotal:   0,
+        cardPage:    0,
+        cardPageSize:50,
+        filterIssue: '',
+        filterPriority: '',
+        filterQ:     '',
+
+        // Issue labels map
+        issueLabels: {
+            low_ctr:             'Low CTR',
+            poor_engagement:     'Poor Engagement',
+            ranks_but_bounces:   'Ranks but Bounces',
+            paid_dependency:     'Paid Dependency',
+            organic_opportunity: 'Organic Opportunity',
+            no_audit:            'Not Audited',
+            content_gap:         'Content Gap',
+            near_miss:           'Near Miss',
+        },
+
+        async init() {
+            await Promise.all([this.loadRuns(), this.loadSources()]);
+        },
+
+        async loadRuns() {
+            this.runsLoading = true;
+            const res = await fetch('/api/insights/runs');
+            this.runs = await res.json();
+            this.runsLoading = false;
+        },
+
+        async loadSources() {
+            const [gscRes, ga4Res, adsRes, auditRes] = await Promise.all([
+                fetch('/api/gsc/properties'),
+                fetch('/api/ga4/properties'),
+                fetch('/api/ads/accounts'),
+                fetch('/api/audits?status=completed&page_size=50'),
+            ]);
+            this.sources.gsc    = await gscRes.json();
+            this.sources.ga4    = await ga4Res.json();
+            this.sources.ads    = await adsRes.json();
+            const auditData     = await auditRes.json();
+            this.sources.audits = auditData.items || auditData || [];
+        },
+
+        async startRun() {
+            this.newRunError = '';
+            const { name, gsc_property_id, ga4_property_id, ads_account_id, audit_id } = this.newRun;
+            if (!gsc_property_id && !ga4_property_id && !ads_account_id && !audit_id) {
+                this.newRunError = 'Select at least one data source.';
+                return;
+            }
+            this.creating = true;
+            try {
+                const res = await fetch('/api/insights/runs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name:             name || 'Insights ' + new Date().toLocaleDateString(),
+                        gsc_property_id:  gsc_property_id || null,
+                        ga4_property_id:  ga4_property_id || null,
+                        ads_account_id:   ads_account_id  || null,
+                        audit_id:         audit_id        || null,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.newRunError = err.detail || 'Failed to create run';
+                } else {
+                    this.showNewRun = false;
+                    this.newRun = { name: '', gsc_property_id: '', ga4_property_id: '', ads_account_id: '', audit_id: '' };
+                    await this.loadRuns();
+                    // Auto-select the new run
+                    if (this.runs.length > 0) await this.selectRun(this.runs[0]);
+                }
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        async selectRun(run) {
+            this.selectedRun = run;
+            this.filterIssue = '';
+            this.filterPriority = '';
+            this.filterQ = '';
+            this.cardPage = 0;
+
+            // Stop existing poll
+            if (this.pollTimer) clearInterval(this.pollTimer);
+
+            if (run.status === 'completed' || run.status === 'failed') {
+                await this.loadCards();
+            } else {
+                // Poll until completed
+                this.pollTimer = setInterval(async () => {
+                    const res = await fetch('/api/insights/runs/' + this.selectedRun.id);
+                    const updated = await res.json();
+                    this.selectedRun = updated;
+                    // Update in runs list too
+                    const idx = this.runs.findIndex(r => r.id === updated.id);
+                    if (idx !== -1) this.runs[idx] = updated;
+                    if (updated.status === 'completed' || updated.status === 'failed') {
+                        clearInterval(this.pollTimer);
+                        if (updated.status === 'completed') await this.loadCards();
+                    }
+                }, 3000);
+            }
+        },
+
+        async loadCards() {
+            if (!this.selectedRun) return;
+            this.cardsLoading = true;
+            const params = new URLSearchParams({
+                issue_type: this.filterIssue,
+                priority:   this.filterPriority,
+                q:          this.filterQ,
+                page:       this.cardPage,
+                page_size:  this.cardPageSize,
+            });
+            const res  = await fetch(`/api/insights/runs/${this.selectedRun.id}/cards?${params}`);
+            const data = await res.json();
+            this.cards     = data.items;
+            this.cardTotal = data.total;
+            this.cardsLoading = false;
+        },
+
+        toggleIssue(key) {
+            this.filterIssue = this.filterIssue === key ? '' : key;
+            this.cardPage = 0;
+            this.loadCards();
+        },
+
+        togglePriority(p) {
+            this.filterPriority = this.filterPriority === p ? '' : p;
+            this.cardPage = 0;
+            this.loadCards();
+        },
+
+        async deleteRun(id, name) {
+            if (!confirm(`Delete run "${name}"?\nThis cannot be undone.`)) return;
+            if (this.selectedRun?.id === id) {
+                this.selectedRun = null;
+                if (this.pollTimer) clearInterval(this.pollTimer);
+            }
+            await fetch('/api/insights/runs/' + id, { method: 'DELETE' });
+            await this.loadRuns();
+        },
+    };
+}
+</script>
+{% endblock %}

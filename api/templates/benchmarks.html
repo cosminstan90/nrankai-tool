@@ -1,0 +1,1092 @@
+{% extends "base.html" %}
+
+{% block title %}Competitor Benchmarking - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="benchmarkApp()">
+
+    <!-- ── Global error banner ── -->
+    <div
+        x-show="errorMessage"
+        x-transition:enter="transition ease-out duration-200"
+        x-transition:enter-start="opacity-0 -translate-y-1"
+        x-transition:enter-end="opacity-100 translate-y-0"
+        x-transition:leave="transition ease-in duration-150"
+        x-transition:leave-start="opacity-100 translate-y-0"
+        x-transition:leave-end="opacity-0 -translate-y-1"
+        class="mb-6 flex items-center justify-between bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-red-800 print:hidden"
+        role="alert"
+    >
+        <div class="flex items-center space-x-2">
+            <svg class="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+            <span class="text-sm font-medium" x-text="errorMessage"></span>
+        </div>
+        <button @click="errorMessage = ''" class="text-red-500 hover:text-red-700 ml-4" aria-label="Dismiss error">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <!-- ── Page heading ── -->
+    <div class="mb-8 print:mb-4">
+        <h1 class="text-3xl font-bold text-slate-900">Competitor Benchmarking</h1>
+        <p class="mt-2 text-slate-600">Compare your website against competitors with AI-powered competitive analysis</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+        <!-- ============================================================ -->
+        <!-- LEFT COLUMN: Create & List                                   -->
+        <!-- ============================================================ -->
+        <div class="space-y-6 print:hidden">
+
+            <!-- Create Benchmark Form -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h2 class="text-lg font-semibold text-slate-900 mb-4">Create New Benchmark</h2>
+
+                <form @submit.prevent="createBenchmark()" class="space-y-4">
+
+                    <!-- How it works info -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                        <strong>How it works:</strong> Audit each site separately (yours + competitors), then create a benchmark for AI comparison.
+                    </div>
+
+                    <!-- Name -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Benchmark Name</label>
+                        <input
+                            type="text"
+                            x-model="form.name"
+                            :disabled="loading"
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-60 disabled:bg-slate-50"
+                            placeholder="e.g., Q1 2024 SEO Comparison"
+                        >
+                    </div>
+
+                    <!-- Description -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">
+                            Description
+                            <span class="text-slate-400 font-normal">(optional)</span>
+                        </label>
+                        <textarea
+                            x-model="form.description"
+                            :disabled="loading"
+                            rows="2"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-60 disabled:bg-slate-50"
+                            placeholder="Brief description of this benchmark"
+                        ></textarea>
+                    </div>
+
+                    <!-- Audit Type -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Audit Type</label>
+                        <select
+                            x-model="form.audit_type"
+                            @change="filterAuditsByType()"
+                            :disabled="loading"
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-60 disabled:bg-slate-50"
+                        >
+                            <option value="">Select audit type...</option>
+                            <template x-for="t in availableTypesWithCount" :key="t.value">
+                                <option :value="t.value" x-text="t.label"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Cross-type constraint info -->
+                    <div x-show="form.audit_type" class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600">
+                        <strong class="text-slate-700">⚠ Same audit type required:</strong>
+                        All target and competitor audits must share the same audit type (<strong x-text="form.audit_type"></strong>).
+                        Mixing types produces meaningless comparisons — the criteria and scoring models differ between audit types.
+                        <template x-if="isGeoType(form.audit_type)">
+                            <span class="block mt-1 text-primary-700 font-medium">
+                                ✦ GEO mode: comparison uses citation probability, factual density, entity richness, and authority score — not traditional SEO fields.
+                            </span>
+                        </template>
+                        <template x-if="isContentType(form.audit_type)">
+                            <span class="block mt-1 text-primary-700 font-medium">
+                                ✦ Content mode: comparison uses readability, content depth, FAQ coverage, and structural quality.
+                            </span>
+                        </template>
+                    </div>
+
+                    <!-- Not enough audits warning -->
+                    <div x-show="form.audit_type && filteredAudits.length < 2" class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+                        <strong>Not enough audits:</strong>
+                        You have <span x-text="filteredAudits.length"></span> audit(s) of this type.
+                        You need at least 2 (your site + 1 competitor).
+                        <a href="/audits/new" class="underline font-medium ml-1">Start a new audit →</a>
+                    </div>
+
+                    <!-- Target Audit -->
+                    <div x-show="form.audit_type && filteredAudits.length >= 2">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">
+                            Your Website
+                            <span class="text-slate-400 font-normal">(Target)</span>
+                        </label>
+                        <select
+                            x-model="form.target_audit_id"
+                            @change="removeTargetFromCompetitors()"
+                            :disabled="loading"
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-60 disabled:bg-slate-50"
+                        >
+                            <option value="">Select target...</option>
+                            <template x-for="audit in filteredAudits" :key="audit.id">
+                                <option
+                                    :value="audit.id"
+                                    x-text="`${audit.website} — Score: ${audit.average_score || 'N/A'}${audit.created_at ? ' (' + fmtDate(audit.created_at) + ')' : ''}`"
+                                ></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Competitor Audits -->
+                    <div x-show="form.target_audit_id && filteredCompetitors.length > 0">
+                        <label class="block text-sm font-medium text-slate-700 mb-1">
+                            Competitor Websites
+                            <span class="text-slate-400 font-normal">(select 1–4)</span>
+                        </label>
+                        <div class="space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-md p-3">
+                            <template x-for="audit in filteredCompetitors" :key="audit.id">
+                                <label class="flex items-center space-x-2 hover:bg-slate-50 p-2 rounded cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        :value="audit.id"
+                                        x-model="form.competitor_audit_ids"
+                                        :disabled="loading || (form.competitor_audit_ids.length >= 4 && !form.competitor_audit_ids.includes(audit.id))"
+                                        class="rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+                                    >
+                                    <span
+                                        class="text-sm"
+                                        x-text="`${audit.website} — Score: ${audit.average_score || 'N/A'}${audit.created_at ? ' (' + fmtDate(audit.created_at) + ')' : ''}`"
+                                    ></span>
+                                </label>
+                            </template>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1" x-text="`${form.competitor_audit_ids.length}/4 competitors selected`"></p>
+                    </div>
+
+                    <!-- No competitors available after target selected -->
+                    <div
+                        x-show="form.target_audit_id && filteredCompetitors.length === 0 && filteredAudits.length >= 2"
+                        class="text-sm text-slate-500 italic"
+                    >
+                        No other audits available as competitors for this type.
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button
+                        type="submit"
+                        :disabled="loading || !form.target_audit_id || form.competitor_audit_ids.length === 0"
+                        class="w-full px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2 transition-colors"
+                    >
+                        <template x-if="!loading">
+                            <span>Create Benchmark</span>
+                        </template>
+                        <template x-if="loading">
+                            <span class="flex items-center space-x-2">
+                                <svg class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Creating...</span>
+                            </span>
+                        </template>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Benchmarks List -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h2 class="text-lg font-semibold text-slate-900 mb-4">Your Benchmarks</h2>
+
+                <!-- Empty state -->
+                <div x-show="benchmarks.length === 0" class="text-center py-8 text-slate-500">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    <p>No benchmarks yet. Create your first one above!</p>
+                </div>
+
+                <!-- Benchmark items -->
+                <div class="space-y-3">
+                    <template x-for="benchmark in benchmarks" :key="benchmark.id">
+                        <div
+                            @click="selectBenchmark(benchmark.id)"
+                            :class="{'ring-2 ring-primary-500 bg-primary-50': selectedBenchmarkId === benchmark.id}"
+                            class="border border-slate-200 rounded-lg p-4 hover:bg-slate-50 cursor-pointer transition"
+                        >
+                            <div class="flex items-start justify-between mb-2">
+                                <div class="min-w-0 mr-2">
+                                    <h3 class="font-medium text-slate-900 truncate" x-text="benchmark.name"></h3>
+                                    <p class="text-xs text-slate-500 mt-0.5" x-text="benchmark.audit_type"></p>
+                                </div>
+                                <div class="flex items-center gap-2 flex-shrink-0">
+                                    <!-- Status badge -->
+                                    <span
+                                        :class="statusBadgeClass(benchmark.analysis_status)"
+                                        class="px-2 py-0.5 text-xs rounded-full font-medium inline-flex items-center gap-1"
+                                    >
+                                        <svg
+                                            x-show="benchmark.analysis_status === 'generating'"
+                                            class="animate-spin h-3 w-3"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span x-text="statusLabel(benchmark.analysis_status)"></span>
+                                    </span>
+
+                                    <!-- Inline delete confirm -->
+                                    <template x-if="confirmDeleteId !== benchmark.id">
+                                        <button
+                                            @click.stop="confirmDeleteId = benchmark.id"
+                                            class="text-slate-300 hover:text-red-500 transition-colors"
+                                            title="Delete benchmark"
+                                        >
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                            </svg>
+                                        </button>
+                                    </template>
+                                    <template x-if="confirmDeleteId === benchmark.id">
+                                        <div class="flex items-center gap-1" @click.stop>
+                                            <span class="text-xs text-red-700 font-medium">Delete?</span>
+                                            <button
+                                                @click.stop="deleteBenchmark(benchmark.id)"
+                                                class="text-xs text-red-700 underline font-medium hover:text-red-900"
+                                            >Yes</button>
+                                            <button
+                                                @click.stop="confirmDeleteId = null"
+                                                class="text-xs text-slate-500 underline hover:text-slate-700"
+                                            >No</button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-4 text-sm">
+                                <div>
+                                    <span class="text-slate-500">Target:</span>
+                                    <span class="font-medium ml-1" x-text="benchmark.target?.website || 'N/A'"></span>
+                                    <span class="text-primary-600 ml-1" x-text="`(${benchmark.target?.avg_score ?? 0})`"></span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-500">vs</span>
+                                    <span class="font-medium ml-1" x-text="`${benchmark.competitors?.length || 0} competitor${(benchmark.competitors?.length || 0) !== 1 ? 's' : ''}`"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================================ -->
+        <!-- RIGHT COLUMN: Detail View                                    -->
+        <!-- ============================================================ -->
+        <div x-show="selectedBenchmarkId" class="print:col-span-full">
+
+            <!-- Loading spinner -->
+            <div x-show="detailLoading" class="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center print:hidden">
+                <svg class="animate-spin h-12 w-12 text-primary-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p class="text-slate-600">Loading benchmark details...</p>
+            </div>
+
+            <!-- Detail content -->
+            <div x-show="!detailLoading && detail" class="space-y-6">
+
+                <!-- ── Header card ── -->
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="min-w-0 mr-4">
+                            <h2 class="text-2xl font-bold text-slate-900" x-text="detail?.name"></h2>
+                            <p class="text-sm text-slate-600 mt-1" x-show="detail?.description" x-text="detail?.description"></p>
+                            <p class="text-xs text-slate-500 mt-1">
+                                <span x-text="`Audit Type: ${detail?.audit_type}`"></span>
+                                <span class="mx-2">•</span>
+                                <span x-text="`Created: ${fmtDate(detail?.created_at)}`"></span>
+                            </p>
+                        </div>
+
+                        <!-- Inline delete confirm (detail header) -->
+                        <div class="flex-shrink-0 print:hidden">
+                            <template x-if="confirmDeleteId !== selectedBenchmarkId">
+                                <button
+                                    @click="confirmDeleteId = selectedBenchmarkId"
+                                    class="flex items-center gap-1 text-slate-400 hover:text-red-600 text-sm transition-colors"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                    </svg>
+                                    <span>Delete</span>
+                                </button>
+                            </template>
+                            <template x-if="confirmDeleteId === selectedBenchmarkId">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm text-red-700 font-medium">Are you sure?</span>
+                                    <button
+                                        @click="deleteBenchmark(selectedBenchmarkId)"
+                                        class="text-sm text-red-700 underline font-medium hover:text-red-900"
+                                    >Delete</button>
+                                    <button
+                                        @click="confirmDeleteId = null"
+                                        class="text-sm text-slate-500 underline hover:text-slate-700"
+                                    >Cancel</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Scoreboard -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <!-- Target Score -->
+                        <div class="bg-primary-50 border-2 border-primary-500 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 mb-1">Target Score</p>
+                            <p class="text-3xl font-bold text-primary-700" x-text="detail?.comparison_metrics?.target_score ?? 0"></p>
+                            <p class="text-xs text-slate-600 mt-1 truncate" x-text="detail?.target_summary?.website"></p>
+                        </div>
+
+                        <!-- Competitor Avg + delta coloring -->
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 mb-1">Comp. Avg</p>
+                            <p class="text-3xl font-bold text-slate-700" x-text="detail?.comparison_metrics?.competitor_avg ?? 0"></p>
+                            <p
+                                :class="(detail?.comparison_metrics?.delta_vs_avg ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'"
+                                class="text-xs font-semibold mt-1"
+                                x-text="((detail?.comparison_metrics?.delta_vs_avg ?? 0) >= 0 ? '+' : '') + (detail?.comparison_metrics?.delta_vs_avg ?? 0) + ' pts vs avg'"
+                            ></p>
+                        </div>
+
+                        <!-- Best Competitor -->
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 mb-1">Best Competitor</p>
+                            <p class="text-3xl font-bold text-slate-700" x-text="detail?.comparison_metrics?.competitor_best ?? 0"></p>
+                        </div>
+
+                        <!-- Rank -->
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <p class="text-xs text-slate-600 mb-1">Your Rank</p>
+                            <p class="text-2xl font-bold text-slate-700 leading-tight" x-text="detail?.comparison_metrics?.position || 'N/A'"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Score Comparison Chart ── -->
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold text-slate-900">Score Comparison</h3>
+                        <button
+                            @click="exportCSV()"
+                            class="print:hidden flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-300 rounded-md hover:bg-slate-50 transition-colors"
+                            title="Export benchmark data as CSV"
+                        >
+                            <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            <span>Export CSV</span>
+                        </button>
+                    </div>
+                    <canvas
+                        id="scoreChart"
+                        height="80"
+                        role="img"
+                        aria-label="Bar chart comparing average scores across target website and competitors"
+                    ></canvas>
+                </div>
+
+                <!-- ── Quality Distribution Chart ── -->
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                    <h3 class="text-lg font-semibold text-slate-900 mb-4">Quality Distribution</h3>
+                    <canvas
+                        id="distributionChart"
+                        height="80"
+                        role="img"
+                        aria-label="Stacked bar chart showing page quality distribution by website"
+                    ></canvas>
+                </div>
+
+                <!-- ── AI Analysis — three states ── -->
+
+                <!-- State 1: Pending or Generating -->
+                <div
+                    x-show="['pending', 'generating'].includes(detail?.analysis_status)"
+                    class="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center"
+                >
+                    <svg class="animate-spin h-8 w-8 text-yellow-600 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-yellow-800 font-semibold">AI Analysis in Progress</p>
+                    <p class="text-yellow-700 text-sm mt-1">Analyzing the competitive landscape… This may take 10–30 seconds.</p>
+                </div>
+
+                <!-- State 2: Failed -->
+                <div
+                    x-show="detail?.analysis_status === 'failed'"
+                    class="bg-red-50 border border-red-200 rounded-lg p-6 print:hidden"
+                >
+                    <div class="flex items-start gap-3 mb-4">
+                        <svg class="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                        </svg>
+                        <div class="min-w-0">
+                            <h4 class="font-semibold text-red-800">Analysis Failed</h4>
+                            <p class="text-sm text-red-700 mt-1 break-words" x-text="detail?.analysis_error || 'An unexpected error occurred during analysis.'"></p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <select x-model="regenerateModel" class="text-sm border border-slate-300 rounded-md px-3 py-1.5 bg-white focus:ring-2 focus:ring-primary-500">
+                            <option value="same">Use original model</option>
+                            <option value="cheap_anthropic">Claude Haiku (fast)</option>
+                            <option value="cheap_openai">GPT-4o Mini (fast)</option>
+                            <option value="cheap_mistral">Mistral Small (fast)</option>
+                            <option value="balanced_anthropic">Claude Sonnet 4</option>
+                            <option value="balanced_openai">GPT-4o</option>
+                        </select>
+                        <button
+                            @click="regenerateAnalysis()"
+                            class="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 font-medium transition-colors"
+                        >
+                            Retry Analysis
+                        </button>
+                    </div>
+                </div>
+
+                <!-- State 3: Completed -->
+                <div x-show="detail?.analysis_status === 'completed'" class="space-y-6">
+
+                    <!-- Regenerate controls -->
+                    <div class="flex justify-end items-center gap-2 flex-wrap print:hidden">
+                        <select x-model="regenerateModel" class="text-sm border border-slate-300 rounded-md px-3 py-1.5 bg-white focus:ring-2 focus:ring-primary-500">
+                            <option value="same">Use original model</option>
+                            <option value="cheap_anthropic">Claude Haiku (fast)</option>
+                            <option value="cheap_openai">GPT-4o Mini (fast)</option>
+                            <option value="cheap_mistral">Mistral Small (fast)</option>
+                            <option value="balanced_anthropic">Claude Sonnet 4</option>
+                            <option value="balanced_openai">GPT-4o</option>
+                        </select>
+                        <button
+                            @click="regenerateAnalysis()"
+                            class="px-4 py-1.5 text-sm bg-slate-600 text-white rounded-md hover:bg-slate-700 transition-colors"
+                        >
+                            Regenerate Analysis
+                        </button>
+                    </div>
+
+                    <!-- Competitive Summary -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                            </svg>
+                            <span>Competitive Summary</span>
+                        </h3>
+                        <div class="text-slate-700 whitespace-pre-line text-sm leading-relaxed" x-text="detail?.ai_analysis?.competitive_summary"></div>
+                    </div>
+
+                    <!-- Strengths -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span>Competitive Strengths</span>
+                        </h3>
+                        <div x-show="!(detail?.ai_analysis?.strengths?.length)" class="text-sm text-slate-500 italic">No strengths identified.</div>
+                        <div class="space-y-3">
+                            <template x-for="strength in detail?.ai_analysis?.strengths || []" :key="strength.area">
+                                <div class="border-l-4 border-green-500 bg-green-50 p-4 rounded-r-lg">
+                                    <div class="flex items-start justify-between gap-4 mb-2">
+                                        <h4 class="font-medium text-slate-900" x-text="strength.area"></h4>
+                                        <div class="text-sm flex-shrink-0">
+                                            <span class="text-green-700 font-semibold" x-text="strength.target_score_range"></span>
+                                            <span class="text-slate-500 mx-1">vs</span>
+                                            <span class="text-slate-600" x-text="strength.competitor_avg"></span>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600" x-text="strength.insight"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Weaknesses -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                            </svg>
+                            <span>Areas for Improvement</span>
+                        </h3>
+                        <div x-show="!(detail?.ai_analysis?.weaknesses?.length)" class="text-sm text-slate-500 italic">No weaknesses identified.</div>
+                        <div class="space-y-3">
+                            <template x-for="weakness in detail?.ai_analysis?.weaknesses || []" :key="weakness.area">
+                                <div class="border-l-4 border-red-500 bg-red-50 p-4 rounded-r-lg">
+                                    <div class="flex items-start justify-between gap-4 mb-2">
+                                        <h4 class="font-medium text-slate-900" x-text="weakness.area"></h4>
+                                        <div class="text-sm flex-shrink-0">
+                                            <span class="text-red-700 font-semibold" x-text="weakness.target_score_range"></span>
+                                            <span class="text-slate-500 mx-1">vs</span>
+                                            <span class="text-slate-600" x-text="weakness.competitor_avg"></span>
+                                        </div>
+                                    </div>
+                                    <p class="text-sm text-slate-600" x-text="weakness.insight"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Opportunities -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
+                            <svg class="w-5 h-5 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                            </svg>
+                            <span>Strategic Opportunities</span>
+                        </h3>
+                        <div x-show="!(detail?.ai_analysis?.opportunities?.length)" class="text-sm text-slate-500 italic">No opportunities identified.</div>
+                        <div class="grid gap-4">
+                            <template x-for="opp in detail?.ai_analysis?.opportunities || []" :key="opp.opportunity">
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                    <div class="flex items-start justify-between gap-4 mb-2">
+                                        <h4 class="font-medium text-slate-900" x-text="opp.opportunity"></h4>
+                                        <span
+                                            :class="{
+                                                'bg-red-100 text-red-800': opp.priority === 'high',
+                                                'bg-yellow-100 text-yellow-800': opp.priority === 'medium'
+                                            }"
+                                            class="px-2 py-0.5 text-xs rounded-full uppercase font-medium flex-shrink-0"
+                                            x-text="opp.priority"
+                                        ></span>
+                                    </div>
+                                    <p class="text-sm text-slate-600" x-text="opp.rationale"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Threat Level -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-3">Competitive Threat Level</h3>
+                        <div
+                            :class="{
+                                'bg-green-100 border-green-300 text-green-800': detail?.ai_analysis?.threat_level === 'low',
+                                'bg-yellow-100 border-yellow-300 text-yellow-800': detail?.ai_analysis?.threat_level === 'medium',
+                                'bg-red-100 border-red-300 text-red-800': detail?.ai_analysis?.threat_level === 'high'
+                            }"
+                            class="border-2 rounded-lg p-4 text-center"
+                        >
+                            <p class="text-3xl font-bold uppercase" x-text="detail?.ai_analysis?.threat_level || '—'"></p>
+                            <p class="text-sm mt-1 opacity-75">
+                                <template x-if="detail?.ai_analysis?.threat_level === 'low'">
+                                    <span>Your site leads the competitive landscape</span>
+                                </template>
+                                <template x-if="detail?.ai_analysis?.threat_level === 'medium'">
+                                    <span>Your site is broadly comparable to competitors</span>
+                                </template>
+                                <template x-if="detail?.ai_analysis?.threat_level === 'high'">
+                                    <span>Significant improvements needed to compete effectively</span>
+                                </template>
+                            </p>
+                        </div>
+                    </div>
+
+                </div><!-- /completed -->
+
+            </div><!-- /detail content -->
+        </div><!-- /right column -->
+
+        <!-- Placeholder when no benchmark selected -->
+        <div x-show="!selectedBenchmarkId" class="flex items-center justify-center h-full print:hidden">
+            <div class="text-center text-slate-400">
+                <svg class="w-24 h-24 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                <p class="text-lg">Select a benchmark to view details</p>
+                <p class="text-sm mt-1">Your competitive analysis will appear here</p>
+            </div>
+        </div>
+
+    </div><!-- /grid -->
+</div><!-- /x-data -->
+{% endblock %}
+
+{% block scripts %}
+<style>
+@media print {
+    /* Hide left column, nav, and interactive controls */
+    nav,
+    .print\:hidden { display: none !important; }
+
+    /* Full-width detail panel */
+    .lg\:grid-cols-2 { grid-template-columns: 1fr !important; }
+    .print\:col-span-full { grid-column: 1 / -1 !important; }
+
+    /* Print backgrounds */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Avoid breaking cards across pages */
+    .space-y-6 > * { page-break-inside: avoid; }
+
+    /* Remove box shadows for cleaner print */
+    .shadow-sm { box-shadow: none !important; }
+}
+</style>
+
+<script>
+function benchmarkApp() {
+    return {
+        /* ── Server-seeded data (embedded in script block to avoid HTML-attribute quote-breaking) ── */
+        audits: {{ audits | tojson | safe }},
+
+        /* ── Loaded data ── */
+        benchmarks: [],
+        selectedBenchmarkId: null,
+        detail: null,
+
+        /* ── Loading states ── */
+        loading: false,
+        detailLoading: false,
+
+        /* ── UI state ── */
+        errorMessage: '',
+        confirmDeleteId: null,
+
+        /* ── Form ── */
+        form: {
+            name: '',
+            description: '',
+            audit_type: '',
+            target_audit_id: '',
+            competitor_audit_ids: [],
+        },
+
+        /* ── Regenerate model selector ── */
+        regenerateModel: 'same',
+
+        /* ── Smart polling ── */
+        _pollTimer: null,
+
+        /* ── Charts ── */
+        scoreChart: null,
+        distributionChart: null,
+
+        /* ============================================================
+         * COMPUTED GETTERS
+         * ========================================================== */
+
+        get availableTypesWithCount() {
+            const counts = {};
+            for (const a of this.audits) {
+                counts[a.audit_type] = (counts[a.audit_type] || 0) + 1;
+            }
+            return Object.entries(counts).map(([v, c]) => ({
+                value: v,
+                label: `${v} (${c} audit${c !== 1 ? 's' : ''})`,
+            }));
+        },
+
+        get filteredAudits() {
+            if (!this.form.audit_type) return [];
+            return this.audits.filter(a => a.audit_type === this.form.audit_type);
+        },
+
+        get filteredCompetitors() {
+            return this.filteredAudits.filter(a => a.id !== this.form.target_audit_id);
+        },
+
+        /* ============================================================
+         * LIFECYCLE  (Alpine v3 calls init() automatically)
+         * ========================================================== */
+
+        async init() {
+            await this.loadBenchmarks();
+            this._scheduleOrCancelPoll();
+        },
+
+        /* ============================================================
+         * SMART POLLING
+         * ========================================================== */
+
+        _needsPoll() {
+            const active = ['generating', 'pending'];
+            if (this.benchmarks.some(b => active.includes(b.analysis_status))) return true;
+            if (this.detail && active.includes(this.detail.analysis_status)) return true;
+            return false;
+        },
+
+        _scheduleOrCancelPoll() {
+            if (this._needsPoll() && !this._pollTimer) {
+                this._pollTimer = setInterval(() => this._poll(), 5000);
+            } else if (!this._needsPoll() && this._pollTimer) {
+                clearInterval(this._pollTimer);
+                this._pollTimer = null;
+            }
+        },
+
+        async _poll() {
+            await this.loadBenchmarks();
+            if (this.selectedBenchmarkId) {
+                /* Silent reload – no spinner so the UI doesn't flash */
+                await this.loadBenchmarkDetail(this.selectedBenchmarkId, false);
+            }
+            this._scheduleOrCancelPoll();
+        },
+
+        /* ============================================================
+         * HELPERS / FORMATTERS
+         * ========================================================== */
+
+        statusBadgeClass(status) {
+            return {
+                pending:    'bg-slate-100 text-slate-600',
+                generating: 'bg-blue-100 text-blue-700',
+                completed:  'bg-green-100 text-green-800',
+                failed:     'bg-red-100 text-red-700',
+            }[status] || 'bg-slate-100 text-slate-600';
+        },
+
+        statusLabel(status) {
+            return {
+                pending:    'Pending',
+                generating: 'Analyzing…',
+                completed:  'Analyzed',
+                failed:     'Failed',
+            }[status] || (status || 'Unknown');
+        },
+
+        fmtDate(iso) {
+            if (!iso) return '';
+            try {
+                return new Date(iso).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                });
+            } catch (_) { return ''; }
+        },
+
+        truncate(str, n = 22) {
+            if (!str) return '';
+            return str.length > n ? str.slice(0, n) + '…' : str;
+        },
+
+        /* Mirror Python _GEO_TYPES / _CONTENT_TYPES */
+        isGeoType(t) {
+            return t && ['GEO_AUDIT', 'AI_OVERVIEW_OPTIMIZATION'].some(v => t.toUpperCase().includes(v));
+        },
+        isContentType(t) {
+            return t && ['CONTENT_QUALITY', 'READABILITY_AUDIT', 'CONTENT_FRESHNESS',
+                         'SPELLING_GRAMMAR', 'BRAND_VOICE', 'TRANSLATION_QUALITY'].includes(t.toUpperCase());
+        },
+
+        /* ============================================================
+         * FORM HELPERS
+         * ========================================================== */
+
+        filterAuditsByType() {
+            this.form.target_audit_id = '';
+            this.form.competitor_audit_ids = [];
+        },
+
+        removeTargetFromCompetitors() {
+            this.form.competitor_audit_ids = this.form.competitor_audit_ids.filter(
+                id => id !== this.form.target_audit_id
+            );
+        },
+
+        /* ============================================================
+         * API CALLS
+         * ========================================================== */
+
+        async loadBenchmarks() {
+            try {
+                const r = await fetch('/api/benchmarks');
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                this.benchmarks = await r.json();
+            } catch (err) {
+                console.error('[Benchmark] loadBenchmarks:', err);
+            }
+        },
+
+        async selectBenchmark(benchmarkId) {
+            this.selectedBenchmarkId = benchmarkId;
+            this.confirmDeleteId = null;
+            await this.loadBenchmarkDetail(benchmarkId, true);
+        },
+
+        async loadBenchmarkDetail(benchmarkId, showLoader = true) {
+            if (showLoader) this.detailLoading = true;
+            try {
+                const r = await fetch(`/api/benchmarks/${benchmarkId}`);
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                this.detail = await r.json();
+                await this.$nextTick();
+                this.renderCharts();
+                this._scheduleOrCancelPoll();
+            } catch (err) {
+                console.error('[Benchmark] loadBenchmarkDetail:', err);
+                if (showLoader) this.errorMessage = `Failed to load benchmark: ${err.message}`;
+            } finally {
+                if (showLoader) this.detailLoading = false;
+            }
+        },
+
+        async createBenchmark() {
+            if (!this.form.name || !this.form.audit_type ||
+                !this.form.target_audit_id || this.form.competitor_audit_ids.length === 0) {
+                this.errorMessage = 'Please fill in all required fields and select at least one competitor.';
+                return;
+            }
+
+            this.loading = true;
+            this.errorMessage = '';
+            try {
+                const r = await fetch('/api/benchmarks', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(this.form),
+                });
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${r.status}`);
+                }
+
+                const result = await r.json();
+
+                /* Reset form */
+                this.form = {
+                    name: '', description: '', audit_type: '',
+                    target_audit_id: '', competitor_audit_ids: [],
+                };
+
+                /* Reload list then show new benchmark */
+                await this.loadBenchmarks();
+                await this.selectBenchmark(result.id);
+                this._scheduleOrCancelPoll();
+            } catch (err) {
+                this.errorMessage = `Failed to create benchmark: ${err.message}`;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async deleteBenchmark(benchmarkId) {
+            this.confirmDeleteId = null;
+            try {
+                const r = await fetch(`/api/benchmarks/${benchmarkId}`, {method: 'DELETE'});
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${r.status}`);
+                }
+
+                /* Clear detail panel if the deleted item was selected */
+                if (this.selectedBenchmarkId === benchmarkId) {
+                    this.selectedBenchmarkId = null;
+                    this.detail = null;
+                    if (this.scoreChart)        { this.scoreChart.destroy();        this.scoreChart = null; }
+                    if (this.distributionChart) { this.distributionChart.destroy(); this.distributionChart = null; }
+                }
+
+                await this.loadBenchmarks();
+                this._scheduleOrCancelPoll();
+            } catch (err) {
+                this.errorMessage = `Failed to delete benchmark: ${err.message}`;
+            }
+        },
+
+        async regenerateAnalysis() {
+            const models = {
+                same:              {provider: null,        model: null},
+                cheap_anthropic:   {provider: 'anthropic', model: 'claude-haiku-4-20250414'},
+                cheap_openai:      {provider: 'openai',    model: 'gpt-4o-mini'},
+                cheap_mistral:     {provider: 'mistral',   model: 'mistral-small-latest'},
+                balanced_anthropic:{provider: 'anthropic', model: 'claude-sonnet-4-20250514'},
+                balanced_openai:   {provider: 'openai',    model: 'gpt-4o'},
+            };
+
+            const selected = models[this.regenerateModel] || models.same;
+            const params   = new URLSearchParams();
+            if (selected.provider) params.append('provider', selected.provider);
+            if (selected.model)    params.append('model',    selected.model);
+
+            this.errorMessage = '';
+            try {
+                const r = await fetch(
+                    `/api/benchmarks/${this.selectedBenchmarkId}/regenerate?${params}`,
+                    {method: 'POST'}
+                );
+                if (!r.ok) {
+                    const err = await r.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${r.status}`);
+                }
+
+                /* Optimistically update status so UI reflects change immediately */
+                if (this.detail) this.detail.analysis_status = 'generating';
+                const bm = this.benchmarks.find(b => b.id === this.selectedBenchmarkId);
+                if (bm) bm.analysis_status = 'generating';
+
+                this._scheduleOrCancelPoll();
+            } catch (err) {
+                this.errorMessage = `Failed to start regeneration: ${err.message}`;
+            }
+        },
+
+        /* ============================================================
+         * CHARTS  (Chart.js — uses actual website names as labels)
+         * ========================================================== */
+
+        renderCharts() {
+            if (!this.detail || typeof Chart === 'undefined') return;
+
+            const target = this.detail.target_summary;
+            const comps  = this.detail.competitor_summaries || [];
+
+            const allLabels = [
+                this.truncate(target.website) + ' (you)',
+                ...comps.map(c => this.truncate(c.website)),
+            ];
+
+            /* ── Score Comparison Bar Chart ── */
+            const scoreCtx = document.getElementById('scoreChart');
+            if (scoreCtx) {
+                if (this.scoreChart) this.scoreChart.destroy();
+                this.scoreChart = new Chart(scoreCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: allLabels,
+                        datasets: [{
+                            label: 'Average Score',
+                            data:  [target.avg_score, ...comps.map(c => c.avg_score)],
+                            backgroundColor: ['#0ea5e9', ...Array(comps.length).fill('#94a3b8')],
+                            borderRadius: 4,
+                            borderWidth: 0,
+                        }],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {legend: {display: false}},
+                        scales: {
+                            y: {beginAtZero: true, max: 100, grid: {color: '#f1f5f9'}},
+                        },
+                    },
+                });
+            }
+
+            /* ── Quality Distribution Stacked Bar Chart ── */
+            const distCtx = document.getElementById('distributionChart');
+            if (distCtx) {
+                if (this.distributionChart) this.distributionChart.destroy();
+                const distLabels = [
+                    this.truncate(target.website, 18) + ' (you)',
+                    ...comps.map(c => this.truncate(c.website, 18)),
+                ];
+                this.distributionChart = new Chart(distCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: distLabels,
+                        datasets: [
+                            {
+                                label: 'Excellent',
+                                data:  [target.distribution.excellent,  ...comps.map(c => c.distribution.excellent)],
+                                backgroundColor: '#10b981',
+                            },
+                            {
+                                label: 'Good',
+                                data:  [target.distribution.good,       ...comps.map(c => c.distribution.good)],
+                                backgroundColor: '#3b82f6',
+                            },
+                            {
+                                label: 'Needs Work',
+                                data:  [target.distribution.needs_work, ...comps.map(c => c.distribution.needs_work)],
+                                backgroundColor: '#f59e0b',
+                            },
+                            {
+                                label: 'Poor',
+                                data:  [target.distribution.poor,       ...comps.map(c => c.distribution.poor)],
+                                backgroundColor: '#ef4444',
+                            },
+                        ],
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        scales: {
+                            x: {stacked: true},
+                            y: {stacked: true, beginAtZero: true, grid: {color: '#f1f5f9'}},
+                        },
+                    },
+                });
+            }
+        },
+
+        /* ============================================================
+         * CSV EXPORT  (client-side, UTF-8 BOM for Excel compatibility)
+         * ========================================================== */
+
+        exportCSV() {
+            if (!this.detail) return;
+
+            const target = this.detail.target_summary;
+            const comps  = this.detail.competitor_summaries || [];
+            const m      = this.detail.comparison_metrics   || {};
+
+            const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+
+            const headers = [
+                'Website', 'Role', 'Avg Score', 'Pages Analyzed',
+                'Excellent', 'Good', 'Needs Work', 'Poor',
+            ];
+
+            const rows = [
+                headers.map(esc).join(','),
+                [
+                    target.website, 'Target', target.avg_score, target.pages_analyzed,
+                    target.distribution.excellent, target.distribution.good,
+                    target.distribution.needs_work, target.distribution.poor,
+                ].map(esc).join(','),
+                ...comps.map(c => [
+                    c.website, 'Competitor', c.avg_score, c.pages_analyzed,
+                    c.distribution.excellent, c.distribution.good,
+                    c.distribution.needs_work, c.distribution.poor,
+                ].map(esc).join(',')),
+                '',  /* blank separator before metrics */
+                [esc('Target Score'),              esc(m.target_score   ?? '')].join(','),
+                [esc('Competitor Avg (weighted)'), esc(m.competitor_avg ?? '')].join(','),
+                [esc('Delta vs Avg'),              esc(m.delta_vs_avg   ?? '')].join(','),
+                [esc('Best Competitor'),           esc(m.competitor_best ?? '')].join(','),
+                [esc('Rank'),                      esc(m.position       ?? '')].join(','),
+            ];
+
+            const bom  = '\uFEFF';
+            const csv  = bom + rows.join('\n');
+            const blob = new Blob([csv], {type: 'text/csv;charset=utf-8'});
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = `benchmark-${this.detail.id || 'export'}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        },
+    };
+}
+</script>
+{% endblock %}

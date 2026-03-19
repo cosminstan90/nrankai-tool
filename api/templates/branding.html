@@ -1,0 +1,362 @@
+{% extends "base.html" %}
+
+{% block title %}White-Label Branding{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8 max-w-7xl">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">White-Label PDF Branding</h1>
+        <p class="text-gray-600">Customize your PDF reports with your brand identity</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Form Column -->
+        <div class="lg:col-span-2">
+            <form id="brandingForm" class="bg-white rounded-lg shadow-md p-6" enctype="multipart/form-data">
+                <h2 class="text-xl font-bold text-gray-800 mb-6">Create/Edit Branding</h2>
+                
+                <!-- Basic Info -->
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Brand Name *</label>
+                        <input type="text" name="name" id="brandName" required
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="My Agency Brand">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Agency Name *</label>
+                        <input type="text" name="agency_name" id="agencyName" required
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Professional SEO & GEO Consulting"
+                               value="Website Audit Report">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Tagline (Optional)</label>
+                        <input type="text" name="tagline" id="tagline"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Excellence in Digital Optimization">
+                    </div>
+                </div>
+
+                <!-- Logo Upload -->
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Logo (PNG or JPEG)</label>
+                    <input type="file" name="logo" id="logoUpload" accept="image/png,image/jpeg"
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p class="mt-1 text-xs text-gray-500">Recommended: 400x200px, transparent background</p>
+                    <div id="logoPreview" class="mt-3 hidden">
+                        <img id="logoPreviewImg" src="" alt="Logo preview" class="max-w-xs border border-gray-200 rounded-lg p-2">
+                    </div>
+                </div>
+
+                <!-- Colors -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Primary Color</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="color" name="primary_color" id="primaryColor" value="#1e40af"
+                                   class="w-12 h-10 border border-gray-300 rounded cursor-pointer">
+                            <input type="text" id="primaryColorText" value="#1e40af"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Secondary Color</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="color" name="secondary_color" id="secondaryColor" value="#3b82f6"
+                                   class="w-12 h-10 border border-gray-300 rounded cursor-pointer">
+                            <input type="text" id="secondaryColorText" value="#3b82f6"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Text Color</label>
+                        <div class="flex items-center space-x-2">
+                            <input type="color" name="text_color" id="textColor" value="#1e293b"
+                                   class="w-12 h-10 border border-gray-300 rounded cursor-pointer">
+                            <input type="text" id="textColorText" value="#1e293b"
+                                   class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer & Contact -->
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Footer Text</label>
+                        <input type="text" name="footer_text" id="footerText"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               value="Confidential — Prepared exclusively for client use">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Contact Email</label>
+                            <input type="email" name="contact_email" id="contactEmail"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="contact@agency.com">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Website URL</label>
+                            <input type="url" name="contact_website" id="contactWebsite"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                   placeholder="https://agency.com">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Default Checkbox -->
+                <div class="mb-6">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" name="is_default" id="isDefault"
+                               class="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                        <span class="text-sm text-gray-700">Set as default branding</span>
+                    </label>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex items-center justify-between pt-4 border-t border-gray-200">
+                    <button type="button" onclick="resetForm()"
+                            class="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
+                        Reset
+                    </button>
+                    <button type="submit"
+                            class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition">
+                        Save Branding
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Preview Column -->
+        <div class="lg:col-span-1">
+            <div class="bg-white rounded-lg shadow-md p-6 sticky top-8">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">Live Preview</h2>
+                
+                <div id="coverPreview" class="border-2 border-gray-200 rounded-lg p-6 bg-white" style="aspect-ratio: 1/1.414; max-height: 500px;">
+                    <!-- Logo -->
+                    <div id="previewLogoContainer" class="flex justify-center mb-4 hidden">
+                        <img id="previewLogo" src="" alt="Logo" class="max-w-32 max-h-16">
+                    </div>
+                    
+                    <!-- Agency Name -->
+                    <h1 id="previewAgencyName" class="text-2xl font-bold text-center mb-2" style="color: #1e40af;">
+                        Website Audit Report
+                    </h1>
+                    
+                    <!-- Tagline -->
+                    <p id="previewTagline" class="text-center text-sm italic mb-4 hidden" style="color: #3b82f6;">
+                    </p>
+                    
+                    <hr class="my-4">
+                    
+                    <!-- Report Title -->
+                    <h2 class="text-xl font-bold text-center mb-4" style="color: #1e40af;">
+                        WEBSITE AUDIT REPORT
+                    </h2>
+                    
+                    <!-- Sample Info -->
+                    <div class="text-center text-sm space-y-2" id="previewTextColor" style="color: #1e293b;">
+                        <p><strong>Audit Type:</strong> SEO</p>
+                        <p><strong>Website:</strong> example.com</p>
+                        <p><strong>Generated:</strong> Feb 20, 2026</p>
+                    </div>
+                    
+                    <div class="mt-6 text-center text-xs" id="previewFooter" style="color: #6b7280;">
+                        Confidential — Prepared exclusively for client use
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Existing Brandings List -->
+    {% if brandings %}
+    <div class="mt-12">
+        <h2 class="text-2xl font-bold text-gray-800 mb-6">Saved Branding Configurations</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {% for branding in brandings %}
+            <div class="bg-white rounded-lg shadow-md p-6 relative">
+                {% if branding.is_default %}
+                <div class="absolute top-4 right-4">
+                    <span class="px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded-full">Default</span>
+                </div>
+                {% endif %}
+                
+                <h3 class="text-lg font-bold text-gray-900 mb-2">{{ branding.name }}</h3>
+                <p class="text-sm text-gray-600 mb-4">{{ branding.agency_name }}</p>
+                
+                <div class="flex items-center space-x-2 mb-4">
+                    <div class="w-8 h-8 rounded" style="background-color: {{ branding.primary_color }};"></div>
+                    <div class="w-8 h-8 rounded" style="background-color: {{ branding.secondary_color }};"></div>
+                    <div class="w-8 h-8 rounded" style="background-color: {{ branding.text_color }};"></div>
+                </div>
+                
+                <div class="flex items-center space-x-2">
+                    {% if not branding.is_default %}
+                    <button onclick="setAsDefault({{ branding.id }})"
+                            class="flex-1 px-3 py-2 text-sm text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
+                        Set as Default
+                    </button>
+                    {% endif %}
+                    <button onclick="deleteBranding({{ branding.id }})"
+                            class="px-3 py-2 text-sm text-red-700 bg-red-50 rounded-lg hover:bg-red-100 transition">
+                        Delete
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// Live preview updates
+function updatePreview() {
+    const agencyName = document.getElementById('agencyName').value || 'Website Audit Report';
+    const tagline = document.getElementById('tagline').value;
+    const primaryColor = document.getElementById('primaryColor').value;
+    const secondaryColor = document.getElementById('secondaryColor').value;
+    const textColor = document.getElementById('textColor').value;
+    const footerText = document.getElementById('footerText').value;
+    
+    document.getElementById('previewAgencyName').textContent = agencyName;
+    document.getElementById('previewAgencyName').style.color = primaryColor;
+    
+    if (tagline) {
+        document.getElementById('previewTagline').textContent = tagline;
+        document.getElementById('previewTagline').style.color = secondaryColor;
+        document.getElementById('previewTagline').classList.remove('hidden');
+    } else {
+        document.getElementById('previewTagline').classList.add('hidden');
+    }
+    
+    const reportTitle = document.querySelector('#coverPreview h2');
+    reportTitle.style.color = primaryColor;
+    
+    const textElements = document.querySelectorAll('#previewTextColor');
+    textElements.forEach(el => el.style.color = textColor);
+    
+    document.getElementById('previewFooter').textContent = footerText;
+    
+    // Sync color text inputs
+    document.getElementById('primaryColorText').value = primaryColor;
+    document.getElementById('secondaryColorText').value = secondaryColor;
+    document.getElementById('textColorText').value = textColor;
+}
+
+// Color picker sync
+document.getElementById('primaryColor').addEventListener('input', updatePreview);
+document.getElementById('secondaryColor').addEventListener('input', updatePreview);
+document.getElementById('textColor').addEventListener('input', updatePreview);
+document.getElementById('agencyName').addEventListener('input', updatePreview);
+document.getElementById('tagline').addEventListener('input', updatePreview);
+document.getElementById('footerText').addEventListener('input', updatePreview);
+
+// Text input to color picker sync
+['primary', 'secondary', 'text'].forEach(color => {
+    document.getElementById(color + 'ColorText').addEventListener('input', function(e) {
+        if (/^#[0-9A-F]{6}$/i.test(e.target.value)) {
+            document.getElementById(color + 'Color').value = e.target.value;
+            updatePreview();
+        }
+    });
+});
+
+// Logo preview
+document.getElementById('logoUpload').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            document.getElementById('logoPreviewImg').src = e.target.result;
+            document.getElementById('logoPreview').classList.remove('hidden');
+            document.getElementById('previewLogo').src = e.target.result;
+            document.getElementById('previewLogoContainer').classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+// Form submission
+document.getElementById('brandingForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/api/reports/branding', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            alert('Branding saved successfully!');
+            window.location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.detail || 'Failed to save branding'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+
+// Reset form
+function resetForm() {
+    document.getElementById('brandingForm').reset();
+    document.getElementById('logoPreview').classList.add('hidden');
+    document.getElementById('previewLogoContainer').classList.add('hidden');
+    updatePreview();
+}
+
+// Set as default
+async function setAsDefault(brandingId) {
+    if (!confirm('Set this branding as default?')) return;
+    
+    try {
+        const response = await fetch(`/api/reports/branding/${brandingId}/set-default`, {
+            method: 'PATCH'
+        });
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Failed to set as default');
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Delete branding
+async function deleteBranding(brandingId) {
+    if (!confirm('Delete this branding configuration?')) return;
+    
+    try {
+        const response = await fetch(`/api/reports/branding/${brandingId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            alert('Failed to delete branding');
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+// Initialize preview
+updatePreview();
+</script>
+{% endblock %}

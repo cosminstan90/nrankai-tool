@@ -1,0 +1,754 @@
+{% extends "base.html" %}
+
+{% block title %}Content Gap Finder - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="contentGapFinder()" class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">Content Gap Finder</h1>
+        <p class="text-gray-600">
+            Identify missing content opportunities based on AI search queries, competitor analysis, and strategic gaps.
+        </p>
+    </div>
+
+    <!-- Analysis Form -->
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-8">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Find Content Gaps</h2>
+        
+        <form @submit.prevent="analyzeGaps()" class="space-y-6">
+            <!-- Website Input -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Target Website
+                </label>
+                <input 
+                    type="text" 
+                    x-model="form.website"
+                    placeholder="example.com"
+                    required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+            </div>
+
+            <!-- Gap Sources -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-3">
+                    Gap Sources (select at least one)
+                </label>
+                
+                <div class="space-y-4">
+                    <!-- Manual Queries -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center mb-3">
+                            <input 
+                                type="checkbox" 
+                                x-model="form.sources.useManual"
+                                id="use-manual"
+                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            >
+                            <label for="use-manual" class="ml-2 text-sm font-medium text-gray-900">
+                                Manual Queries
+                            </label>
+                            <span class="ml-2 text-xs text-gray-500">(Topics you know you need)</span>
+                        </div>
+                        <div x-show="form.sources.useManual" x-transition>
+                            <textarea
+                                x-model="form.sources.manual_queries"
+                                rows="4"
+                                placeholder="Enter queries, one per line:
+ce banca are cel mai mic DAE
+calculator credit ipotecar
+cum sa economisesti pentru casa"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500"
+                            ></textarea>
+                        </div>
+                    </div>
+
+                    <!-- GEO Monitor (placeholder for future) -->
+                    <div class="border border-gray-200 rounded-lg p-4 opacity-50">
+                        <div class="flex items-center">
+                            <input 
+                                type="checkbox" 
+                                disabled
+                                class="h-4 w-4 text-gray-400 border-gray-300 rounded"
+                            >
+                            <label class="ml-2 text-sm font-medium text-gray-500">
+                                GEO Monitor Project
+                            </label>
+                            <span class="ml-2 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">Coming Soon</span>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500">
+                            Analyze queries where AI doesn't mention your site
+                        </p>
+                    </div>
+
+                    <!-- Citation Tracker (placeholder for future) -->
+                    <div class="border border-gray-200 rounded-lg p-4 opacity-50">
+                        <div class="flex items-center">
+                            <input 
+                                type="checkbox" 
+                                disabled
+                                class="h-4 w-4 text-gray-400 border-gray-300 rounded"
+                            >
+                            <label class="ml-2 text-sm font-medium text-gray-500">
+                                Citation Tracker
+                            </label>
+                            <span class="ml-2 px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">Coming Soon</span>
+                        </div>
+                        <p class="mt-2 text-xs text-gray-500">
+                            Find queries where your URLs aren't cited
+                        </p>
+                    </div>
+
+                    <!-- Competitor Audits -->
+                    <div class="border border-gray-200 rounded-lg p-4">
+                        <div class="flex items-center mb-3">
+                            <input 
+                                type="checkbox" 
+                                x-model="form.sources.useCompetitors"
+                                id="use-competitors"
+                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            >
+                            <label for="use-competitors" class="ml-2 text-sm font-medium text-gray-900">
+                                Competitor Audits
+                            </label>
+                            <span class="ml-2 text-xs text-gray-500">(Find pages competitors have that you don't)</span>
+                        </div>
+                        <div x-show="form.sources.useCompetitors" x-transition>
+                            <button 
+                                type="button"
+                                @click="loadCompletedAudits()"
+                                class="text-sm text-blue-600 hover:text-blue-700 mb-2"
+                            >
+                                Load completed audits
+                            </button>
+                            <select 
+                                x-model="form.sources.competitor_audit_ids"
+                                multiple
+                                size="5"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            >
+                                <template x-for="audit in availableAudits" :key="audit.id">
+                                    <option :value="audit.id" x-text="`${audit.website} - ${audit.created_at.substring(0,10)} (${audit.total_pages} pages)`"></option>
+                                </template>
+                            </select>
+                            <p class="mt-1 text-xs text-gray-500">Hold Ctrl/Cmd to select multiple</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Language
+                    </label>
+                    <select 
+                        x-model="form.language"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="Romanian">Romanian</option>
+                        <option value="English">English</option>
+                        <option value="German">German</option>
+                        <option value="Spanish">Spanish</option>
+                        <option value="French">French</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Industry Hint <span class="text-gray-500 text-xs">(optional)</span>
+                    </label>
+                    <input 
+                        type="text" 
+                        x-model="form.industry_hint"
+                        placeholder="e.g., banking, healthcare, e-commerce"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        LLM Provider
+                    </label>
+                    <select 
+                        x-model="form.provider"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="anthropic">Anthropic (Claude)</option>
+                        <option value="google">Google (Gemini)</option>
+                        <option value="openai">OpenAI</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Max Gaps to Find
+                    </label>
+                    <input 
+                        type="number" 
+                        x-model.number="form.max_gaps"
+                        min="1"
+                        max="50"
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    >
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <div>
+                <button 
+                    type="submit"
+                    :disabled="analyzing"
+                    class="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                    <span x-show="!analyzing">🔍 Find Content Gaps</span>
+                    <span x-show="analyzing">🔄 Analyzing...</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Results Section -->
+    <div x-show="currentAnalysisId" x-transition>
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div class="text-sm font-medium text-gray-600">Total Gaps</div>
+                <div class="text-2xl font-bold text-gray-900 mt-1" x-text="stats.total_gaps || 0"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div class="text-sm font-medium text-gray-600">Critical Priority</div>
+                <div class="text-2xl font-bold text-red-600 mt-1" x-text="stats.by_priority?.critical || 0"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div class="text-sm font-medium text-gray-600">From Competitors</div>
+                <div class="text-2xl font-bold text-orange-600 mt-1" x-text="stats.by_source?.competitor || 0"></div>
+            </div>
+            <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+                <div class="text-sm font-medium text-gray-600">User Identified</div>
+                <div class="text-2xl font-bold text-blue-600 mt-1" x-text="stats.by_source?.manual || 0"></div>
+            </div>
+        </div>
+
+        <!-- Filters and Export -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+            <div class="flex flex-wrap items-center gap-4">
+                <!-- Filter by Priority -->
+                <div>
+                    <label class="text-sm font-medium text-gray-700 mr-2">Priority:</label>
+                    <select 
+                        x-model="filters.priority"
+                        @change="filterGaps()"
+                        class="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                    >
+                        <option value="">All</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+
+                <!-- Filter by Status -->
+                <div>
+                    <label class="text-sm font-medium text-gray-700 mr-2">Status:</label>
+                    <select 
+                        x-model="filters.status"
+                        @change="filterGaps()"
+                        class="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                    >
+                        <option value="">All</option>
+                        <option value="identified">Identified</option>
+                        <option value="approved">Approved</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="published">Published</option>
+                        <option value="dismissed">Dismissed</option>
+                    </select>
+                </div>
+
+                <!-- Filter by Source -->
+                <div>
+                    <label class="text-sm font-medium text-gray-700 mr-2">Source:</label>
+                    <select 
+                        x-model="filters.source"
+                        @change="filterGaps()"
+                        class="px-3 py-1.5 border border-gray-300 rounded-md text-sm"
+                    >
+                        <option value="">All</option>
+                        <option value="manual">Manual</option>
+                        <option value="competitor">Competitor</option>
+                        <option value="geo_monitor">GEO Monitor</option>
+                        <option value="citation_tracker">Citation Tracker</option>
+                    </select>
+                </div>
+
+                <div class="ml-auto flex gap-2">
+                    <button 
+                        @click="exportGaps('csv')"
+                        class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors"
+                    >
+                        📊 Export CSV
+                    </button>
+                    <button 
+                        @click="exportGaps('json')"
+                        class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                        📄 Export JSON
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gap Cards List -->
+        <div class="space-y-4">
+            <template x-for="gap in filteredGaps" :key="gap.id">
+                <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
+                    <!-- Gap Header -->
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <!-- Priority Badge -->
+                                <span 
+                                    class="px-2 py-1 rounded-full text-xs font-medium"
+                                    :class="{
+                                        'bg-red-100 text-red-800': gap.priority === 'critical',
+                                        'bg-orange-100 text-orange-800': gap.priority === 'high',
+                                        'bg-yellow-100 text-yellow-800': gap.priority === 'medium',
+                                        'bg-green-100 text-green-800': gap.priority === 'low'
+                                    }"
+                                    x-text="gap.priority.toUpperCase() + ' (' + gap.priority_score.toFixed(0) + ')'"
+                                ></span>
+
+                                <!-- Source Badge -->
+                                <span 
+                                    class="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                    x-text="gap.gap_source.replace('_', ' ').toUpperCase()"
+                                ></span>
+
+                                <!-- Content Type Badge -->
+                                <span 
+                                    x-show="gap.content_type"
+                                    class="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                                    x-text="gap.content_type?.replace('_', ' ')"
+                                ></span>
+                            </div>
+
+                            <h3 class="text-lg font-semibold text-gray-900 mb-1" x-text="gap.suggested_title || gap.topic"></h3>
+                            <p class="text-sm text-gray-600" x-text="gap.source_detail?.detail || gap.topic"></p>
+                        </div>
+
+                        <!-- Status Selector -->
+                        <div class="ml-4">
+                            <select 
+                                :value="gap.status"
+                                @change="updateStatus(gap.id, $event.target.value)"
+                                class="px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium"
+                                :class="{
+                                    'text-gray-700': gap.status === 'identified',
+                                    'text-blue-700': gap.status === 'approved',
+                                    'text-yellow-700': gap.status === 'in_progress',
+                                    'text-green-700': gap.status === 'published',
+                                    'text-red-700': gap.status === 'dismissed'
+                                }"
+                            >
+                                <option value="identified">Identified</option>
+                                <option value="approved">Approved</option>
+                                <option value="in_progress">In Progress</option>
+                                <option value="published">Published</option>
+                                <option value="dismissed">Dismissed</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Gap Details -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                        <div>
+                            <span class="text-gray-600">URL Slug:</span>
+                            <p class="font-mono text-xs text-gray-900" x-text="gap.suggested_url_slug || 'Not generated'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Word Count:</span>
+                            <p class="font-medium text-gray-900" x-text="gap.estimated_word_count || 'TBD'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Effort:</span>
+                            <p class="font-medium text-gray-900" x-text="gap.estimated_effort || 'TBD'"></p>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">LLM Used:</span>
+                            <p class="text-xs text-gray-900" x-text="gap.model || 'N/A'"></p>
+                        </div>
+                    </div>
+
+                    <!-- Keywords -->
+                    <div x-show="gap.target_keywords && gap.target_keywords.length > 0" class="mb-4">
+                        <div class="text-sm text-gray-600 mb-2">Target Keywords:</div>
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="keyword in gap.target_keywords" :key="keyword">
+                                <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs" x-text="keyword"></span>
+                            </template>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex gap-2">
+                        <button 
+                            @click="viewBrief(gap)"
+                            class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors"
+                        >
+                            📋 View Brief
+                        </button>
+                        <button 
+                            @click="generateFullBrief(gap.id)"
+                            :disabled="gap.generatingBrief"
+                            class="px-4 py-2 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                        >
+                            <span x-show="!gap.generatingBrief">✨ Generate Full Brief</span>
+                            <span x-show="gap.generatingBrief">⏳ Generating...</span>
+                        </button>
+                        <button 
+                            @click="dismissGap(gap.id)"
+                            class="px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded-md hover:bg-gray-300 transition-colors"
+                        >
+                            ✕ Dismiss
+                        </button>
+                    </div>
+
+                    <!-- Brief Preview (Expandable) -->
+                    <div x-show="selectedGap?.id === gap.id" x-transition class="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div class="flex items-center justify-between mb-4">
+                            <h4 class="font-semibold text-gray-900">Content Brief</h4>
+                            <button 
+                                @click="selectedGap = null"
+                                class="text-gray-500 hover:text-gray-700"
+                            >
+                                ✕
+                            </button>
+                        </div>
+
+                        <template x-if="selectedGap?.brief">
+                            <div class="space-y-4 text-sm">
+                                <!-- Outline -->
+                                <div x-show="selectedGap.brief.outline">
+                                    <h5 class="font-medium text-gray-900 mb-2">Content Outline:</h5>
+                                    <ol class="list-decimal list-inside space-y-2">
+                                        <template x-for="section in selectedGap.brief.outline" :key="section.heading">
+                                            <li class="text-gray-700">
+                                                <strong x-text="section.heading"></strong>
+                                                <p class="ml-6 mt-1 text-gray-600" x-text="section.description"></p>
+                                            </li>
+                                        </template>
+                                    </ol>
+                                </div>
+
+                                <!-- GEO Optimization Tips -->
+                                <div x-show="selectedGap.brief.geo_optimization">
+                                    <h5 class="font-medium text-gray-900 mb-2">AI Search Optimization:</h5>
+                                    <div class="space-y-2 text-gray-700">
+                                        <div x-show="selectedGap.brief.geo_optimization?.entities_to_mention">
+                                            <strong>Entities to mention:</strong>
+                                            <p x-text="selectedGap.brief.geo_optimization.entities_to_mention"></p>
+                                        </div>
+                                        <div x-show="selectedGap.brief.geo_optimization?.questions_to_answer">
+                                            <strong>Questions to answer:</strong>
+                                            <p x-text="selectedGap.brief.geo_optimization.questions_to_answer"></p>
+                                        </div>
+                                        <div x-show="selectedGap.brief.geo_optimization?.citation_opportunities">
+                                            <strong>Citation opportunities:</strong>
+                                            <p x-text="selectedGap.brief.geo_optimization.citation_opportunities"></p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Copy Brief Button -->
+                                <div class="pt-2">
+                                    <button 
+                                        @click="copyBrief(selectedGap)"
+                                        class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700"
+                                    >
+                                        📋 Copy Brief to Clipboard
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <div x-show="filteredGaps.length === 0" class="text-center py-12 text-gray-500">
+                No content gaps found. Try adjusting your filters or run a new analysis.
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loadingGaps" class="text-center py-12">
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        <p class="mt-4 text-gray-600">Loading content gaps...</p>
+    </div>
+</div>
+
+<script>
+function contentGapFinder() {
+    return {
+        // Form state
+        form: {
+            website: '',
+            sources: {
+                useManual: true,
+                manual_queries: '',
+                useCompetitors: false,
+                competitor_audit_ids: []
+            },
+            language: 'Romanian',
+            industry_hint: '',
+            provider: 'anthropic',
+            max_gaps: 20
+        },
+        
+        // UI state
+        analyzing: false,
+        loadingGaps: false,
+        currentAnalysisId: null,
+        availableAudits: [],
+        
+        // Data
+        gaps: [],
+        filteredGaps: [],
+        stats: {},
+        selectedGap: null,
+        
+        // Filters
+        filters: {
+            priority: '',
+            status: '',
+            source: ''
+        },
+        
+        async init() {
+            // Load any saved analysis ID from URL params
+            const params = new URLSearchParams(window.location.search);
+            const analysisId = params.get('analysis_id');
+            if (analysisId) {
+                this.currentAnalysisId = analysisId;
+                await this.loadGaps();
+            }
+        },
+        
+        async loadCompletedAudits() {
+            try {
+                const response = await fetch('/api/audits?status=completed&limit=50');
+                const data = await response.json();
+                this.availableAudits = data.audits || [];
+            } catch (error) {
+                console.error('Error loading audits:', error);
+                alert('Failed to load completed audits');
+            }
+        },
+        
+        async analyzeGaps() {
+            // Validate sources
+            const hasManual = this.form.sources.useManual && this.form.sources.manual_queries.trim();
+            const hasCompetitors = this.form.sources.useCompetitors && this.form.sources.competitor_audit_ids.length > 0;
+            
+            if (!hasManual && !hasCompetitors) {
+                alert('Please select at least one gap source');
+                return;
+            }
+            
+            this.analyzing = true;
+            
+            try {
+                // Build sources object
+                const sources = {};
+                
+                if (hasManual) {
+                    sources.manual_queries = this.form.sources.manual_queries.split('\n').filter(q => q.trim());
+                }
+                
+                if (hasCompetitors) {
+                    sources.competitor_audit_ids = this.form.sources.competitor_audit_ids;
+                }
+                
+                // Send request
+                const response = await fetch('/api/content-gaps/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        website: this.form.website,
+                        sources: sources,
+                        language: this.form.language,
+                        industry_hint: this.form.industry_hint || null,
+                        provider: this.form.provider,
+                        max_gaps: this.form.max_gaps
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.analysis_id) {
+                    this.currentAnalysisId = data.analysis_id;
+                    // Poll for results
+                    await this.pollForResults();
+                }
+            } catch (error) {
+                console.error('Error analyzing gaps:', error);
+                alert('Failed to analyze content gaps');
+            } finally {
+                this.analyzing = false;
+            }
+        },
+        
+        async pollForResults() {
+            // Poll every 3 seconds for up to 2 minutes
+            let attempts = 0;
+            const maxAttempts = 40;
+            
+            const poll = async () => {
+                if (attempts >= maxAttempts) {
+                    alert('Analysis is taking longer than expected. Please refresh the page later.');
+                    return;
+                }
+                
+                await this.loadGaps();
+                
+                if (this.gaps.length === 0) {
+                    attempts++;
+                    setTimeout(poll, 3000);
+                }
+            };
+            
+            await poll();
+        },
+        
+        async loadGaps() {
+            if (!this.currentAnalysisId) return;
+            
+            this.loadingGaps = true;
+            
+            try {
+                // Load gaps
+                const response = await fetch(`/api/content-gaps?analysis_id=${this.currentAnalysisId}`);
+                const data = await response.json();
+                this.gaps = data.gaps || [];
+                this.filteredGaps = [...this.gaps];
+                
+                // Load stats
+                const statsResponse = await fetch(`/api/content-gaps/stats?analysis_id=${this.currentAnalysisId}`);
+                this.stats = await statsResponse.json();
+                
+            } catch (error) {
+                console.error('Error loading gaps:', error);
+            } finally {
+                this.loadingGaps = false;
+            }
+        },
+        
+        filterGaps() {
+            this.filteredGaps = this.gaps.filter(gap => {
+                if (this.filters.priority && gap.priority !== this.filters.priority) {
+                    return false;
+                }
+                if (this.filters.status && gap.status !== this.filters.status) {
+                    return false;
+                }
+                if (this.filters.source && gap.gap_source !== this.filters.source) {
+                    return false;
+                }
+                return true;
+            });
+        },
+        
+        async updateStatus(gapId, newStatus) {
+            try {
+                const response = await fetch(`/api/content-gaps/${gapId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                if (response.ok) {
+                    // Update local state
+                    const gap = this.gaps.find(g => g.id === gapId);
+                    if (gap) gap.status = newStatus;
+                    this.filterGaps();
+                    // Reload stats
+                    await this.loadGaps();
+                }
+            } catch (error) {
+                console.error('Error updating status:', error);
+                alert('Failed to update status');
+            }
+        },
+        
+        viewBrief(gap) {
+            this.selectedGap = gap;
+        },
+        
+        async generateFullBrief(gapId) {
+            const gap = this.gaps.find(g => g.id === gapId);
+            if (gap) gap.generatingBrief = true;
+            
+            try {
+                const response = await fetch(`/api/content-gaps/${gapId}/generate-full-brief`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    // Poll for updated brief
+                    setTimeout(async () => {
+                        await this.loadGaps();
+                        if (gap) gap.generatingBrief = false;
+                    }, 10000); // Check after 10 seconds
+                }
+            } catch (error) {
+                console.error('Error generating full brief:', error);
+                if (gap) gap.generatingBrief = false;
+            }
+        },
+        
+        async dismissGap(gapId) {
+            if (!confirm('Dismiss this content gap?')) return;
+            
+            await this.updateStatus(gapId, 'dismissed');
+        },
+        
+        copyBrief(gap) {
+            let briefText = `Content Brief: ${gap.suggested_title}\n\n`;
+            briefText += `URL: ${gap.suggested_url_slug}\n`;
+            briefText += `Type: ${gap.content_type}\n`;
+            briefText += `Word Count: ${gap.estimated_word_count}\n`;
+            briefText += `Effort: ${gap.estimated_effort}\n\n`;
+            
+            if (gap.target_keywords && gap.target_keywords.length > 0) {
+                briefText += `Keywords: ${gap.target_keywords.join(', ')}\n\n`;
+            }
+            
+            if (gap.brief && gap.brief.outline) {
+                briefText += `Outline:\n`;
+                gap.brief.outline.forEach((section, i) => {
+                    briefText += `${i + 1}. ${section.heading}\n`;
+                    briefText += `   ${section.description}\n\n`;
+                });
+            }
+            
+            navigator.clipboard.writeText(briefText);
+            alert('Brief copied to clipboard!');
+        },
+        
+        async exportGaps(format) {
+            if (!this.currentAnalysisId) return;
+            
+            window.location.href = `/api/content-gaps/export/${this.currentAnalysisId}?format=${format}`;
+        }
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,7 @@
+INFO:     Will watch for changes in these directories: ['D:\\Projects\\geo_tool']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [98684] using WatchFiles
+INFO:     Started server process [87076]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'lead_worker\result_formatter.py'. Reloading...

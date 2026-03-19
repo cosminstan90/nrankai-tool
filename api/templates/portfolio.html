@@ -1,0 +1,580 @@
+{% extends "base.html" %}
+
+{% block title %}Portfolio Dashboard - Website LLM Analyzer{% endblock %}
+
+{% block head %}
+<style>
+    /* Health status colors */
+    .health-excellent { @apply bg-green-100 text-green-800 border-green-200; }
+    .health-good { @apply bg-blue-100 text-blue-800 border-blue-200; }
+    .health-needs_work { @apply bg-yellow-100 text-yellow-800 border-yellow-200; }
+    .health-poor { @apply bg-red-100 text-red-800 border-red-200; }
+    .health-unknown { @apply bg-gray-100 text-gray-800 border-gray-200; }
+    
+    /* Trend arrows */
+    .trend-improving { @apply text-green-600; }
+    .trend-declining { @apply text-red-600; }
+    .trend-stable { @apply text-gray-600; }
+    
+    /* Sparkline canvas sizing */
+    .sparkline-canvas {
+        width: 100px;
+        height: 30px;
+    }
+    
+    /* Alert severity */
+    .alert-high { @apply bg-red-50 border-red-300 text-red-800; }
+    .alert-medium { @apply bg-yellow-50 border-yellow-300 text-yellow-800; }
+    .alert-low { @apply bg-blue-50 border-blue-300 text-blue-800; }
+    
+    /* Card hover effect */
+    .website-card {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .website-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Loading skeleton */
+    .skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: loading 1.5s infinite;
+    }
+    @keyframes loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="portfolioApp()" x-init="init()" class="space-y-6">
+    
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-slate-900">Portfolio Dashboard</h1>
+            <p class="mt-1 text-sm text-slate-500">Command center for all your clients' websites</p>
+        </div>
+        <div class="flex space-x-3">
+            <button @click="refreshData()" 
+                    :disabled="loading"
+                    class="inline-flex items-center px-4 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50">
+                <svg class="w-4 h-4 mr-2" :class="{'animate-spin': loading}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <span x-text="loading ? 'Refreshing...' : 'Refresh'"></span>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <template x-if="loading && !data">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="skeleton rounded-lg h-32"></div>
+            <div class="skeleton rounded-lg h-32"></div>
+            <div class="skeleton rounded-lg h-32"></div>
+            <div class="skeleton rounded-lg h-32"></div>
+        </div>
+    </template>
+    
+    <!-- Global KPIs -->
+    <template x-if="data && data.global_stats">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Total Websites -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Websites</p>
+                        <p class="mt-2 text-3xl font-bold text-slate-900" x-text="data.global_stats.total_websites"></p>
+                    </div>
+                    <div class="p-3 bg-primary-100 rounded-lg">
+                        <svg class="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">
+                    <span x-text="data.global_stats.total_audits"></span> total audits
+                </p>
+            </div>
+            
+            <!-- Average Score -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Avg Score</p>
+                        <p class="mt-2 text-3xl font-bold" 
+                           :class="getScoreColor(data.global_stats.avg_score_all)"
+                           x-text="data.global_stats.avg_score_all.toFixed(1)"></p>
+                    </div>
+                    <div class="p-3 bg-blue-100 rounded-lg">
+                        <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">
+                    <span x-text="data.global_stats.total_pages_analyzed.toLocaleString()"></span> pages analyzed
+                </p>
+            </div>
+            
+            <!-- Average GEO Visibility -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">GEO Visibility</p>
+                        <p class="mt-2 text-3xl font-bold text-slate-900">
+                            <span x-text="data.global_stats.avg_geo_visibility.toFixed(1)"></span>%
+                        </p>
+                    </div>
+                    <div class="p-3 bg-green-100 rounded-lg">
+                        <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">AI platform visibility</p>
+            </div>
+            
+            <!-- Average Citation Rate -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-slate-500">Citation Rate</p>
+                        <p class="mt-2 text-3xl font-bold text-slate-900">
+                            <span x-text="data.global_stats.avg_citation_rate.toFixed(1)"></span>%
+                        </p>
+                    </div>
+                    <div class="p-3 bg-purple-100 rounded-lg">
+                        <svg class="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path>
+                        </svg>
+                    </div>
+                </div>
+                <p class="mt-2 text-xs text-slate-500">URL citation frequency</p>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Alerts Banner -->
+    <template x-if="data && data.alerts && data.alerts.length > 0">
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-slate-200">
+                <h2 class="text-lg font-semibold text-slate-900">
+                    Active Alerts (<span x-text="data.alerts.length"></span>)
+                </h2>
+            </div>
+            <div class="p-6 space-y-3">
+                <template x-for="alert in data.alerts.slice(0, 5)" :key="alert.website + alert.type">
+                    <div class="flex items-start space-x-3 p-3 rounded-lg border"
+                         :class="'alert-' + alert.severity">
+                        <svg class="w-5 h-5 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                        </svg>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">
+                                <span x-text="alert.website"></span>: <span x-text="alert.message"></span>
+                            </p>
+                            <p class="mt-1 text-xs opacity-75" x-text="alert.severity + ' priority'"></p>
+                        </div>
+                        <button @click="dismissAlert(alert)" class="text-slate-400 hover:text-slate-600">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </template>
+    
+    <template x-if="data && (!data.alerts || data.alerts.length === 0)">
+        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+            <div class="flex items-center space-x-2 text-green-800">
+                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                <span class="font-medium">All sites performing well - no active alerts</span>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Filters and Sort -->
+    <template x-if="data && data.websites">
+        <div class="bg-white rounded-lg shadow p-4">
+            <div class="flex flex-wrap items-center gap-4">
+                <div>
+                    <label class="text-sm font-medium text-slate-700 mr-2">Sort by:</label>
+                    <select x-model="sortBy" @change="sortWebsites()" 
+                            class="rounded-md border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500">
+                        <option value="name">Name</option>
+                        <option value="score">Score</option>
+                        <option value="health">Health Status</option>
+                        <option value="last_activity">Last Activity</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-slate-700 mr-2">Filter by health:</label>
+                    <select x-model="filterHealth" @change="filterWebsites()" 
+                            class="rounded-md border-slate-300 text-sm focus:border-primary-500 focus:ring-primary-500">
+                        <option value="all">All</option>
+                        <option value="excellent">Excellent</option>
+                        <option value="good">Good</option>
+                        <option value="needs_work">Needs Work</option>
+                        <option value="poor">Poor</option>
+                    </select>
+                </div>
+                <div class="ml-auto">
+                    <span class="text-sm text-slate-500">
+                        Showing <span x-text="filteredWebsites.length"></span> of <span x-text="data.websites.length"></span> websites
+                    </span>
+                </div>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Website Cards Grid -->
+    <template x-if="data && filteredWebsites.length > 0">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <template x-for="website in filteredWebsites" :key="website.domain">
+                <div class="bg-white rounded-lg shadow website-card cursor-pointer"
+                     @click="viewWebsiteDetails(website.domain)">
+                    
+                    <!-- Card Header -->
+                    <div class="px-6 py-4 border-b border-slate-200">
+                        <div class="flex items-start justify-between">
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-lg font-semibold text-slate-900 truncate" x-text="website.domain"></h3>
+                                <p class="text-xs text-slate-500 mt-1" x-text="getLastActivityText(website.audits.last_audit_date)"></p>
+                            </div>
+                            <span class="ml-2 px-2 py-1 text-xs font-medium rounded border"
+                                  :class="'health-' + website.overall_health"
+                                  x-text="formatHealthStatus(website.overall_health)"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Score Section -->
+                    <div class="px-6 py-4 bg-slate-50">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <p class="text-sm text-slate-500 mb-1">SEO Score</p>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-3xl font-bold" 
+                                          :class="getScoreColor(website.audits.latest_score)"
+                                          x-text="website.audits.latest_score ? website.audits.latest_score.toFixed(1) : 'N/A'"></span>
+                                    <template x-if="website.audits.delta !== null && website.audits.delta !== 0">
+                                        <div class="flex items-center text-sm font-medium"
+                                             :class="getTrendColor(website.audits.trend)">
+                                            <span x-text="getTrendArrow(website.audits.trend)"></span>
+                                            <span x-text="Math.abs(website.audits.delta).toFixed(1)"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                            <div>
+                                <canvas :id="'sparkline-' + website.domain.replace(/\./g, '-')" 
+                                        class="sparkline-canvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Mini Metrics -->
+                    <div class="px-6 py-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <p class="text-xs text-slate-500">GEO Visibility</p>
+                                <p class="text-sm font-semibold text-slate-900">
+                                    <span x-text="website.geo_visibility.latest_score ? website.geo_visibility.latest_score.toFixed(1) + '%' : 'N/A'"></span>
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-500">Citations</p>
+                                <p class="text-sm font-semibold text-slate-900">
+                                    <span x-text="website.citations.citation_rate ? website.citations.citation_rate.toFixed(1) + '%' : 'N/A'"></span>
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-500">Briefs</p>
+                                <p class="text-sm font-semibold text-slate-900">
+                                    <span x-text="website.briefs.completed + '/' + website.briefs.total"></span>
+                                </p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-500">Schemas</p>
+                                <p class="text-sm font-semibold text-slate-900">
+                                    <span x-text="website.schemas.total"></span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Alerts -->
+                    <template x-if="website.alerts && website.alerts.length > 0">
+                        <div class="px-6 py-3 bg-red-50 border-t border-red-100">
+                            <p class="text-xs text-red-800 font-medium">
+                                <span x-text="website.alerts.length"></span> alert<span x-show="website.alerts.length > 1">s</span>
+                            </p>
+                        </div>
+                    </template>
+                    
+                    <!-- Quick Actions -->
+                    <div class="px-6 py-3 bg-slate-50 border-t border-slate-200 flex space-x-2">
+                        <button @click.stop="viewWebsiteDetails(website.domain)"
+                                class="flex-1 px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-md">
+                            View Details
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </template>
+    
+    <!-- Empty State -->
+    <template x-if="data && data.websites && data.websites.length === 0">
+        <div class="text-center py-12 bg-white rounded-lg shadow">
+            <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-slate-900">No websites found</h3>
+            <p class="mt-1 text-sm text-slate-500">Get started by creating your first audit.</p>
+            <div class="mt-6">
+                <a href="/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700">
+                    New Audit
+                </a>
+            </div>
+        </div>
+    </template>
+    
+    <!-- Website Details Modal -->
+    <template x-if="selectedWebsite">
+        <div class="fixed inset-0 z-50 overflow-y-auto" @click.self="selectedWebsite = null">
+            <div class="flex items-center justify-center min-h-screen px-4">
+                <div class="fixed inset-0 bg-slate-500 bg-opacity-75 transition-opacity"></div>
+                
+                <div class="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-screen overflow-y-auto"
+                     @click.stop>
+                    <!-- Modal Header -->
+                    <div class="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between z-10">
+                        <h2 class="text-2xl font-bold text-slate-900" x-text="selectedWebsite.domain"></h2>
+                        <button @click="selectedWebsite = null" class="text-slate-400 hover:text-slate-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <!-- Modal Content -->
+                    <div class="px-6 py-6 space-y-6">
+                        <p class="text-sm text-slate-500">Loading detailed data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+    
+</div>
+
+<script>
+function portfolioApp() {
+    return {
+        data: null,
+        loading: true,
+        sortBy: 'health',
+        filterHealth: 'all',
+        filteredWebsites: [],
+        selectedWebsite: null,
+        chartInstances: {},
+        
+        async init() {
+            await this.loadData();
+            // Render sparklines after data is loaded
+            this.$nextTick(() => {
+                this.renderAllSparklines();
+            });
+        },
+        
+        async loadData() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/portfolio/overview');
+                if (!response.ok) throw new Error('Failed to fetch portfolio data');
+                this.data = await response.json();
+                this.filteredWebsites = [...this.data.websites];
+                this.sortWebsites();
+            } catch (error) {
+                console.error('Error loading portfolio:', error);
+                alert('Failed to load portfolio data. Please try again.');
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        async refreshData() {
+            await this.loadData();
+            this.$nextTick(() => {
+                this.renderAllSparklines();
+            });
+        },
+        
+        sortWebsites() {
+            const websites = [...this.filteredWebsites];
+            
+            websites.sort((a, b) => {
+                switch (this.sortBy) {
+                    case 'name':
+                        return a.domain.localeCompare(b.domain);
+                    case 'score':
+                        return (b.audits.latest_score || 0) - (a.audits.latest_score || 0);
+                    case 'health':
+                        const healthOrder = { excellent: 0, good: 1, needs_work: 2, poor: 3, unknown: 4 };
+                        return healthOrder[a.overall_health] - healthOrder[b.overall_health];
+                    case 'last_activity':
+                        const dateA = a.audits.last_audit_date ? new Date(a.audits.last_audit_date) : new Date(0);
+                        const dateB = b.audits.last_audit_date ? new Date(b.audits.last_audit_date) : new Date(0);
+                        return dateB - dateA;
+                    default:
+                        return 0;
+                }
+            });
+            
+            this.filteredWebsites = websites;
+            this.$nextTick(() => {
+                this.renderAllSparklines();
+            });
+        },
+        
+        filterWebsites() {
+            if (this.filterHealth === 'all') {
+                this.filteredWebsites = [...this.data.websites];
+            } else {
+                this.filteredWebsites = this.data.websites.filter(w => w.overall_health === this.filterHealth);
+            }
+            this.sortWebsites();
+        },
+        
+        getScoreColor(score) {
+            if (!score) return 'text-slate-400';
+            if (score >= 80) return 'text-green-600';
+            if (score >= 60) return 'text-blue-600';
+            if (score >= 40) return 'text-yellow-600';
+            return 'text-red-600';
+        },
+        
+        getTrendColor(trend) {
+            if (trend === 'improving') return 'trend-improving';
+            if (trend === 'declining') return 'trend-declining';
+            return 'trend-stable';
+        },
+        
+        getTrendArrow(trend) {
+            if (trend === 'improving') return '↗';
+            if (trend === 'declining') return '↘';
+            return '→';
+        },
+        
+        formatHealthStatus(health) {
+            return health.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        },
+        
+        getLastActivityText(date) {
+            if (!date) return 'No recent activity';
+            const d = new Date(date);
+            const now = new Date();
+            const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0) return 'Last audit: Today';
+            if (diffDays === 1) return 'Last audit: Yesterday';
+            if (diffDays < 7) return `Last audit: ${diffDays} days ago`;
+            if (diffDays < 30) return `Last audit: ${Math.floor(diffDays / 7)} weeks ago`;
+            return `Last audit: ${Math.floor(diffDays / 30)} months ago`;
+        },
+        
+        dismissAlert(alert) {
+            const index = this.data.alerts.findIndex(a => 
+                a.website === alert.website && a.type === alert.type
+            );
+            if (index > -1) {
+                this.data.alerts.splice(index, 1);
+            }
+        },
+        
+        async viewWebsiteDetails(domain) {
+            try {
+                const response = await fetch(`/api/portfolio/website/${encodeURIComponent(domain)}`);
+                if (!response.ok) throw new Error('Failed to fetch website details');
+                this.selectedWebsite = await response.json();
+                
+                // Render detailed charts in modal
+                this.$nextTick(() => {
+                    this.renderDetailCharts();
+                });
+            } catch (error) {
+                console.error('Error loading website details:', error);
+                alert('Failed to load website details. Please try again.');
+            }
+        },
+        
+        renderAllSparklines() {
+            // Destroy old chart instances
+            Object.values(this.chartInstances).forEach(chart => chart.destroy());
+            this.chartInstances = {};
+            
+            if (!this.filteredWebsites) return;
+            
+            this.filteredWebsites.forEach(website => {
+                const canvasId = 'sparkline-' + website.domain.replace(/\./g, '-');
+                const canvas = document.getElementById(canvasId);
+                
+                if (!canvas) return;
+                
+                // Get last 5 audit scores (mock data for now - would need history endpoint)
+                const scores = [
+                    website.audits.previous_score || website.audits.latest_score,
+                    website.audits.latest_score
+                ];
+                
+                const ctx = canvas.getContext('2d');
+                this.chartInstances[canvasId] = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: scores.map((_, i) => i),
+                        datasets: [{
+                            data: scores,
+                            borderColor: website.audits.trend === 'improving' ? '#10b981' : 
+                                       website.audits.trend === 'declining' ? '#ef4444' : '#64748b',
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: false,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: { enabled: false }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: { display: false }
+                        },
+                        elements: {
+                            line: { tension: 0.4 }
+                        }
+                    }
+                });
+            });
+        },
+        
+        renderDetailCharts() {
+            // Would render detailed trend charts in modal
+            console.log('Rendering detail charts for:', this.selectedWebsite.domain);
+        }
+    }
+}
+</script>
+{% endblock %}

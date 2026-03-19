@@ -1,0 +1,407 @@
+{% extends "base.html" %}
+{% block title %}GEO & SEO Guide — {{ page_url }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="guidePage()" x-init="init()">
+
+    <!-- Toast -->
+    <div x-show="toast" x-transition
+         class="fixed top-4 right-4 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium bg-white border border-slate-200 text-slate-800"
+         x-text="toast"></div>
+
+    <!-- Header -->
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+            <nav class="flex mb-3" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2 text-sm">
+                    <li><a href="/" class="text-slate-400 hover:text-slate-600">Dashboard</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li><a href="/pages?url={{ page_url | urlencode }}" class="text-slate-400 hover:text-slate-600 truncate max-w-[200px] inline-block">Page Audits</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li class="text-slate-700 font-medium">Guide</li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-slate-900">GEO & SEO Guide</h1>
+            <p class="mt-1 text-sm text-slate-500 max-w-2xl truncate" title="{{ page_url }}">{{ page_url }}</p>
+        </div>
+        <a href="/pages?url={{ page_url | urlencode }}"
+           class="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors flex-shrink-0">
+            ← Back to audits
+        </a>
+    </div>
+
+    <!-- Generate panel -->
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <h2 class="text-base font-semibold text-slate-800 mb-4">Generate Improvement Guide</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+            <!-- GSC Property selector -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">
+                    GSC Property <span class="text-slate-400">(optional — for query data)</span>
+                </label>
+                <select x-model="form.gsc_property_id"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                    <option value="">— No GSC data —</option>
+                    {% for p in gsc_properties %}
+                    <option value="{{ p.id }}">{{ p.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Provider -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Provider</label>
+                <select x-model="form.provider" @change="updateDefaultModel()"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="mistral">Mistral</option>
+                </select>
+            </div>
+
+            <!-- Model -->
+            <div>
+                <label class="block text-xs font-medium text-slate-600 mb-1">Model</label>
+                <input x-model="form.model" type="text"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+            </div>
+
+            <!-- Generate button -->
+            <div class="flex items-end">
+                <button @click="generateGuide()"
+                        :disabled="generating"
+                        class="w-full px-4 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    <span x-text="generating ? '⏳ Generating…' : '✨ Generate Guide'"></span>
+                </button>
+            </div>
+        </div>
+        <p x-show="genError" x-text="genError" class="text-sm text-red-600 mt-3"></p>
+    </div>
+
+    <!-- Previous guides list -->
+    <div x-show="guides.length > 0" class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+        <h2 class="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Previous Guides</h2>
+        <div class="flex flex-wrap gap-2">
+            <template x-for="g in guides" :key="g.id">
+                <button @click="selectGuide(g.id)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+                        :class="activeGuideId === g.id
+                            ? 'bg-violet-600 text-white border-violet-600'
+                            : g.status === 'completed' ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            : g.status === 'failed' ? 'bg-red-50 text-red-600 border-red-200'
+                            : 'bg-amber-50 text-amber-700 border-amber-200'">
+                    <span x-text="g.status === 'completed' ? '✅' : g.status === 'failed' ? '❌' : '⏳'"></span>
+                    <span x-text="formatDate(g.created_at)"></span>
+                    <span class="text-[10px] opacity-70" x-text="g.provider"></span>
+                </button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Guide status / spinner -->
+    <div x-show="activeGuide && (activeGuide.status === 'pending' || activeGuide.status === 'running')"
+         class="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
+        <div class="flex flex-col items-center gap-3">
+            <div class="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin"></div>
+            <p class="text-sm font-medium text-slate-700">
+                <span x-text="activeGuide && activeGuide.status === 'running' ? 'Generating guide…' : 'Queued…'"></span>
+            </p>
+            <p class="text-xs text-slate-400">Collecting audit data + querying LLM. Usually takes 15–30 seconds.</p>
+        </div>
+    </div>
+
+    <!-- Guide failed -->
+    <div x-show="activeGuide && activeGuide.status === 'failed'"
+         class="bg-red-50 border border-red-200 rounded-xl p-6 shadow-sm">
+        <h3 class="font-semibold text-red-800 mb-1">Guide generation failed</h3>
+        <p class="text-sm text-red-700" x-text="activeGuide && activeGuide.error_message"></p>
+    </div>
+
+    <!-- Guide results -->
+    <template x-if="activeGuide && activeGuide.status === 'completed' && activeGuide.guide_json">
+        <div class="space-y-5">
+
+            <!-- Executive Summary -->
+            <div class="bg-gradient-to-r from-violet-50 to-sky-50 border border-violet-200 rounded-xl p-6 shadow-sm">
+                <h2 class="text-base font-semibold text-violet-800 mb-2">📌 Executive Summary</h2>
+                <p class="text-sm text-slate-700 leading-relaxed" x-text="activeGuide.guide_json.executive_summary"></p>
+            </div>
+
+            <!-- GEO + SEO Improvements side by side -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                <!-- GEO Improvements -->
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <div class="px-5 py-4 border-b border-slate-100">
+                        <h2 class="text-base font-semibold text-slate-800">🤖 GEO Improvements</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Optimise for AI search engines (ChatGPT, Perplexity, Google AI Overviews)</p>
+                    </div>
+                    <div class="divide-y divide-slate-100">
+                        <template x-for="(item, idx) in (activeGuide.guide_json.geo_improvements || [])" :key="idx">
+                            <div class="px-5 py-4">
+                                <div class="flex items-start gap-2 mb-1">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 mt-0.5"
+                                          :class="item.priority === 'high' ? 'bg-red-100 text-red-700'
+                                               : item.priority === 'medium' ? 'bg-amber-100 text-amber-700'
+                                               : 'bg-slate-100 text-slate-500'"
+                                          x-text="item.priority"></span>
+                                    <span class="text-sm font-semibold text-slate-800" x-text="item.title"></span>
+                                </div>
+                                <p class="text-xs text-slate-500 mb-2" x-text="item.description"></p>
+                                <div class="flex items-start gap-1.5 bg-slate-50 rounded-lg px-3 py-2">
+                                    <span class="text-slate-400 flex-shrink-0 text-xs mt-0.5">→</span>
+                                    <span class="text-xs text-slate-700 font-medium" x-text="item.action"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="!activeGuide.guide_json.geo_improvements || activeGuide.guide_json.geo_improvements.length === 0"
+                             class="px-5 py-6 text-center text-sm text-slate-400">No GEO improvements generated.</div>
+                    </div>
+                </div>
+
+                <!-- SEO Improvements -->
+                <div class="bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <div class="px-5 py-4 border-b border-slate-100">
+                        <h2 class="text-base font-semibold text-slate-800">🔍 SEO Improvements</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Optimise for traditional search engines (Google, Bing)</p>
+                    </div>
+                    <div class="divide-y divide-slate-100">
+                        <template x-for="(item, idx) in (activeGuide.guide_json.seo_improvements || [])" :key="idx">
+                            <div class="px-5 py-4">
+                                <div class="flex items-start gap-2 mb-1">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide flex-shrink-0 mt-0.5"
+                                          :class="item.priority === 'high' ? 'bg-red-100 text-red-700'
+                                               : item.priority === 'medium' ? 'bg-amber-100 text-amber-700'
+                                               : 'bg-slate-100 text-slate-500'"
+                                          x-text="item.priority"></span>
+                                    <span class="text-sm font-semibold text-slate-800" x-text="item.title"></span>
+                                </div>
+                                <p class="text-xs text-slate-500 mb-2" x-text="item.description"></p>
+                                <div class="flex items-start gap-1.5 bg-slate-50 rounded-lg px-3 py-2">
+                                    <span class="text-slate-400 flex-shrink-0 text-xs mt-0.5">→</span>
+                                    <span class="text-xs text-slate-700 font-medium" x-text="item.action"></span>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="!activeGuide.guide_json.seo_improvements || activeGuide.guide_json.seo_improvements.length === 0"
+                             class="px-5 py-6 text-center text-sm text-slate-400">No SEO improvements generated.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Query Opportunities -->
+            <div x-show="activeGuide.guide_json.query_opportunities && activeGuide.guide_json.query_opportunities.length > 0"
+                 class="bg-white border border-slate-200 rounded-xl shadow-sm">
+                <div class="px-5 py-4 border-b border-slate-100">
+                    <h2 class="text-base font-semibold text-slate-800">📊 Query Opportunities</h2>
+                    <p class="text-xs text-slate-400 mt-0.5">Queries where targeted improvements could move the needle</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                <th class="px-5 py-3 text-left">Query</th>
+                                <th class="px-4 py-3 text-right whitespace-nowrap">Avg. Position</th>
+                                <th class="px-4 py-3 text-left">Insight</th>
+                                <th class="px-4 py-3 text-left">Recommendation</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(q, idx) in (activeGuide.guide_json.query_opportunities || [])" :key="idx">
+                                <tr class="hover:bg-slate-50">
+                                    <td class="px-5 py-3 font-mono text-xs text-slate-800 max-w-[200px] truncate" x-text="q.query"></td>
+                                    <td class="px-4 py-3 text-right">
+                                        <span class="inline-flex items-center justify-center w-10 h-6 rounded text-xs font-bold"
+                                              :class="(q.current_position || 99) <= 10 ? 'bg-emerald-100 text-emerald-700'
+                                                   : (q.current_position || 99) <= 20 ? 'bg-amber-100 text-amber-700'
+                                                   : 'bg-red-100 text-red-700'"
+                                              x-text="q.current_position ? q.current_position.toFixed(1) : '—'"></span>
+                                    </td>
+                                    <td class="px-4 py-3 text-xs text-slate-600 max-w-[200px]" x-text="q.insight"></td>
+                                    <td class="px-4 py-3 text-xs text-slate-700 font-medium max-w-[220px]" x-text="q.recommendation"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Quick Wins -->
+            <div x-show="activeGuide.guide_json.quick_wins && activeGuide.guide_json.quick_wins.length > 0"
+                 class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+                <h2 class="text-base font-semibold text-slate-800 mb-4">⚡ Quick Wins</h2>
+                <ul class="space-y-2">
+                    <template x-for="(win, idx) in (activeGuide.guide_json.quick_wins || [])" :key="idx">
+                        <li class="flex items-start gap-2.5">
+                            <span class="flex-shrink-0 w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center mt-0.5"
+                                  x-text="idx + 1"></span>
+                            <span class="text-sm text-slate-700" x-text="win"></span>
+                        </li>
+                    </template>
+                </ul>
+            </div>
+
+            <!-- Delete guide -->
+            <div class="flex justify-end">
+                <button @click="deleteGuide(activeGuide.id)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-500 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                    🗑 Delete this guide
+                </button>
+            </div>
+
+        </div>
+    </template>
+
+    <!-- Empty state (no guides yet) -->
+    <div x-show="!generating && guides.length === 0"
+         class="bg-slate-50 border border-slate-200 rounded-xl p-10 text-center">
+        <div class="text-4xl mb-3">📋</div>
+        <h3 class="font-semibold text-slate-700 mb-1">No guide generated yet</h3>
+        <p class="text-sm text-slate-500">Select a provider and click <strong>Generate Guide</strong> above to create a personalised GEO & SEO improvement plan for this URL.</p>
+    </div>
+
+</div>
+
+<script>
+function guidePage() {
+    const PAGE_URL = {{ page_url | tojson }};
+
+    return {
+        guides:        [],
+        activeGuideId: null,
+        activeGuide:   null,
+        generating:    false,
+        genError:      '',
+        toast:         '',
+        toastTimer:    null,
+        pollTimer:     null,
+        form: {
+            gsc_property_id: '',
+            provider: 'anthropic',
+            model:    'claude-haiku-4-5',
+        },
+
+        async init() {
+            await this.loadGuides();
+        },
+
+        async loadGuides() {
+            try {
+                const res = await fetch('/api/guide/by-url?url=' + encodeURIComponent(PAGE_URL));
+                if (res.ok) {
+                    this.guides = await res.json();
+                    if (this.guides.length > 0 && !this.activeGuideId) {
+                        await this.selectGuide(this.guides[0].id);
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        },
+
+        async selectGuide(id) {
+            this.activeGuideId = id;
+            this.stopPoll();
+            await this.fetchGuide(id);
+            if (this.activeGuide && (this.activeGuide.status === 'pending' || this.activeGuide.status === 'running')) {
+                this.startPoll(id);
+            }
+        },
+
+        async fetchGuide(id) {
+            try {
+                const res = await fetch('/api/guide/' + id);
+                if (res.ok) {
+                    this.activeGuide = await res.json();
+                    // Update guides list status too
+                    const idx = this.guides.findIndex(g => g.id === id);
+                    if (idx >= 0) this.guides[idx].status = this.activeGuide.status;
+                }
+            } catch (e) { /* ignore */ }
+        },
+
+        startPoll(id) {
+            this.stopPoll();
+            this.pollTimer = setInterval(async () => {
+                await this.fetchGuide(id);
+                if (this.activeGuide && this.activeGuide.status !== 'pending' && this.activeGuide.status !== 'running') {
+                    this.stopPoll();
+                    if (this.activeGuide.status === 'completed') {
+                        this.showToast('✅ Guide generated successfully!');
+                    }
+                }
+            }, 2500);
+        },
+
+        stopPoll() {
+            if (this.pollTimer) {
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+            }
+        },
+
+        async generateGuide() {
+            this.genError = '';
+            this.generating = true;
+            try {
+                const res = await fetch('/api/guide/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        url: PAGE_URL,
+                        gsc_property_id: this.form.gsc_property_id || null,
+                        provider: this.form.provider,
+                        model: this.form.model,
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.genError = data.detail || 'Failed to start generation';
+                } else {
+                    await this.loadGuides();
+                    await this.selectGuide(data.guide_id);
+                    this.startPoll(data.guide_id);
+                }
+            } catch (e) {
+                this.genError = 'Network error. Please try again.';
+            } finally {
+                this.generating = false;
+            }
+        },
+
+        async deleteGuide(id) {
+            if (!confirm('Delete this guide? This cannot be undone.')) return;
+            await fetch('/api/guide/' + id, { method: 'DELETE' });
+            this.activeGuide = null;
+            this.activeGuideId = null;
+            this.stopPoll();
+            await this.loadGuides();
+            if (this.guides.length > 0) {
+                await this.selectGuide(this.guides[0].id);
+            }
+        },
+
+        updateDefaultModel() {
+            const defaults = {
+                anthropic: 'claude-haiku-4-5',
+                openai:    'gpt-4o-mini',
+                mistral:   'mistral-small-latest',
+            };
+            this.form.model = defaults[this.form.provider] || '';
+        },
+
+        formatDate(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        },
+
+        showToast(msg) {
+            this.toast = msg;
+            if (this.toastTimer) clearTimeout(this.toastTimer);
+            this.toastTimer = setTimeout(() => { this.toast = ''; }, 4000);
+        },
+    };
+}
+</script>
+{% endblock %}

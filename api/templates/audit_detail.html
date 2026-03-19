@@ -1,0 +1,660 @@
+{% extends "base.html" %}
+
+{% block title %}{{ audit.website }} - {{ audit.audit_type }} Audit{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-start">
+        <div>
+            <nav class="flex mb-4" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2">
+                    <li><a href="/" class="text-slate-400 hover:text-slate-500">Dashboard</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li class="text-slate-700 font-medium">{{ audit.website }}</li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-slate-900">{{ audit.website }}</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                {{ audit.audit_type }} audit using {{ audit.provider | capitalize }} ({{ audit.model }})
+            </p>
+        </div>
+        <div class="flex items-center space-x-3">
+            {% if audit.status == 'completed' %}
+            <a href="/audits/{{ audit.id }}/report" target="_blank"
+               class="inline-flex items-center px-3 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Report
+            </a>
+            <a href="/api/audits/{{ audit.id }}/export" 
+               class="inline-flex items-center px-3 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Export Excel
+            </a>
+            <a href="/audits/{{ audit.id }}/results" 
+               class="inline-flex items-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                </svg>
+                View All Results
+            </a>
+            {% endif %}
+            {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
+            <button onclick="cancelAudit('{{ audit.id }}')"
+                    class="inline-flex items-center px-3 py-2 border border-amber-300 shadow-sm text-sm font-medium rounded-lg text-amber-700 bg-white hover:bg-amber-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+                </svg>
+                Cancel Audit
+            </button>
+            {% endif %}
+            {% if audit.status == 'failed' %}
+            <button onclick="retryAudit('{{ audit.id }}', false)"
+                    class="inline-flex items-center px-3 py-2 border border-emerald-300 shadow-sm text-sm font-medium rounded-lg text-emerald-700 bg-white hover:bg-emerald-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Retry Full
+            </button>
+            <button onclick="retryAudit('{{ audit.id }}', true)"
+                    title="Skip scraping and conversion — re-run LLM analysis only (faster if HTML files exist)"
+                    class="inline-flex items-center px-3 py-2 border border-emerald-200 shadow-sm text-sm font-medium rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+                Retry Analysis Only
+            </button>
+            {% endif %}
+            <button onclick="if(confirm('Delete this audit and all its data?')) fetch('/api/audits/{{ audit.id }}?force=true', {method: 'DELETE'}).then(r => { if(r.ok) window.location.href = '/'; else r.json().then(d => alert(d.detail || 'Delete failed')); })"
+                    class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                </svg>
+                Delete
+            </button>
+        </div>
+    </div>
+    
+    <!-- Status Card -->
+    <div id="status-card" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6"
+         {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
+         hx-ext="sse"
+         sse-connect="/api/audits/{{ audit.id }}/stream"
+         sse-swap="status"
+         {% endif %}>
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-lg font-semibold text-slate-900">Status</h2>
+            <span id="status-badge" class="badge 
+                {% if audit.status == 'pending' %}badge-pending
+                {% elif audit.status in ['scraping', 'converting', 'analyzing'] %}badge-scraping
+                {% elif audit.status == 'completed' %}badge-completed
+                {% else %}badge-failed{% endif %}">
+                {% if audit.status == 'pending' %}
+                Pending
+                {% elif audit.status == 'scraping' %}
+                <svg class="animate-spin mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Scraping
+                {% elif audit.status == 'converting' %}
+                <svg class="animate-spin mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Converting
+                {% elif audit.status == 'analyzing' %}
+                <svg class="animate-spin mr-1 h-3 w-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                Analyzing
+                {% elif audit.status == 'completed' %}
+                Completed
+                {% else %}
+                Failed
+                {% endif %}
+            </span>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="mb-4">
+            <div class="flex justify-between text-sm text-slate-600 mb-1">
+                <span id="current-step">{{ audit.current_step }}</span>
+                <span id="progress-percent">{{ audit.progress_percent }}%</span>
+            </div>
+            <div class="w-full bg-slate-200 rounded-full h-2.5">
+                <div id="progress-bar" class="h-2.5 rounded-full progress-bar
+                    {% if audit.status == 'completed' %}bg-green-500
+                    {% elif audit.status == 'failed' %}bg-red-500
+                    {% else %}bg-primary-500{% endif %}" 
+                    style="width: {{ audit.progress_percent }}%"></div>
+            </div>
+        </div>
+        
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-200">
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Total Pages</dt>
+                <dd id="total-pages" class="mt-1 text-2xl font-semibold text-slate-900">{{ audit.total_pages }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Pages Scraped</dt>
+                <dd id="pages-scraped" class="mt-1 text-2xl font-semibold text-slate-900">{{ audit.pages_scraped }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Pages Analyzed</dt>
+                <dd id="pages-analyzed" class="mt-1 text-2xl font-semibold text-slate-900">{{ audit.pages_analyzed }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Average Score</dt>
+                <dd id="average-score" class="mt-1 text-2xl font-semibold 
+                    {% if audit.average_score %}{% if audit.average_score >= 70 %}text-green-600{% elif audit.average_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}{% else %}text-slate-400{% endif %}">
+                    {% if audit.average_score %}{{ audit.average_score }}{% else %}—{% endif %}
+                </dd>
+            </div>
+        </div>
+        
+        {% if audit.error_message %}
+        <div class="mt-4 rounded-md bg-red-50 p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Error</h3>
+                    <div class="mt-2 text-sm text-red-700">{{ audit.error_message }}</div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Log Output -->
+    <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-4">Activity Log</h2>
+        <div id="log-output" class="log-output bg-slate-900 rounded-lg p-4 font-mono text-sm"
+             {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
+             hx-ext="sse"
+             sse-connect="/api/audits/{{ audit.id }}/stream"
+             sse-swap="log"
+             hx-swap="beforeend scroll:bottom"
+             {% endif %}>
+            <div class="text-slate-400">Waiting for logs...</div>
+        </div>
+    </div>
+    
+    <!-- Results Summary (if completed) -->
+    {% if audit.status == 'completed' and results_summary %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Score Distribution Chart -->
+        <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+            <h2 class="text-lg font-semibold text-slate-900 mb-4">Score Distribution</h2>
+            <canvas id="score-chart"></canvas>
+        </div>
+        
+        <!-- Top & Bottom Results -->
+        <div class="space-y-6">
+            <!-- Top Results -->
+            <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+                <h3 class="text-md font-semibold text-slate-900 mb-3">Top Performers</h3>
+                <ul class="space-y-2">
+                    {% for result in results_summary.top_results %}
+                    <li class="flex justify-between items-center">
+                        <span class="text-sm text-slate-600 truncate max-w-xs" title="{{ result.page_url }}">{{ result.page_url }}</span>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium score-excellent">
+                            {{ result.score }}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            
+            <!-- Bottom Results -->
+            <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+                <h3 class="text-md font-semibold text-slate-900 mb-3">Needs Attention</h3>
+                <ul class="space-y-2">
+                    {% for result in results_summary.bottom_results %}
+                    <li class="flex justify-between items-center">
+                        <span class="text-sm text-slate-600 truncate max-w-xs" title="{{ result.page_url }}">{{ result.page_url }}</span>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium 
+                            {% if result.score >= 50 %}score-needs-work{% else %}score-poor{% endif %}">
+                            {{ result.score if result.score is not none else '—' }}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    <!-- AI Executive Summary & Action Plan -->
+    {% if audit.status == 'completed' %}
+    <div x-data="summaryWidget()" x-init="init()" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-semibold text-slate-900">AI Executive Summary & Action Plan</h2>
+            <div class="flex items-center space-x-2">
+                <!-- Model Selector -->
+                <template x-if="!summary && !loading">
+                    <div class="relative">
+                        <select x-model="selectedPreset" @change="updateModelFromPreset" 
+                                class="block w-64 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-primary-500 focus:border-primary-500">
+                            <option value="same">Same as audit ({{ audit.provider }}/{{ audit.model }})</option>
+                            <optgroup label="💰 Cheap Options">
+                                <option value="cheap_google">Google: Gemini 2.5 Flash</option>
+                                <option value="cheap_anthropic">Anthropic: Claude Haiku 4.5</option>
+                                <option value="cheap_openai">OpenAI: GPT-4o Mini</option>
+                                <option value="cheap_mistral">Mistral: Small</option>
+                            </optgroup>
+                            <optgroup label="⚖️ Balanced Options">
+                                <option value="balanced_google">Google: Gemini 2.0 Flash</option>
+                                <option value="balanced_anthropic">Anthropic: Claude Sonnet 4</option>
+                                <option value="balanced_openai">OpenAI: GPT-4o</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                </template>
+                
+                <!-- Generate Button -->
+                <template x-if="!summary && !loading">
+                    <button @click="generateSummary" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-primary-600 hover:bg-primary-700">
+                        <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                        </svg>
+                        Generate AI Summary
+                    </button>
+                </template>
+                
+                <!-- Regenerate Button -->
+                <template x-if="summary && !loading">
+                    <button @click="generateSummary" 
+                            class="inline-flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">
+                        <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                        Regenerate
+                    </button>
+                </template>
+            </div>
+        </div>
+        
+        <!-- Loading State -->
+        <template x-if="loading">
+            <div class="flex items-center justify-center py-12">
+                <svg class="animate-spin h-8 w-8 text-primary-600" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="ml-3 text-slate-600">Generating AI summary...</span>
+            </div>
+        </template>
+        
+        <!-- No Summary State -->
+        <template x-if="!summary && !loading">
+            <div class="text-center py-12 text-slate-500">
+                <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                </svg>
+                <p class="mt-4 text-sm">Generate an AI-powered executive summary and prioritized action plan</p>
+            </div>
+        </template>
+        
+        <!-- Summary Content -->
+        <template x-if="summary && !loading">
+            <div class="space-y-6">
+                <!-- Executive Summary -->
+                <div>
+                    <h3 class="text-md font-semibold text-slate-900 mb-3">Executive Summary</h3>
+                    <div class="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap" x-text="summary.executive_summary"></div>
+                </div>
+                
+                <!-- Key Findings -->
+                <div>
+                    <h3 class="text-md font-semibold text-slate-900 mb-3">Key Findings</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <template x-for="finding in summary.key_findings" :key="finding.finding">
+                            <div class="border border-slate-200 rounded-lg p-4">
+                                <div class="flex items-start justify-between mb-2">
+                                    <span class="text-sm font-medium text-slate-900" x-text="finding.category"></span>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                          :class="{
+                                              'bg-red-100 text-red-800': finding.impact === 'high',
+                                              'bg-yellow-100 text-yellow-800': finding.impact === 'medium',
+                                              'bg-green-100 text-green-800': finding.impact === 'low'
+                                          }"
+                                          x-text="finding.impact.toUpperCase()">
+                                    </span>
+                                </div>
+                                <p class="text-sm text-slate-600" x-text="finding.finding"></p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                
+                <!-- Action Plan -->
+                <div>
+                    <h3 class="text-md font-semibold text-slate-900 mb-3">6-Week Action Plan</h3>
+                    <div class="space-y-4">
+                        <template x-for="week in [1,2,3,4,5,6]" :key="week">
+                            <div x-show="getActionsForWeek(week).length > 0">
+                                <h4 class="text-sm font-semibold text-slate-700 mb-2" x-text="'Week ' + week"></h4>
+                                <div class="space-y-2">
+                                    <template x-for="action in getActionsForWeek(week)" :key="action.action">
+                                        <div class="border-l-4 pl-4 py-2"
+                                             :class="{
+                                                 'border-red-500 bg-red-50': action.priority === 'critical',
+                                                 'border-orange-500 bg-orange-50': action.priority === 'high',
+                                                 'border-yellow-500 bg-yellow-50': action.priority === 'medium'
+                                             }">
+                                            <div class="flex items-start justify-between">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center space-x-2 mb-1">
+                                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                                              :class="{
+                                                                  'bg-red-100 text-red-800': action.priority === 'critical',
+                                                                  'bg-orange-100 text-orange-800': action.priority === 'high',
+                                                                  'bg-yellow-100 text-yellow-800': action.priority === 'medium'
+                                                              }"
+                                                              x-text="action.priority.toUpperCase()">
+                                                        </span>
+                                                        <span class="text-xs text-slate-500" x-text="action.pages_affected + ' pages'"></span>
+                                                    </div>
+                                                    <p class="text-sm font-medium text-slate-900 mb-1" x-text="action.action"></p>
+                                                    <p class="text-xs text-slate-600" x-text="'Expected: ' + action.expected_impact"></p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                
+                <!-- Competitive Position -->
+                <div>
+                    <h3 class="text-md font-semibold text-slate-900 mb-3">Competitive Position</h3>
+                    <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                        <p class="text-sm text-slate-700 whitespace-pre-wrap" x-text="summary.competitive_position"></p>
+                    </div>
+                </div>
+                
+                <!-- Metadata -->
+                <div class="pt-4 border-t border-slate-200 text-xs text-slate-500">
+                    Generated using <span x-text="summary.provider"></span> / <span x-text="summary.model"></span> 
+                    on <span x-text="new Date(summary.generated_at).toLocaleString()"></span>
+                </div>
+            </div>
+        </template>
+    </div>
+    
+    <script>
+    function summaryWidget() {
+        return {
+            summary: null,
+            loading: false,
+            selectedPreset: 'same',
+            provider: null,
+            model: null,
+            modelPresets: {
+                same: { provider: null, model: null },
+                cheap_google: { provider: 'google', model: 'gemini-2.5-flash' },
+                cheap_anthropic: { provider: 'anthropic', model: 'claude-haiku-4-5-20251001' },
+                cheap_openai: { provider: 'openai', model: 'gpt-4o-mini' },
+                cheap_mistral: { provider: 'mistral', model: 'mistral-small-latest' },
+                balanced_google: { provider: 'google', model: 'gemini-2.0-flash' },
+                balanced_anthropic: { provider: 'anthropic', model: 'claude-sonnet-4-20250514' },
+                balanced_openai: { provider: 'openai', model: 'gpt-4o' }
+            },
+            
+            async init() {
+                // Check if summary already exists
+                await this.fetchSummary();
+            },
+            
+            async fetchSummary() {
+                try {
+                    const response = await fetch('/api/audits/{{ audit.id }}/summary');
+                    const data = await response.json();
+                    
+                    if (data.status !== 'not_generated') {
+                        this.summary = data;
+                    }
+                } catch (error) {
+                    console.error('Error fetching summary:', error);
+                }
+            },
+            
+            updateModelFromPreset() {
+                const preset = this.modelPresets[this.selectedPreset];
+                this.provider = preset.provider;
+                this.model = preset.model;
+            },
+            
+            async generateSummary() {
+                this.loading = true;
+                this.updateModelFromPreset();
+                
+                try {
+                    // Build query params
+                    const params = new URLSearchParams({ language: 'English' });
+                    if (this.provider) params.append('provider', this.provider);
+                    if (this.model) params.append('model', this.model);
+                    
+                    const response = await fetch(`/api/audits/{{ audit.id }}/summary?${params}`, {
+                        method: 'POST'
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'Failed to generate summary');
+                    }
+                    
+                    // Poll for completion
+                    await this.pollForSummary();
+                } catch (error) {
+                    console.error('Error generating summary:', error);
+                    alert('Error generating summary: ' + error.message);
+                    this.loading = false;
+                }
+            },
+            
+            async pollForSummary() {
+                // Poll every 2 seconds
+                const interval = setInterval(async () => {
+                    try {
+                        const response = await fetch('/api/audits/{{ audit.id }}/summary');
+                        const data = await response.json();
+                        
+                        if (data.status !== 'not_generated') {
+                            this.summary = data;
+                            this.loading = false;
+                            clearInterval(interval);
+                        }
+                    } catch (error) {
+                        console.error('Error polling summary:', error);
+                    }
+                }, 2000);
+                
+                // Timeout after 2 minutes
+                setTimeout(() => {
+                    if (this.loading) {
+                        clearInterval(interval);
+                        this.loading = false;
+                        alert('Summary generation timed out. Please try again.');
+                    }
+                }, 120000);
+            },
+            
+            getActionsForWeek(week) {
+                if (!this.summary || !this.summary.action_plan) return [];
+                return this.summary.action_plan.filter(a => a.week === week);
+            }
+        };
+    }
+    </script>
+    {% endif %}
+    
+    <!-- Meta Information -->
+    <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
+        <h2 class="text-lg font-semibold text-slate-900 mb-4">Details</h2>
+        <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Audit ID</dt>
+                <dd class="mt-1 text-sm text-slate-900 font-mono">{{ audit.id }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Sitemap URL</dt>
+                <dd class="mt-1 text-sm text-slate-900">{{ audit.sitemap_url or 'Not specified' }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Created</dt>
+                <dd class="mt-1 text-sm text-slate-900">{{ audit.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if audit.created_at else '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Completed</dt>
+                <dd class="mt-1 text-sm text-slate-900">{{ audit.completed_at.strftime('%Y-%m-%d %H:%M:%S UTC') if audit.completed_at else '—' }}</dd>
+            </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Output Language</dt>
+                <dd class="mt-1 text-sm text-slate-900">{{ audit.language or 'English' }}</dd>
+            </div>
+            {% if audit.webhook_url %}
+            <div class="col-span-2">
+                <dt class="text-sm font-medium text-slate-500">Webhook URL</dt>
+                <dd class="mt-1 text-sm text-slate-900 font-mono truncate">{{ audit.webhook_url }}</dd>
+            </div>
+            {% endif %}
+            {% if audit.batch_job_id %}
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Batch Job ID</dt>
+                <dd class="mt-1 text-sm text-slate-900 font-mono">{{ audit.batch_job_id }}</dd>
+            </div>
+            {% endif %}
+        </dl>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Handle SSE events for real-time updates
+document.body.addEventListener('sse:status', function(event) {
+    const data = JSON.parse(event.detail.data);
+    
+    // Update status badge
+    const badge = document.getElementById('status-badge');
+    badge.className = 'badge badge-' + data.status;
+    badge.innerHTML = data.status.charAt(0).toUpperCase() + data.status.slice(1);
+    
+    // Update progress
+    document.getElementById('current-step').textContent = data.current_step;
+    document.getElementById('progress-percent').textContent = data.progress_percent + '%';
+    document.getElementById('progress-bar').style.width = data.progress_percent + '%';
+    
+    // Update stats
+    document.getElementById('total-pages').textContent = data.total_pages;
+    document.getElementById('pages-scraped').textContent = data.pages_scraped;
+    document.getElementById('pages-analyzed').textContent = data.pages_analyzed;
+    
+    if (data.average_score) {
+        const avgEl = document.getElementById('average-score');
+        avgEl.textContent = data.average_score;
+        avgEl.className = 'mt-1 text-2xl font-semibold ' + 
+            (data.average_score >= 70 ? 'text-green-600' : 
+             data.average_score >= 50 ? 'text-yellow-600' : 'text-red-600');
+    }
+});
+
+document.body.addEventListener('sse:log', function(event) {
+    const data = JSON.parse(event.detail.data);
+    const logOutput = document.getElementById('log-output');
+    
+    // Clear "waiting" message on first log
+    if (logOutput.querySelector('.text-slate-400')) {
+        logOutput.innerHTML = '';
+    }
+    
+    const logLine = document.createElement('div');
+    logLine.className = 'py-0.5 ' + (data.level === 'ERROR' ? 'text-red-400' : 
+                                      data.level === 'WARNING' ? 'text-yellow-400' : 'text-green-400');
+    logLine.innerHTML = `<span class="text-slate-500">[${data.timestamp.split('T')[1].split('.')[0]}]</span> ${data.message}`;
+    logOutput.appendChild(logLine);
+    logOutput.scrollTop = logOutput.scrollHeight;
+});
+
+document.body.addEventListener('sse:complete', function(event) {
+    const data = JSON.parse(event.detail.data);
+    
+    // Update progress bar color
+    const progressBar = document.getElementById('progress-bar');
+    progressBar.className = 'h-2.5 rounded-full progress-bar ' + 
+        (data.status === 'completed' ? 'bg-green-500' : 'bg-red-500');
+    
+    // Reload page to show results
+    setTimeout(() => window.location.reload(), 1000);
+});
+
+async function cancelAudit(auditId) {
+    if (!confirm('Cancel this audit? The audit will be marked as failed. You can still delete it later.')) return;
+    try {
+        const resp = await fetch(`/api/audits/${auditId}/cancel`, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert(data.detail || 'Cancel failed');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function retryAudit(auditId, skipScraping) {
+    const msg = skipScraping
+        ? 'Re-run LLM analysis only (reuse existing scraped files)?\n\nUse this when the site content has not changed.'
+        : 'Restart the full audit (scrape → convert → analyze)?\n\nThis will re-scrape the site if a sitemap URL was provided.';
+    if (!confirm(msg)) return;
+    try {
+        const url = `/api/audits/${auditId}/retry?skip_scraping=${skipScraping}`;
+        const resp = await fetch(url, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert(data.detail || 'Retry failed');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+{% if audit.status == 'completed' and results_summary %}
+// Initialize chart
+const ctx = document.getElementById('score-chart').getContext('2d');
+new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+        labels: ['Excellent (85-100)', 'Good (70-84)', 'Needs Work (50-69)', 'Poor (0-49)'],
+        datasets: [{
+            data: [
+                {{ results_summary.distribution.get('excellent', 0) }},
+                {{ results_summary.distribution.get('good', 0) }},
+                {{ results_summary.distribution.get('needs_work', 0) }},
+                {{ results_summary.distribution.get('poor', 0) }}
+            ],
+            backgroundColor: ['#22c55e', '#3b82f6', '#eab308', '#ef4444'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

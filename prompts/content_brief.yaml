@@ -1,0 +1,197 @@
+name: Content Brief Generator
+description: >
+  Generates actionable, LLM-ready content briefs for low-scoring pages.
+  Prompt is assembled dynamically from base_prompt + json_schema +
+  a per-audit-type FOCUS ON section + an optional language note.
+version: "2.0"
+
+# ── Base intro (use {audit_type} placeholder) ────────────────────────────────
+base_prompt: |
+  You are an expert content strategist and {audit_type} specialist.
+
+  Your task is to generate a detailed, actionable content brief for a webpage that needs improvement.
+
+  CRITICAL: Return ONLY valid JSON with NO markdown code fences, NO preamble, NO explanation.
+
+  Required JSON structure:
+
+# ── Required output schema (appended verbatim after base_prompt) ──────────────
+json_schema: |
+  {
+    "page_url": "string",
+    "current_score": number,
+    "priority": "critical|high|medium|low",
+    "executive_summary": "string (1 paragraph explaining what's wrong and why it matters)",
+    "content_changes": [
+      {
+        "type": "rewrite|add|remove|restructure",
+        "section": "string (which part of the page)",
+        "current": "string (brief description of current state)",
+        "recommended": "string (exact recommended content or structure)",
+        "rationale": "string (why this change improves the score)",
+        "impact": "critical|high|medium|low"
+      }
+    ],
+    "seo_requirements": {
+      "target_keywords": ["string"],
+      "meta_title": "string (50-60 chars)",
+      "meta_description": "string (150-160 chars)",
+      "h1": "string",
+      "internal_links_to_add": ["url"],
+      "schema_markup": "string (recommended schema type)"
+    },
+    "geo_requirements": {
+      "entities_to_mention": ["string"],
+      "citations_to_add": ["string"],
+      "conversational_sections": ["string"],
+      "structured_data_suggestions": "string"
+    },
+    "word_count_target": number,
+    "estimated_effort": "string (e.g., '2-3 hours')",
+    "deadline_suggestion": "string (e.g., 'Week 1 (quick win)')"
+  }
+
+# ── Per-audit-type FOCUS ON bullet lists ─────────────────────────────────────
+# Keys are matched against audit_type.upper(). "GEO" matches any type
+# containing "GEO" (e.g. GEO_AUDIT). Unmatched types fall back to default_focus.
+focus_by_type:
+  SEO:
+    - "Keyword optimization and targeting"
+    - "Meta tags (title, description)"
+    - "Internal linking structure"
+    - "Schema markup implementation"
+    - "Header hierarchy (H1, H2, H3)"
+    - "Content depth and comprehensiveness"
+  GEO:
+    - "Entity recognition and mentions"
+    - "Authoritative citations and sources"
+    - "Conversational, natural language structure"
+    - "FAQ sections and how-to content"
+    - "Structured data for AI consumption"
+    - "Clear, factual statements that AI can cite"
+  CONTENT_QUALITY:
+    - "Readability and clarity"
+    - "Content structure and organization"
+    - "Depth of information"
+    - "User engagement elements"
+    - "Visual content recommendations"
+    - "Call-to-action optimization"
+  LOCAL_SEO:
+    - "NAP (Name, Address, Phone) consistency and visibility"
+    - "Local keyword targeting and near-me intent signals"
+    - "Google Business Profile alignment"
+    - "Local schema markup (LocalBusiness, PostalAddress)"
+    - "Review signals and reputation content"
+    - "Mobile and voice search optimization for local queries"
+  TECHNICAL_SEO:
+    - "Title tag and meta description optimization"
+    - "Schema markup gaps and structured data implementation"
+    - "Mobile-first content structure improvements"
+    - "Canonical and hreflang signal clarity"
+    - "AI crawler accessibility (llms.txt, passage structure)"
+    - "URL slug and breadcrumb optimization"
+  BRAND_VOICE:
+    - "Tone and personality alignment with brand guidelines"
+    - "AI voice contamination signals to correct"
+    - "Emotional intelligence and empathy signals"
+    - "Register consistency across the page"
+    - "Distinctive vocabulary and brand-owned language"
+    - "Cultural and audience appropriateness"
+  AI_OVERVIEW:
+    - "Direct answer formatting for AI Overview extraction"
+    - "FAQ and Q&A structure for featured snippet and AI citation"
+    - "Entity clarity and factual precision"
+    - "Multi-step and research query readiness"
+    - "Voice AI and Speakable schema signals"
+    - "Source citation and authority markers"
+  E_COMMERCE:
+    - "Product title and description optimization"
+    - "Rich results eligibility (Product, Review, Price schema)"
+    - "AI Shopping Panel readiness (product attributes, GTIN, MPN)"
+    - "Sustainability and ethical purchase signals"
+    - "Trust signals (reviews, guarantees, return policy)"
+    - "Conversion barriers and CTA effectiveness"
+  UX_CONTENT:
+    - "Primary message clarity and hierarchy"
+    - "CTA specificity, action verb strength, and value alignment"
+    - "User journey stage alignment"
+    - "Conversion barrier identification and resolution"
+    - "Mobile UX content signals (thumb zones, progressive disclosure)"
+    - "Trust and anxiety reduction microcopy"
+  ACCESSIBILITY:
+    - "Alt text for all non-decorative images"
+    - "Heading hierarchy for screen reader navigation"
+    - "Link text descriptiveness (no 'click here')"
+    - "WCAG 2.2 new criteria (Target Size, Focus Appearance, Authentication)"
+    - "Plain language and reading level accessibility"
+    - "Inclusive language audit"
+  LEGAL_GDPR:
+    - "GDPR Article 13/14 transparency information completeness"
+    - "Consent language specificity and opt-in mechanism"
+    - "Data subject rights communication (Arts. 15-22)"
+    - "EU AI Act Article 50 AI transparency disclosures"
+    - "Cookie consent and ePrivacy compliance"
+    - "Google Consent Mode v2 signals"
+  READABILITY:
+    - "Sentence length and complexity reduction"
+    - "Passive voice to active voice conversion"
+    - "Jargon definition and vocabulary burden reduction"
+    - "Mobile reading optimization (shorter paragraphs, subheadings)"
+    - "AI summary clarity (unambiguous statements, explicit hedges)"
+    - "Information hierarchy and topic sentence clarity"
+  TRANSLATION_QUALITY:
+    - "False friend and literal translation corrections"
+    - "NMT artifact identification and correction"
+    - "Cultural localization gaps (formats, idioms, references)"
+    - "Terminology consistency throughout"
+    - "Register and tone appropriateness for target culture"
+    - "Date, number, and currency format localization"
+  SPELLING_GRAMMAR:
+    - "Spelling error correction (all severity levels)"
+    - "Grammar error correction (subject-verb, tense, articles)"
+    - "Punctuation issue resolution"
+    - "Locale variant consistency (UK/US English)"
+    - "AI-generated linguistic pattern correction"
+    - "Style consistency normalization"
+  SECURITY_CONTENT:
+    - "Sensitive data exposure removal (PII, internal references)"
+    - "Security trust signal addition (certifications, encryption language)"
+    - "AI system transparency disclosure"
+    - "Social engineering vulnerability reduction"
+    - "Security communication accuracy improvement"
+    - "Vague security claim replacement with specific, verifiable claims"
+  INTERNAL_LINKING:
+    - "Body content internal link addition (target: 4-6 per 1000 words)"
+    - "Generic anchor text replacement with keyword-rich descriptive anchors"
+    - "Topic cluster gap linking"
+    - "Passage-level content structure for indexing"
+    - "Authority outbound link addition"
+    - "Orphan page risk mitigation"
+  COMPETITIVE_POSITIONING:
+    - "Generic claim replacement with specific, evidenced differentiators"
+    - "Unsupported superlative removal or evidencing"
+    - "Customer outcome focus improvement"
+    - "AI citation readiness improvements"
+    - "Topical coverage gap filling"
+    - "Competitive positioning angle sharpening"
+  CONTENT_FRESHNESS:
+    - "Outdated statistic and date updating"
+    - "Stale example and reference replacement"
+    - "Publication/review date visibility"
+    - "AI citation staleness risk reduction"
+    - "Evergreen content restructuring"
+    - "Freshness signal addition (last updated, version numbers)"
+
+# ── Fallback focus items (used when audit type has no specific entry above) ───
+default_focus:
+  - "Overall content quality"
+  - "User experience"
+  - "Information architecture"
+  - "Content completeness"
+
+# ── Language note (appended only when language != "English") ─────────────────
+# Use {language} placeholder — it is substituted at runtime.
+language_note: |
+  CRITICAL LANGUAGE REQUIREMENT:
+  Write ALL text values (recommended content, meta descriptions, keywords, etc.) in {language}.
+  The brief structure should be in English, but all content recommendations must be in {language}.

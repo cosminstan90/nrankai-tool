@@ -1,0 +1,838 @@
+{% extends "base.html" %}
+{% block title %}{{ property.name }} — GSC Data{% endblock %}
+
+{% block content %}
+<div class="space-y-5"
+     x-data="gscDetail('{{ property.id }}')"
+     x-init="init()">
+
+    <!-- Header -->
+    <div>
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm">
+                <li><a href="/gsc" class="text-slate-400 hover:text-slate-600">GSC Data</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li class="text-slate-700 font-medium truncate max-w-xs">{{ property.name }}</li>
+            </ol>
+        </nav>
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">{{ property.name }}</h1>
+                <p class="mt-1 text-sm text-slate-500">
+                    <span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{{ property.site_url }}</span>
+                    &bull; {{ property.total_queries | default(0) }} queries
+                    &bull; {{ property.total_pages   | default(0) }} pages
+                </p>
+            </div>
+            <!-- Upload shortcut -->
+            <div class="flex gap-2">
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Queries CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Pages CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+            </div>
+        </div>
+        <!-- Upload status -->
+        <p x-show="uploadMsg" x-text="uploadMsg"
+           :class="uploadErr ? 'text-red-600' : 'text-emerald-600'"
+           class="text-xs mt-2 font-medium"></p>
+    </div>
+
+    <!-- Tab navigation -->
+    <div class="flex border-b border-slate-200 gap-1">
+        <button @click="switchTab('queries')"
+                :class="activeTab === 'queries'
+                    ? 'border-b-2 border-sky-600 text-sky-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔍 Queries
+            <span x-show="{{ property.total_queries | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ property.total_queries | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('pages')"
+                :class="activeTab === 'pages'
+                    ? 'border-b-2 border-emerald-600 text-emerald-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            📄 Pages
+            <span x-show="{{ property.total_pages | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ property.total_pages | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('xref')"
+                :class="activeTab === 'xref'
+                    ? 'border-b-2 border-violet-600 text-violet-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔗 Insights & Cross-Reference
+        </button>
+        <button @click="switchTab('reports')"
+                :class="activeTab === 'reports'
+                    ? 'border-b-2 border-amber-600 text-amber-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            📋 Page Reports
+            <span x-show="rTotal > 0"
+                  class="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-normal"
+                  x-text="rTotal"></span>
+        </button>
+    </div>
+
+    <!-- ── QUERIES TAB ──────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'queries'">
+
+        {% if property.total_queries == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No queries data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Queries CSV</strong> from GSC Performance → Export.</p>
+        </div>
+        {% else %}
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-3 items-center">
+            <input x-model="qSearch" @input.debounce.400ms="qPage = 0; loadQueries()"
+                   type="text" placeholder="Filter queries…"
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-56 focus:outline-none focus:ring-2 focus:ring-sky-400">
+            <select x-model="qSort" @change="qPage = 0; loadQueries()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+                <option value="clicks_desc">Clicks ↓</option>
+                <option value="impressions_desc">Impressions ↓</option>
+                <option value="position_asc">Position ↑ (best first)</option>
+                <option value="ctr_desc">CTR ↓</option>
+                <option value="query_asc">Query A→Z</option>
+            </select>
+            <select x-model.number="qMinImpressions" @change="qPage = 0; loadQueries()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400">
+                <option value="0">All impressions</option>
+                <option value="100">≥ 100 impressions</option>
+                <option value="500">≥ 500 impressions</option>
+                <option value="1000">≥ 1,000 impressions</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="qTotal.toLocaleString() + ' queries'"></span>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="qLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <!-- Table -->
+        <div x-show="!qLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600 w-full">Query</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Clicks</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Impr.</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">CTR%</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Pos.</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="row in qRows" :key="row.id">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-4 py-2.5 text-slate-800 font-medium" x-text="row.query"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.clicks || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-500 tabular-nums" x-text="(row.impressions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums"
+                                :class="row.ctr !== null && row.ctr < 2 ? 'text-amber-600' : 'text-slate-700'"
+                                x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums">
+                                <span :class="{
+                                    'text-emerald-700 font-semibold': row.position !== null && row.position <= 3,
+                                    'text-sky-700':    row.position !== null && row.position > 3  && row.position <= 10,
+                                    'text-amber-600':  row.position !== null && row.position > 10 && row.position <= 20,
+                                    'text-slate-400':  row.position === null || row.position > 20,
+                                }" x-text="row.position !== null ? row.position : '—'"></span>
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="!qLoading && qRows.length === 0">
+                        <td colspan="5" class="px-4 py-8 text-center text-slate-400">No queries match your filter.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(qPage * qPageSize + 1, qTotal) + '–' + Math.min((qPage + 1) * qPageSize, qTotal) + ' of ' + qTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="qPage--; loadQueries()" :disabled="qPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="qPage++; loadQueries()" :disabled="(qPage + 1) * qPageSize >= qTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── PAGES TAB ────────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'pages'">
+
+        {% if property.total_pages == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No pages data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Pages CSV</strong> from GSC Performance → Pages tab → Export.</p>
+        </div>
+        {% else %}
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-3 items-center">
+            <input x-model="pSearch" @input.debounce.400ms="pPage = 0; loadPages()"
+                   type="text" placeholder="Filter pages…"
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-emerald-400">
+            <select x-model="pSort" @change="pPage = 0; loadPages()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                <option value="clicks_desc">Clicks ↓</option>
+                <option value="impressions_desc">Impressions ↓</option>
+                <option value="position_asc">Position ↑ (best first)</option>
+                <option value="ctr_desc">CTR ↓</option>
+            </select>
+            <select x-model.number="pMinImpressions" @change="pPage = 0; loadPages()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400">
+                <option value="0">All impressions</option>
+                <option value="100">≥ 100 impressions</option>
+                <option value="500">≥ 500 impressions</option>
+                <option value="1000">≥ 1,000 impressions</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="pTotal.toLocaleString() + ' pages'"></span>
+        </div>
+
+        <div x-show="pLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <div x-show="!pLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Page URL</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Clicks</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Impr.</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">CTR%</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Pos.</th>
+                        <th class="px-4 py-3"></th>
+                    </tr>
+                </thead>
+                <template x-for="row in pRows" :key="row.id">
+                    <tbody class="border-b border-slate-100">
+                        <tr class="hover:bg-slate-50 transition-colors cursor-pointer"
+                            @click="window.location.href='/gsc/'+propertyId+'/page-optimize?url='+encodeURIComponent(row.page)">
+                            <td class="px-4 py-2.5 max-w-sm">
+                                <a :href="row.page" target="_blank"
+                                   @click.stop
+                                   class="text-sky-600 hover:text-sky-800 hover:underline text-xs font-mono break-all"
+                                   x-text="row.page"></a>
+                            </td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.clicks || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-500 tabular-nums" x-text="(row.impressions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums"
+                                :class="row.ctr !== null && row.ctr < 2 ? 'text-amber-600' : 'text-slate-700'"
+                                x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums">
+                                <span :class="{
+                                    'text-emerald-700 font-semibold': row.position !== null && row.position <= 3,
+                                    'text-sky-700':    row.position !== null && row.position > 3  && row.position <= 10,
+                                    'text-amber-600':  row.position !== null && row.position > 10 && row.position <= 20,
+                                    'text-slate-400':  row.position === null || row.position > 20,
+                                }" x-text="row.position !== null ? row.position : '—'"></span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right">
+                                <span class="text-xs text-slate-400 hover:text-violet-600 transition-colors">Optimize →</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </template>
+                <tbody>
+                    <tr x-show="!pLoading && pRows.length === 0">
+                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">No pages match your filter.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(pPage * pPageSize + 1, pTotal) + '–' + Math.min((pPage + 1) * pPageSize, pTotal) + ' of ' + pTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="pPage--; loadPages()" :disabled="pPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="pPage++; loadPages()" :disabled="(pPage + 1) * pPageSize >= pTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── INSIGHTS / CROSS-REFERENCE TAB ──────────────────────────────── -->
+    <div x-show="activeTab === 'xref'">
+
+        {% if property.total_queries == 0 and property.total_pages == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">Upload queries and pages CSVs first to see cross-reference insights.</p>
+        </div>
+        {% else %}
+
+        <div x-show="xrefLoading" class="py-12 text-center text-slate-400 text-sm">Computing cross-reference insights…</div>
+
+        <div x-show="!xrefLoading && xref" class="space-y-6">
+
+            <!-- Summary strip -->
+            <div x-show="xref" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-violet-700" x-text="(xref?.summary?.queries_in_research || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">In research</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-amber-600" x-text="(xref?.summary?.near_miss_count || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Near-miss (pos 4–20)</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-emerald-700" x-text="(xref?.summary?.pages_with_audits || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Pages audited</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-red-600" x-text="(xref?.summary?.pages_need_audit || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Need audit</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-orange-600" x-text="(xref?.summary?.low_ctr_count || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Low CTR pages</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-slate-600" x-text="(xref?.summary?.total_queries || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Total queries</div>
+                </div>
+            </div>
+
+            <!-- ① Queries matched in research sessions -->
+            <div x-show="xref?.queries_matched?.length > 0" class="bg-white rounded-xl border border-violet-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-2">
+                    <span class="text-base">🎯</span>
+                    <div>
+                        <h3 class="font-semibold text-violet-900 text-sm">Keywords you rank for AND are researching</h3>
+                        <p class="text-xs text-violet-600 mt-0.5">These GSC queries appear in your keyword research sessions — you're already tracking the right things.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-violet-200 text-violet-800 px-2 py-0.5 rounded-full" x-text="(xref?.queries_matched?.length || 0) + ' queries'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Query</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impr.</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Pos.</th>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Research session</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.queries_matched || []).slice(0, xrefQMatchShow)" :key="i">
+                                <tr class="hover:bg-violet-50 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-slate-800" x-text="row.query"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums">
+                                        <span :class="{
+                                            'text-emerald-700 font-bold': row.position <= 3,
+                                            'text-sky-700':   row.position > 3  && row.position <= 10,
+                                            'text-amber-600': row.position > 10 && row.position <= 20,
+                                            'text-slate-400': row.position > 20 || row.position === null,
+                                        }" x-text="row.position || '—'"></span>
+                                    </td>
+                                    <td class="px-4 py-2">
+                                        <div class="flex flex-wrap gap-1">
+                                            <template x-for="(m, j) in (row.in_research || [])" :key="j">
+                                                <a :href="'/keyword-research/' + m.session_id"
+                                                   class="inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 hover:bg-violet-200 transition-colors">
+                                                    <span x-show="m.is_question" class="text-[10px]">❓</span>
+                                                    <span x-text="m.session_name"></span>
+                                                </a>
+                                            </template>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.queries_matched?.length || 0) > xrefQMatchShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefQMatchShow += 50"
+                            class="text-sm text-violet-600 hover:text-violet-800 font-medium">
+                        Show more (<span x-text="(xref?.queries_matched?.length || 0) - xrefQMatchShow"></span> remaining)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ② Near-miss queries (pos 4–20, not in research) -->
+            <div x-show="xref?.near_miss_queries?.length > 0" class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+                    <span class="text-base">🚀</span>
+                    <div>
+                        <h3 class="font-semibold text-amber-900 text-sm">Near-miss keywords (position 4–20, not in research)</h3>
+                        <p class="text-xs text-amber-700 mt-0.5">You rank for these but aren't actively optimising them. Add them to a research session.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full" x-text="(xref?.near_miss_queries?.length || 0) + ' queries'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Query</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impressions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Position</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.near_miss_queries || []).slice(0, xrefNearMissShow)" :key="i">
+                                <tr class="hover:bg-amber-50 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-slate-800" x-text="row.query"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums">
+                                        <span class="text-amber-700 font-semibold" x-text="row.position || '—'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.near_miss_queries?.length || 0) > xrefNearMissShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefNearMissShow += 50"
+                            class="text-sm text-amber-600 hover:text-amber-800 font-medium">
+                        Show more (<span x-text="(xref?.near_miss_queries?.length || 0) - xrefNearMissShow"></span> remaining)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ③ Low CTR pages -->
+            <div x-show="xref?.low_ctr_pages?.length > 0" class="bg-white rounded-xl border border-orange-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-orange-50 border-b border-orange-200 flex items-center gap-2">
+                    <span class="text-base">📉</span>
+                    <div>
+                        <h3 class="font-semibold text-orange-900 text-sm">Low CTR pages (≥500 impressions, &lt;3% CTR)</h3>
+                        <p class="text-xs text-orange-700 mt-0.5">These pages appear in search but people don't click. Fix titles, meta descriptions, or rich snippets.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full" x-text="(xref?.low_ctr_pages?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impressions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Pos.</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.low_ctr_pages || []).slice(0, xrefLowCtrShow)" :key="i">
+                                <tr class="hover:bg-orange-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums font-semibold text-orange-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600" x-text="row.position || '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.low_ctr_pages?.length || 0) > xrefLowCtrShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefLowCtrShow += 50"
+                            class="text-sm text-orange-600 hover:text-orange-800 font-medium">
+                        Show more
+                    </button>
+                </div>
+            </div>
+
+            <!-- ④ Pages with existing audit data -->
+            <div x-show="xref?.pages_audited?.length > 0" class="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
+                    <span class="text-base">✅</span>
+                    <div>
+                        <h3 class="font-semibold text-emerald-900 text-sm">Pages with audit data</h3>
+                        <p class="text-xs text-emerald-700 mt-0.5">GSC traffic data + audit score in one view. Low score + high traffic = top priority.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full" x-text="(xref?.pages_audited?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impr.</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Pos.</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Audit score</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.pages_audited || []).slice(0, xrefAuditedShow)" :key="i">
+                                <tr class="hover:bg-emerald-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600" x-text="row.position || '—'"></td>
+                                    <td class="px-4 py-2 text-right">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                              :class="{
+                                                  'bg-emerald-100 text-emerald-800': row.audit_score >= 75,
+                                                  'bg-amber-100 text-amber-800':    row.audit_score >= 50 && row.audit_score < 75,
+                                                  'bg-red-100 text-red-800':        row.audit_score < 50,
+                                              }"
+                                              x-text="row.audit_score + '/100'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.pages_audited?.length || 0) > xrefAuditedShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefAuditedShow += 50"
+                            class="text-sm text-emerald-600 hover:text-emerald-800 font-medium">
+                        Show more
+                    </button>
+                </div>
+            </div>
+
+            <!-- ⑤ High-traffic pages with no audit -->
+            <div x-show="xref?.pages_unaudited?.length > 0" class="bg-white rounded-xl border border-red-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
+                    <span class="text-base">⚠️</span>
+                    <div>
+                        <h3 class="font-semibold text-red-900 text-sm">High-traffic pages not yet audited</h3>
+                        <p class="text-xs text-red-700 mt-0.5">These pages get real traffic but have never been audited. Audit them to find quick wins.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-red-200 text-red-800 px-2 py-0.5 rounded-full" x-text="(xref?.pages_unaudited?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Impressions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">CTR%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Pos.</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.pages_unaudited || []).slice(0, xrefUnauditedShow)" :key="i">
+                                <tr class="hover:bg-red-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.impressions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="row.ctr !== null ? row.ctr + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600" x-text="row.position || '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.pages_unaudited?.length || 0) > xrefUnauditedShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefUnauditedShow += 50"
+                            class="text-sm text-red-600 hover:text-red-800 font-medium">
+                        Show more
+                    </button>
+                </div>
+            </div>
+
+            <!-- Empty state if all sections empty -->
+            <div x-show="!xref?.queries_matched?.length && !xref?.near_miss_queries?.length && !xref?.pages_audited?.length && !xref?.pages_unaudited?.length && !xref?.low_ctr_pages?.length"
+                 class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+                <p class="text-slate-500 text-sm">No cross-reference matches found.</p>
+                <p class="text-slate-400 text-xs mt-1">Make sure you have audit results and/or keyword research sessions to cross-reference against.</p>
+            </div>
+
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- ── REPORTS TAB ──────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'reports'">
+        <div class="p-5 pb-3">
+            <p class="text-sm text-slate-500">Past LLM optimization reports for pages in this property.</p>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="rLoading" class="p-8 text-center">
+            <div class="w-6 h-6 border-2 border-slate-200 border-t-slate-500 rounded-full animate-spin mx-auto"></div>
+        </div>
+
+        <!-- Empty state -->
+        <div x-show="!rLoading && rRows.length === 0"
+             class="mx-5 mb-5 bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No page reports yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Open a page from the Pages tab and click <strong>Optimize →</strong> to generate one.</p>
+        </div>
+
+        <!-- Table -->
+        <div x-show="!rLoading && rRows.length > 0" class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-100 bg-slate-50/60">
+                        <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Page</th>
+                        <th class="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">SEO</th>
+                        <th class="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">GEO</th>
+                        <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Audits</th>
+                        <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Model</th>
+                        <th class="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Date</th>
+                        <th class="px-4 py-2.5 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th class="px-4 py-2.5"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="r in rRows" :key="r.id">
+                        <tr class="border-b border-slate-50 hover:bg-slate-50/70 transition-colors">
+                            <!-- URL -->
+                            <td class="px-4 py-3 max-w-xs">
+                                <span class="font-mono text-xs text-sky-700 break-all"
+                                      x-text="r.url.replace(/^https?:\/\//, '')"></span>
+                            </td>
+                            <!-- SEO score -->
+                            <td class="px-4 py-3 text-center">
+                                <template x-if="r.scores.seo !== undefined">
+                                    <span class="inline-flex items-center justify-center w-9 h-7 rounded text-xs font-bold"
+                                          :class="scoreChip(r.scores.seo)"
+                                          x-text="r.scores.seo"></span>
+                                </template>
+                                <template x-if="r.scores.seo === undefined">
+                                    <span class="text-slate-300 text-xs">—</span>
+                                </template>
+                            </td>
+                            <!-- GEO score -->
+                            <td class="px-4 py-3 text-center">
+                                <template x-if="r.scores.geo !== undefined">
+                                    <span class="inline-flex items-center justify-center w-9 h-7 rounded text-xs font-bold"
+                                          :class="scoreChip(r.scores.geo)"
+                                          x-text="r.scores.geo"></span>
+                                </template>
+                                <template x-if="r.scores.geo === undefined">
+                                    <span class="text-slate-300 text-xs">—</span>
+                                </template>
+                            </td>
+                            <!-- Audit types -->
+                            <td class="px-4 py-3">
+                                <div class="flex flex-wrap gap-1">
+                                    <template x-for="t in r.audit_types" :key="t">
+                                        <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium"
+                                              x-text="t.replace('_AUDIT','').replace('_',' ')"></span>
+                                    </template>
+                                </div>
+                            </td>
+                            <!-- Model -->
+                            <td class="px-4 py-3 text-xs text-slate-500" x-text="r.model || '—'"></td>
+                            <!-- Date -->
+                            <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap" x-text="r.created_at"></td>
+                            <!-- Reviewed badge -->
+                            <td class="px-4 py-3 text-center">
+                                <span x-show="r.reviewed"
+                                      class="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                                    ✓ Done
+                                </span>
+                            </td>
+                            <!-- Open link -->
+                            <td class="px-4 py-3 text-right">
+                                <a :href="'/gsc/' + propertyId + '/page-optimize?url=' + encodeURIComponent(r.url)"
+                                   class="inline-flex items-center gap-1 text-xs text-violet-600 hover:text-violet-800 font-medium whitespace-nowrap">
+                                    Open →
+                                </a>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function gscDetail(propertyId) {
+    return {
+        propertyId,
+        activeTab: 'queries',
+
+        // Queries state
+        qRows:           [],
+        qTotal:          0,
+        qPage:           0,
+        qPageSize:       50,
+        qSearch:         '',
+        qSort:           'clicks_desc',
+        qMinImpressions: 0,
+        qLoading:        false,
+
+        // Pages state
+        pRows:           [],
+        pTotal:          0,
+        pPage:           0,
+        pPageSize:       50,
+        pSearch:         '',
+        pSort:           'clicks_desc',
+        pMinImpressions: 0,
+        pLoading:        false,
+
+        // Cross-reference state
+        xref:            null,
+        xrefLoading:     false,
+
+        // "Show more" caps per section
+        xrefQMatchShow:    20,
+        xrefNearMissShow:  20,
+        xrefLowCtrShow:    20,
+        xrefAuditedShow:   20,
+        xrefUnauditedShow: 20,
+
+        // Reports state
+        rRows:    [],
+        rTotal:   0,
+        rLoading: false,
+
+        // Upload
+        uploadMsg: '',
+        uploadErr: false,
+
+        async init() {
+            await this.loadQueries();
+        },
+
+        async switchTab(tab) {
+            this.activeTab = tab;
+            if (tab === 'queries' && !this.qRows.length)  await this.loadQueries();
+            if (tab === 'pages'   && !this.pRows.length)  await this.loadPages();
+            if (tab === 'xref'    && !this.xref)          await this.loadXref();
+            if (tab === 'reports' && !this.rRows.length)  await this.loadReports();
+        },
+
+        async loadReports() {
+            this.rLoading = true;
+            try {
+                const res  = await fetch(`/api/gsc/properties/${this.propertyId}/guides`);
+                const data = await res.json();
+                this.rRows  = data.guides || [];
+                this.rTotal = data.total  || 0;
+            } catch(e) {
+                // silent
+            } finally {
+                this.rLoading = false;
+            }
+        },
+
+        scoreChip(score) {
+            if (score == null) return 'bg-slate-100 text-slate-500';
+            if (score >= 81)   return 'bg-emerald-100 text-emerald-800';
+            if (score >= 61)   return 'bg-sky-100 text-sky-800';
+            if (score >= 41)   return 'bg-amber-100 text-amber-800';
+            if (score >= 21)   return 'bg-orange-100 text-orange-800';
+            return 'bg-red-100 text-red-800';
+        },
+
+        async loadQueries() {
+            this.qLoading = true;
+            const params = new URLSearchParams({
+                q:               this.qSearch,
+                sort:            this.qSort,
+                page:            this.qPage,
+                page_size:       this.qPageSize,
+                min_impressions: this.qMinImpressions,
+            });
+            const res  = await fetch(`/api/gsc/properties/${this.propertyId}/queries?${params}`);
+            const data = await res.json();
+            this.qRows  = data.items;
+            this.qTotal = data.total;
+            this.qLoading = false;
+        },
+
+        async loadPages() {
+            this.pLoading = true;
+            const params = new URLSearchParams({
+                q:               this.pSearch,
+                sort:            this.pSort,
+                page:            this.pPage,
+                page_size:       this.pPageSize,
+                min_impressions: this.pMinImpressions,
+            });
+            const res  = await fetch(`/api/gsc/properties/${this.propertyId}/pages?${params}`);
+            const data = await res.json();
+            this.pRows  = data.items;
+            this.pTotal = data.total;
+            this.pLoading = false;
+        },
+
+        async loadXref() {
+            this.xrefLoading = true;
+            const res  = await fetch(`/api/gsc/properties/${this.propertyId}/cross-reference`);
+            this.xref  = await res.json();
+            this.xrefLoading = false;
+        },
+
+        async quickUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            this.uploadMsg = '';
+            this.uploadErr = false;
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res  = await fetch(`/api/gsc/properties/${this.propertyId}/upload`, {
+                    method: 'POST',
+                    body:   fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = data.detail || 'Upload failed';
+                    this.uploadErr = true;
+                } else {
+                    this.uploadMsg = `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported — refresh to see updated counts`;
+                    // Reload current tab data
+                    if (data.report_type === 'queries') {
+                        this.qPage = 0;
+                        await this.loadQueries();
+                    } else {
+                        this.pPage = 0;
+                        await this.loadPages();
+                    }
+                    // Reset xref cache so it reloads if tab is re-opened
+                    this.xref = null;
+                }
+            } catch(e) {
+                this.uploadMsg = 'Network error during upload';
+                this.uploadErr = true;
+            } finally {
+                event.target.value = '';
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

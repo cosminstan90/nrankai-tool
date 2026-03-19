@@ -1,0 +1,867 @@
+{% extends "base.html" %}
+
+{% block title %}Action Cards - Website LLM Analyzer{% endblock %}
+
+{% block extra_head %}
+<style>
+    /* Kanban board styles */
+    .kanban-board {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1.5rem;
+        margin-top: 2rem;
+    }
+    
+    .kanban-column {
+        background: #F9FAFB;
+        border-radius: 8px;
+        padding: 1rem;
+        min-height: 500px;
+    }
+    
+    .kanban-header {
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #6B7280;
+        margin-bottom: 1rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .kanban-count {
+        background: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 12px;
+    }
+    
+    .action-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .action-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .card-url {
+        font-size: 13px;
+        color: #4F46E5;
+        font-weight: 600;
+        margin-bottom: 8px;
+        word-break: break-all;
+    }
+    
+    .card-score {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    
+    .score-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .score-current {
+        background: #FEE2E2;
+        color: #991B1B;
+    }
+    
+    .score-target {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+    
+    .priority-ribbon {
+        position: absolute;
+        top: 0;
+        right: 0;
+        padding: 4px 12px;
+        border-radius: 0 8px 0 8px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+    
+    .priority-critical {
+        background: #DC2626;
+        color: white;
+    }
+    
+    .priority-high {
+        background: #F59E0B;
+        color: white;
+    }
+    
+    .priority-medium {
+        background: #FBBF24;
+        color: #92400E;
+    }
+    
+    .priority-low {
+        background: #10B981;
+        color: white;
+    }
+    
+    .action-list {
+        border-top: 1px solid #E5E7EB;
+        padding-top: 12px;
+    }
+    
+    .action-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 8px;
+        font-size: 13px;
+        color: #374151;
+    }
+    
+    .action-checkbox {
+        margin-top: 2px;
+        cursor: pointer;
+    }
+    
+    .action-difficulty {
+        margin-left: auto;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .difficulty-easy {
+        background: #D1FAE5;
+        color: #065F46;
+    }
+    
+    .difficulty-medium {
+        background: #FED7AA;
+        color: #9A3412;
+    }
+    
+    .difficulty-hard {
+        background: #FEE2E2;
+        color: #991B1B;
+    }
+    
+    .progress-bar {
+        margin-top: 12px;
+        height: 6px;
+        background: #E5E7EB;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: #10B981;
+        transition: width 0.3s;
+    }
+    
+    .progress-text {
+        font-size: 11px;
+        color: #6B7280;
+        margin-top: 4px;
+    }
+    
+    /* Expanded action details */
+    .action-details {
+        margin-top: 12px;
+        padding: 12px;
+        background: #F9FAFB;
+        border-radius: 4px;
+        font-size: 13px;
+    }
+    
+    .detail-section {
+        margin-bottom: 12px;
+    }
+    
+    .detail-label {
+        font-size: 11px;
+        color: #6B7280;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    
+    .detail-content {
+        color: #374151;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+    
+    .copy-button {
+        font-size: 11px;
+        padding: 2px 8px;
+        background: #4F46E5;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-top: 4px;
+    }
+    
+    .copy-button:hover {
+        background: #4338CA;
+    }
+    
+    /* List view toggle */
+    .view-toggle {
+        display: inline-flex;
+        background: #F3F4F6;
+        border-radius: 6px;
+        padding: 4px;
+    }
+    
+    .view-toggle button {
+        padding: 6px 12px;
+        border: none;
+        background: transparent;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #6B7280;
+    }
+    
+    .view-toggle button.active {
+        background: white;
+        color: #1F2937;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="actionCardsApp()">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Action Cards</h1>
+            <p class="text-gray-600 mt-1">Simple, actionable todo items for your pages</p>
+        </div>
+        
+        <button @click="generateForm.audit_id = selectedAuditId; showGenerateModal = true" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+            <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+            </svg>
+            Generate Cards
+        </button>
+    </div>
+    
+    <!-- Audit Selector + View Toggle + Export Bar -->
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-6">
+
+        <!-- Left: audit picker + view toggle -->
+        <div class="flex flex-wrap items-center gap-3">
+            <!-- Audit selector -->
+            <div class="flex items-center gap-2">
+                <label class="text-sm font-medium text-gray-700 whitespace-nowrap">Audit:</label>
+                <select
+                    x-model="selectedAuditId"
+                    @change="selectAudit(selectedAuditId)"
+                    class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                    <option value="">Select an audit…</option>
+                    <template x-for="audit in availableAudits" :key="audit.id">
+                        <option
+                            :value="audit.id"
+                            x-text="audit.website + ' — ' + new Date(audit.created_at).toLocaleDateString()"
+                        ></option>
+                    </template>
+                </select>
+            </div>
+
+            <!-- Cards count badge -->
+            <span x-show="cards.length > 0" class="text-sm text-gray-500">
+                <span x-text="cards.length"></span> card<span x-show="cards.length !== 1">s</span>
+            </span>
+
+            <!-- View toggle -->
+            <div class="view-toggle">
+                <button @click="viewMode = 'kanban'" :class="{'active': viewMode === 'kanban'}">
+                    Kanban View
+                </button>
+                <button @click="viewMode = 'list'" :class="{'active': viewMode === 'list'}">
+                    List View
+                </button>
+            </div>
+        </div>
+
+        <!-- Right: export buttons -->
+        <div class="flex gap-2">
+            <button
+                @click="exportCards('csv')"
+                :disabled="cards.length === 0"
+                class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Export CSV</button>
+            <button
+                @click="exportCards('trello')"
+                :disabled="cards.length === 0"
+                class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Export Trello</button>
+            <button
+                @click="exportCards('html')"
+                :disabled="cards.length === 0"
+                class="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >Export HTML</button>
+        </div>
+    </div>
+    
+    <!-- Loading State -->
+    <div x-show="loading" class="text-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+        <p class="text-gray-600 mt-4">Loading action cards...</p>
+    </div>
+    
+    <!-- Empty State (context-aware messaging) -->
+    <div x-show="!loading && cards.length === 0" class="text-center py-14 bg-gray-50 rounded-xl border border-gray-200">
+        <svg class="w-14 h-14 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+
+        <!-- No audits at all -->
+        <template x-if="availableAudits.length === 0">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-1">No Completed Audits Found</h3>
+                <p class="text-sm text-gray-500 mb-4">Run and complete an audit first, then come back to generate action cards.</p>
+                <a href="/audits/new"
+                   class="inline-block bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm hover:bg-indigo-700 transition-colors">
+                    Start an Audit →
+                </a>
+            </div>
+        </template>
+
+        <!-- Audits exist but no cards generated yet -->
+        <template x-if="availableAudits.length > 0">
+            <div>
+                <h3 class="text-lg font-semibold text-gray-900 mb-1">No Action Cards Yet</h3>
+                <p class="text-sm text-gray-500 mb-1">
+                    You have <strong x-text="availableAudits.length"></strong> completed
+                    audit<span x-text="availableAudits.length !== 1 ? 's' : ''"></span> ready.
+                </p>
+                <p class="text-sm text-gray-500 mb-4">Generate action cards to get plain-language, copy-paste-ready improvement tasks for your client.</p>
+                <button @click="showGenerateModal = true"
+                        class="bg-indigo-600 text-white px-5 py-2 rounded-lg text-sm hover:bg-indigo-700 transition-colors">
+                    Generate Cards
+                </button>
+            </div>
+        </template>
+    </div>
+    
+    <!-- Kanban View -->
+    <div x-show="viewMode === 'kanban' && !loading && cards.length > 0" class="kanban-board">
+        <!-- To Do Column -->
+        <div class="kanban-column">
+            <div class="kanban-header">
+                <span>📋 To Do</span>
+                <span class="kanban-count" x-text="getPendingCards().length"></span>
+            </div>
+            <template x-for="card in getPendingCards()" :key="card.id">
+                <div class="action-card relative" @click="expandCard(card.id)">
+                    <div class="priority-ribbon" :class="'priority-' + card.priority" x-text="card.priority"></div>
+                    <div class="card-url" x-text="card.page_url"></div>
+                    <div class="card-score">
+                        <span class="score-badge score-current" x-text="card.current_score + '/100'"></span>
+                        <span class="text-gray-400">→</span>
+                        <span class="score-badge score-target" x-text="card.target_score + '/100'"></span>
+                    </div>
+                    <div class="action-list">
+                        <template x-for="(action, idx) in card.actions.slice(0, 3)" :key="action.id">
+                            <div class="action-item">
+                                <input type="checkbox" 
+                                       class="action-checkbox" 
+                                       :checked="action.completed"
+                                       @click.stop="toggleAction(card.id, action.id, $event.target.checked)">
+                                <span x-text="action.action"></span>
+                                <span class="action-difficulty" :class="'difficulty-' + action.difficulty" x-text="action.difficulty"></span>
+                            </div>
+                        </template>
+                        <div x-show="card.actions.length > 3" class="text-xs text-gray-500 mt-2">
+                            + <span x-text="card.actions.length - 3"></span> more actions
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="'width: ' + (card.completed_actions / card.total_actions * 100) + '%'"></div>
+                    </div>
+                    <div class="progress-text" x-text="card.completed_actions + '/' + card.total_actions + ' completed'"></div>
+                </div>
+            </template>
+        </div>
+        
+        <!-- In Progress Column -->
+        <div class="kanban-column">
+            <div class="kanban-header">
+                <span>🔄 In Progress</span>
+                <span class="kanban-count" x-text="getInProgressCards().length"></span>
+            </div>
+            <template x-for="card in getInProgressCards()" :key="card.id">
+                <div class="action-card relative" @click="expandCard(card.id)">
+                    <div class="priority-ribbon" :class="'priority-' + card.priority" x-text="card.priority"></div>
+                    <div class="card-url" x-text="card.page_url"></div>
+                    <div class="card-score">
+                        <span class="score-badge score-current" x-text="card.current_score + '/100'"></span>
+                        <span class="text-gray-400">→</span>
+                        <span class="score-badge score-target" x-text="card.target_score + '/100'"></span>
+                    </div>
+                    <div class="action-list">
+                        <template x-for="(action, idx) in card.actions.slice(0, 3)" :key="action.id">
+                            <div class="action-item">
+                                <input type="checkbox" 
+                                       class="action-checkbox" 
+                                       :checked="action.completed"
+                                       @click.stop="toggleAction(card.id, action.id, $event.target.checked)">
+                                <span x-text="action.action"></span>
+                                <span class="action-difficulty" :class="'difficulty-' + action.difficulty" x-text="action.difficulty"></span>
+                            </div>
+                        </template>
+                        <div x-show="card.actions.length > 3" class="text-xs text-gray-500 mt-2">
+                            + <span x-text="card.actions.length - 3"></span> more actions
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="'width: ' + (card.completed_actions / card.total_actions * 100) + '%'"></div>
+                    </div>
+                    <div class="progress-text" x-text="card.completed_actions + '/' + card.total_actions + ' completed'"></div>
+                </div>
+            </template>
+        </div>
+        
+        <!-- Done Column -->
+        <div class="kanban-column">
+            <div class="kanban-header">
+                <span>✅ Done</span>
+                <span class="kanban-count" x-text="getCompletedCards().length"></span>
+            </div>
+            <template x-for="card in getCompletedCards()" :key="card.id">
+                <div class="action-card relative opacity-75" @click="expandCard(card.id)">
+                    <div class="priority-ribbon" :class="'priority-' + card.priority" x-text="card.priority"></div>
+                    <div class="card-url" x-text="card.page_url"></div>
+                    <div class="card-score">
+                        <span class="score-badge score-current" x-text="card.current_score + '/100'"></span>
+                        <span class="text-gray-400">→</span>
+                        <span class="score-badge score-target" x-text="card.target_score + '/100'"></span>
+                    </div>
+                    <div class="action-list">
+                        <template x-for="(action, idx) in card.actions.slice(0, 3)" :key="action.id">
+                            <div class="action-item">
+                                <input type="checkbox" 
+                                       class="action-checkbox" 
+                                       :checked="action.completed"
+                                       @click.stop="toggleAction(card.id, action.id, $event.target.checked)">
+                                <span x-text="action.action"></span>
+                                <span class="action-difficulty" :class="'difficulty-' + action.difficulty" x-text="action.difficulty"></span>
+                            </div>
+                        </template>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" :style="'width: 100%'"></div>
+                    </div>
+                    <div class="progress-text">All actions completed! 🎉</div>
+                </div>
+            </template>
+        </div>
+    </div>
+    
+    <!-- List View -->
+    <div x-show="viewMode === 'list' && !loading && cards.length > 0" class="bg-white rounded-lg shadow overflow-hidden">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Page</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Progress</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                <template x-for="card in cards" :key="card.id">
+                    <tr class="hover:bg-gray-50 cursor-pointer" @click="expandCard(card.id)">
+                        <td class="px-6 py-4 text-sm text-indigo-600 font-medium" x-text="card.page_url"></td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="text-sm text-gray-900" x-text="card.current_score"></span>
+                            <span class="text-gray-400 mx-1">→</span>
+                            <span class="text-sm text-green-600 font-semibold" x-text="card.target_score"></span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full" 
+                                  :class="{
+                                      'bg-red-100 text-red-800': card.priority === 'critical',
+                                      'bg-orange-100 text-orange-800': card.priority === 'high',
+                                      'bg-yellow-100 text-yellow-800': card.priority === 'medium',
+                                      'bg-green-100 text-green-800': card.priority === 'low'
+                                  }"
+                                  x-text="card.priority"></span>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-900" x-text="card.total_actions"></td>
+                        <td class="px-6 py-4">
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-green-500 h-2 rounded-full" 
+                                     :style="'width: ' + (card.completed_actions / card.total_actions * 100) + '%'"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 mt-1" x-text="card.completed_actions + '/' + card.total_actions"></span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full"
+                                  :class="{
+                                      'bg-gray-100 text-gray-800': card.status === 'pending',
+                                      'bg-blue-100 text-blue-800': card.status === 'in_progress',
+                                      'bg-green-100 text-green-800': card.status === 'completed'
+                                  }"
+                                  x-text="card.status"></span>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- Generate Modal -->
+    <div x-show="showGenerateModal" 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showGenerateModal = false">
+        <div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-2xl font-bold mb-4">Generate Action Cards</h2>
+            
+            <div class="space-y-4">
+                <!-- Audit Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Select Audit</label>
+                    <select x-model="generateForm.audit_id" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="">Select an audit...</option>
+                        <template x-for="audit in availableAudits" :key="audit.id">
+                            <option :value="audit.id" x-text="audit.website + ' - ' + audit.created_at"></option>
+                        </template>
+                    </select>
+                </div>
+                
+                <!-- Max Pages -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Max Pages: <span x-text="generateForm.max_pages"></span>
+                    </label>
+                    <input type="range" x-model.number="generateForm.max_pages" min="5" max="50" step="5" 
+                           class="w-full">
+                </div>
+                
+                <!-- Max Actions Per Page -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Actions Per Page: <span x-text="generateForm.max_actions_per_page"></span>
+                    </label>
+                    <input type="range" x-model.number="generateForm.max_actions_per_page" min="3" max="10" step="1" 
+                           class="w-full">
+                </div>
+                
+                <!-- Options -->
+                <div class="space-y-2">
+                    <label class="flex items-center">
+                        <input type="checkbox" x-model="generateForm.include_schema_markup" class="mr-2">
+                        <span class="text-sm">Include schema markup recommendations</span>
+                    </label>
+                    <label class="flex items-center">
+                        <input type="checkbox" x-model="generateForm.include_exact_text" class="mr-2">
+                        <span class="text-sm">Include exact recommended text</span>
+                    </label>
+                    <div class="border-t border-gray-200 pt-2 mt-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" x-model="generateForm.force_regenerate" class="mr-2">
+                            <span class="text-sm font-medium text-orange-700">Force Regenerate</span>
+                        </label>
+                        <p class="text-xs text-gray-500 ml-5 mt-1">
+                            <span x-show="!generateForm.force_regenerate">Default: skips pages that already have action cards (progress preserved).</span>
+                            <span x-show="generateForm.force_regenerate" class="text-orange-600">⚠️ Will delete and recreate existing action cards for selected pages.</span>
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Language -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Language</label>
+                    <select x-model="generateForm.language" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        <option value="Romanian">Romanian</option>
+                        <option value="English">English</option>
+                        <option value="German">German</option>
+                    </select>
+                </div>
+                
+                <!-- Provider & Model -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Provider</label>
+                        <select x-model="generateForm.provider" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                            <option value="anthropic">Anthropic</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="google">Google</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Model</label>
+                        <select x-model="generateForm.model" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                            <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex justify-end gap-3 mt-6">
+                <button @click="showGenerateModal = false" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                    Cancel
+                </button>
+                <button @click="generateCards()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                    Generate
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Expanded Card Modal -->
+    <div x-show="expandedCard" 
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="expandedCard = null">
+        <div class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <template x-if="expandedCard">
+                <div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-900" x-text="expandedCard.page_url"></h2>
+                            <div class="flex items-center gap-3 mt-2">
+                                <span class="px-3 py-1 text-sm font-semibold rounded-full" 
+                                      :class="'bg-' + (expandedCard.priority === 'critical' ? 'red' : expandedCard.priority === 'high' ? 'orange' : expandedCard.priority === 'medium' ? 'yellow' : 'green') + '-100 text-' + (expandedCard.priority === 'critical' ? 'red' : expandedCard.priority === 'high' ? 'orange' : expandedCard.priority === 'medium' ? 'yellow' : 'green') + '-800'"
+                                      x-text="expandedCard.priority"></span>
+                                <span class="text-sm text-gray-600">
+                                    Score: <span class="font-semibold" x-text="expandedCard.current_score"></span> → 
+                                    <span class="font-semibold text-green-600" x-text="expandedCard.target_score"></span>
+                                </span>
+                            </div>
+                        </div>
+                        <button @click="expandedCard = null" class="text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <template x-for="action in expandedCard.actions" :key="action.id">
+                            <div class="border border-gray-200 rounded-lg p-4">
+                                <div class="flex items-start justify-between mb-3">
+                                    <div class="flex items-start gap-3 flex-1">
+                                        <input type="checkbox" 
+                                               class="mt-1 cursor-pointer"
+                                               :checked="action.completed"
+                                               @change="toggleAction(expandedCard.id, action.id, $event.target.checked)">
+                                        <div class="flex-1">
+                                            <h3 class="font-semibold text-gray-900" x-text="action.action"></h3>
+                                            <p class="text-sm text-gray-600 mt-1">
+                                                <span class="font-medium">Category:</span> <span x-text="action.category"></span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span class="action-difficulty" :class="'difficulty-' + action.difficulty" x-text="action.difficulty"></span>
+                                </div>
+                                
+                                <div x-show="action.current" class="detail-section">
+                                    <div class="detail-label">Current:</div>
+                                    <div class="detail-content bg-gray-50 p-3 rounded" x-text="action.current"></div>
+                                </div>
+                                
+                                <div class="detail-section">
+                                    <div class="detail-label">Recommended:</div>
+                                    <div class="detail-content bg-green-50 p-3 rounded" x-text="action.recommended"></div>
+                                    <button @click="copyToClipboard(action.recommended)" class="copy-button">
+                                        📋 Copy
+                                    </button>
+                                </div>
+                                
+                                <div class="text-sm text-gray-600 italic mt-2">
+                                    💡 <span x-text="action.reason"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+function actionCardsApp() {
+    return {
+        viewMode: 'kanban',
+        loading: true,
+        cards: [],
+        availableAudits: [],
+        selectedAuditId: '',
+        showGenerateModal: false,
+        expandedCard: null,
+        generateForm: {
+            audit_id: '',
+            max_pages: 20,
+            max_actions_per_page: 5,
+            include_schema_markup: true,
+            include_exact_text: true,
+            language: 'Romanian',
+            provider: 'anthropic',
+            model: 'claude-haiku-4-5-20251001',
+            force_regenerate: false
+        },
+        
+        async init() {
+            await this.loadAudits();
+            // Prefer ?audit_id= URL param; fall back to the most recent audit
+            const urlParams = new URLSearchParams(window.location.search);
+            const auditIdFromUrl = urlParams.get('audit_id');
+            if (auditIdFromUrl) {
+                this.selectedAuditId = auditIdFromUrl;
+                await this.loadCards(auditIdFromUrl);
+            } else if (this.availableAudits.length > 0) {
+                this.selectedAuditId = this.availableAudits[0].id;
+                await this.loadCards(this.selectedAuditId);
+            } else {
+                this.loading = false;
+            }
+        },
+
+        async selectAudit(auditId) {
+            this.selectedAuditId = auditId;
+            if (auditId) {
+                await this.loadCards(auditId);
+            } else {
+                this.cards = [];
+            }
+        },
+        
+        async loadAudits() {
+            try {
+                const response = await fetch('/api/audits?status=completed&limit=50');
+                const data = await response.json();
+                this.availableAudits = data.audits || [];
+            } catch (error) {
+                console.error('Error loading audits:', error);
+            }
+        },
+        
+        async loadCards(auditId) {
+            this.loading = true;
+            try {
+                const response = await fetch(`/api/action-cards?audit_id=${auditId}`);
+                const data = await response.json();
+                this.cards = data.cards || [];
+            } catch (error) {
+                console.error('Error loading cards:', error);
+            }
+            this.loading = false;
+        },
+        
+        async generateCards() {
+            if (!this.generateForm.audit_id) {
+                alert('Please select an audit');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/action-cards/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(this.generateForm)
+                });
+
+                const data = await response.json();
+                this.showGenerateModal = false;
+
+                if (data.status === 'already_generated') {
+                    alert(data.message);
+                    await this.loadCards(this.generateForm.audit_id);
+                } else {
+                    const msg = data.pages_to_process > 0
+                        ? `Se generează ${data.pages_to_process} action cards${data.skipped > 0 ? ` (${data.skipped} existente păstrate)` : ''}. Așteptați câteva momente...`
+                        : data.message;
+                    alert(msg);
+                    // Auto-refresh after delay proportional to number of pages
+                    const delay = Math.max(8000, data.pages_to_process * 2000);
+                    setTimeout(() => this.loadCards(this.generateForm.audit_id), delay);
+                }
+            } catch (error) {
+                console.error('Error generating cards:', error);
+                alert('Failed to generate cards: ' + error.message);
+            }
+        },
+        
+        async toggleAction(cardId, actionId, completed) {
+            try {
+                const response = await fetch(`/api/action-cards/${cardId}/actions/${actionId}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({completed})
+                });
+                
+                const updatedCard = await response.json();
+                
+                // Update local state
+                const cardIndex = this.cards.findIndex(c => c.id === cardId);
+                if (cardIndex !== -1) {
+                    this.cards[cardIndex] = updatedCard;
+                }
+                
+                // Update expanded card if open
+                if (this.expandedCard && this.expandedCard.id === cardId) {
+                    this.expandedCard = updatedCard;
+                }
+            } catch (error) {
+                console.error('Error toggling action:', error);
+            }
+        },
+        
+        getPendingCards() {
+            return this.cards.filter(c => c.status === 'pending');
+        },
+        
+        getInProgressCards() {
+            return this.cards.filter(c => c.status === 'in_progress');
+        },
+        
+        getCompletedCards() {
+            return this.cards.filter(c => c.status === 'completed');
+        },
+        
+        expandCard(cardId) {
+            this.expandedCard = this.cards.find(c => c.id === cardId);
+        },
+        
+        async exportCards(format) {
+            const auditId = this.cards[0]?.audit_id;
+            if (!auditId) return;
+            
+            window.open(`/api/action-cards/export/${auditId}?format=${format}`, '_blank');
+        },
+        
+        copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

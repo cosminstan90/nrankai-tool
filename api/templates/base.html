@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Website LLM Analyzer{% endblock %}</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            200: '#bae6fd',
+                            300: '#7dd3fc',
+                            400: '#38bdf8',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            700: '#0369a1',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- htmx -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://unpkg.com/htmx.org/dist/ext/sse.js"></script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/custom.css">
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; }
+
+        .htmx-indicator { display: none; }
+        .htmx-request .htmx-indicator { display: inline-flex; }
+        .htmx-request.htmx-indicator { display: inline-flex; }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+        .badge-pending            { @apply bg-blue-100 text-blue-800; }
+        .badge-scraping,
+        .badge-converting,
+        .badge-analyzing          { @apply bg-yellow-100 text-yellow-800; }
+        .badge-completed          { @apply bg-green-100 text-green-800; }
+        .badge-failed             { @apply bg-red-100 text-red-800; }
+        .score-excellent          { @apply text-green-600 bg-green-50; }
+        .score-good               { @apply text-blue-600 bg-blue-50; }
+        .score-needs-work         { @apply text-yellow-600 bg-yellow-50; }
+        .score-poor               { @apply text-red-600 bg-red-50; }
+        .progress-bar             { transition: width 0.5s ease-in-out; }
+        .log-output               { max-height: 400px; overflow-y: auto; }
+        .log-output::-webkit-scrollbar       { width: 6px; }
+        .log-output::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 3px; }
+        .log-output::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        /* Sidebar scrollbar */
+        #sidebar::-webkit-scrollbar       { width: 4px; }
+        #sidebar::-webkit-scrollbar-track { background: transparent; }
+        #sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+        /* Smooth sidebar resize */
+        #sidebar       { transition: width 0.2s ease; }
+        #main-wrapper  { transition: margin-left 0.2s ease; }
+    </style>
+
+    {% block head %}{% endblock %}
+    {% block extra_head %}{% endblock %}
+</head>
+
+{% set p = request.url.path %}
+{% set at = active_type|default('') %}
+
+<body class="h-full bg-slate-50"
+      x-data="sidebarApp()"
+      @keydown.escape="mobileOpen = false">
+
+    <!-- ── Mobile backdrop ──────────────────────────────────────────────────── -->
+    <div x-show="mobileOpen"
+         @click="mobileOpen = false"
+         x-transition:enter="transition-opacity duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition-opacity duration-200"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-black/50 z-20 lg:hidden"
+         style="display:none">
+    </div>
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside id="sidebar"
+           :class="[
+               collapsed ? 'w-14' : 'w-60',
+               mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+           ]"
+           class="h-screen bg-slate-900 flex flex-col fixed left-0 top-0 z-30 overflow-x-hidden">
+
+        <!-- ── Logo / header ──────────────────────────────────────────────── -->
+        <div class="h-14 flex items-center border-b border-slate-700/60 flex-shrink-0 px-3"
+             :class="collapsed ? 'justify-center' : 'justify-between'">
+
+            <!-- Full logo (expanded) -->
+            <a href="/" class="flex items-center space-x-2.5 min-w-0 overflow-hidden"
+               x-show="!collapsed" style="display:none">
+                <div class="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center flex-shrink-0">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                </div>
+                <div class="truncate">
+                    <div class="text-sm font-semibold text-white leading-tight">GEO Analyzer</div>
+                    <div class="text-[10px] text-slate-400 leading-tight">LLM Website Audit</div>
+                </div>
+            </a>
+
+            <!-- Icon-only logo (collapsed) -->
+            <a href="/" title="GEO Analyzer"
+               x-show="collapsed" style="display:none"
+               class="w-8 h-8 rounded-lg bg-primary-500 flex items-center justify-center flex-shrink-0">
+                <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+            </a>
+
+            <!-- Collapse toggle (desktop only) -->
+            <button @click="toggleCollapse()"
+                    title="Toggle sidebar"
+                    x-show="!collapsed"
+                    class="hidden lg:flex text-slate-500 hover:text-slate-300 transition-colors p-1 rounded-md hover:bg-slate-800 flex-shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Expand button (collapsed, desktop only) -->
+        <button @click="toggleCollapse()"
+                title="Expand sidebar"
+                x-show="collapsed"
+                class="hidden lg:flex items-center justify-center py-2 text-slate-500 hover:text-slate-300 transition-colors border-b border-slate-700/40">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/>
+            </svg>
+        </button>
+
+        <!-- ── Nav groups ─────────────────────────────────────────────────── -->
+        <nav class="flex-1 py-3 space-y-4 overflow-y-auto overflow-x-hidden"
+             :class="collapsed ? 'px-1' : 'px-3'">
+
+            <!-- helper macro: nav link -->
+            <!-- AUDITS -->
+            <div>
+                <p x-show="!collapsed"
+                   class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1">Audits</p>
+                <div :class="collapsed ? 'space-y-1' : 'space-y-0.5'">
+                    <a href="/" :title="collapsed ? 'Dashboard' : ''"
+                       class="flex items-center rounded-md text-sm font-medium transition-colors group"
+                       :class="[
+                           collapsed ? 'justify-center px-1 py-2' : 'space-x-2.5 px-2 py-1.5',
+                           '{{ 'bg-slate-700 text-white' if (p == '/' or p.startswith('/audits/')) else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}'
+                       ]">
+                        <span class="text-base leading-none flex-shrink-0">📊</span>
+                        <span x-show="!collapsed">Dashboard</span>
+                    </a>
+                    <a href="/new" :title="collapsed ? 'Full Site Audit' : ''"
+                       class="flex items-center rounded-md text-sm font-medium transition-colors"
+                       :class="[
+                           collapsed ? 'justify-center px-1 py-2' : 'space-x-2.5 px-2 py-1.5',
+                           '{{ 'bg-slate-700 text-white' if (p == '/new' and request.query_params.get('tab') != 'single') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}'
+                       ]">
+                        <span class="text-base leading-none flex-shrink-0">🏗️</span>
+                        <span x-show="!collapsed">Full Site Audit</span>
+                    </a>
+                    <a href="/new?tab=single" :title="collapsed ? 'Instant Audit' : ''"
+                       class="flex items-center rounded-md text-sm font-medium transition-colors"
+                       :class="[
+                           collapsed ? 'justify-center px-1 py-2' : 'space-x-2.5 px-2 py-1.5',
+                           '{{ 'bg-slate-700 text-white' if (p == '/new' and request.query_params.get('tab') == 'single') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}'
+                       ]">
+                        <span class="text-base leading-none flex-shrink-0">⚡</span>
+                        <span x-show="!collapsed">Instant Audit</span>
+                    </a>
+                    <a href="/schedules" :title="collapsed ? 'Schedules' : ''"
+                       class="flex items-center rounded-md text-sm font-medium transition-colors"
+                       :class="[
+                           collapsed ? 'justify-center px-1 py-2' : 'space-x-2.5 px-2 py-1.5',
+                           '{{ 'bg-slate-700 text-white' if p.startswith('/schedules') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}'
+                       ]">
+                        <span class="text-base leading-none flex-shrink-0">📅</span>
+                        <span x-show="!collapsed">Schedules</span>
+                    </a>
+                    <a href="/tracking" :title="collapsed ? 'Before / After' : ''"
+                       class="flex items-center rounded-md text-sm font-medium transition-colors"
+                       :class="[
+                           collapsed ? 'justify-center px-1 py-2' : 'space-x-2.5 px-2 py-1.5',
+                           '{{ 'bg-slate-700 text-white' if p.startswith('/tracking') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}'
+                       ]">
+                        <span class="text-base leading-none flex-shrink-0">📈</span>
+                        <span x-show="!collapsed">Before / After</span>
+                    </a>
+                </div>
+            </div>
+
+            <!-- AUDIT TYPES (hidden when collapsed) -->
+            <div x-show="!collapsed" x-data="{ open: {{ 'true' if at else 'false' }} }">
+                <button @click="open = !open"
+                    class="w-full flex items-center justify-between px-2 py-1 rounded-md text-[10px] font-semibold text-slate-500 uppercase tracking-widest hover:text-slate-300 transition-colors">
+                    <span>Audit Types</span>
+                    <svg class="w-3 h-3 transition-transform" :class="open ? 'rotate-180' : ''" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                <div x-show="open" x-transition class="mt-1 space-y-3 pl-1">
+
+                    {% if at %}
+                    <a href="/"
+                        class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium text-primary-400 hover:bg-slate-800 hover:text-primary-300 transition-colors">
+                        <span class="text-sm leading-none">✕</span><span>Clear Filter</span>
+                    </a>
+                    {% endif %}
+
+                    <!-- SEO -->
+                    <div>
+                        <p class="text-[9px] font-semibold text-slate-600 uppercase tracking-widest px-2 mb-0.5">SEO</p>
+                        <div class="space-y-0.5">
+                            <a href="/?type=SEO_AUDIT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'SEO_AUDIT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🔍</span><span>SEO</span></a>
+                            <a href="/?type=TECHNICAL_SEO" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'TECHNICAL_SEO' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">⚙️</span><span>Technical SEO</span></a>
+                            <a href="/?type=LOCAL_SEO" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'LOCAL_SEO' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">📍</span><span>Local SEO</span></a>
+                            <a href="/?type=INTERNAL_LINKING" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'INTERNAL_LINKING' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🔗</span><span>Internal Linking</span></a>
+                        </div>
+                    </div>
+
+                    <!-- Content -->
+                    <div>
+                        <p class="text-[9px] font-semibold text-slate-600 uppercase tracking-widest px-2 mb-0.5">Content</p>
+                        <div class="space-y-0.5">
+                            <a href="/?type=CONTENT_QUALITY" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'CONTENT_QUALITY' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">📝</span><span>Content Quality</span></a>
+                            <a href="/?type=CONTENT_FRESHNESS" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'CONTENT_FRESHNESS' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🕒</span><span>Content Freshness</span></a>
+                            <a href="/?type=READABILITY_AUDIT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'READABILITY_AUDIT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">📖</span><span>Readability</span></a>
+                            <a href="/?type=SPELLING_GRAMMAR" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'SPELLING_GRAMMAR' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">✍️</span><span>Spelling & Grammar</span></a>
+                            <a href="/?type=TRANSLATION_QUALITY" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'TRANSLATION_QUALITY' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🌍</span><span>Translation</span></a>
+                        </div>
+                    </div>
+
+                    <!-- GEO / AI -->
+                    <div>
+                        <p class="text-[9px] font-semibold text-slate-600 uppercase tracking-widest px-2 mb-0.5">GEO / AI</p>
+                        <div class="space-y-0.5">
+                            <a href="/?type=GEO_AUDIT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'GEO_AUDIT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🤖</span><span>GEO</span></a>
+                            <a href="/?type=AI_OVERVIEW_OPTIMIZATION" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'AI_OVERVIEW_OPTIMIZATION' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">✨</span><span>AI Overview</span></a>
+                        </div>
+                    </div>
+
+                    <!-- Brand / UX -->
+                    <div>
+                        <p class="text-[9px] font-semibold text-slate-600 uppercase tracking-widest px-2 mb-0.5">Brand / UX</p>
+                        <div class="space-y-0.5">
+                            <a href="/?type=UX_CONTENT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'UX_CONTENT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🖥️</span><span>UX Content</span></a>
+                            <a href="/?type=BRAND_VOICE" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'BRAND_VOICE' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🎙️</span><span>Brand Voice</span></a>
+                            <a href="/?type=E_COMMERCE" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'E_COMMERCE' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🛒</span><span>E-Commerce</span></a>
+                            <a href="/?type=COMPETITOR_ANALYSIS" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'COMPETITOR_ANALYSIS' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🏆</span><span>Competitors</span></a>
+                        </div>
+                    </div>
+
+                    <!-- Compliance -->
+                    <div>
+                        <p class="text-[9px] font-semibold text-slate-600 uppercase tracking-widest px-2 mb-0.5">Compliance</p>
+                        <div class="space-y-0.5">
+                            <a href="/?type=LEGAL_GDPR" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'LEGAL_GDPR' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">⚖️</span><span>Legal / GDPR</span></a>
+                            <a href="/?type=ACCESSIBILITY_AUDIT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'ACCESSIBILITY_AUDIT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">♿</span><span>Accessibility</span></a>
+                            <a href="/?type=SECURITY_CONTENT_AUDIT" class="flex items-center space-x-2 px-2 py-1 rounded-md text-xs font-medium transition-colors {% if at == 'SECURITY_CONTENT_AUDIT' %}bg-slate-700 text-white{% else %}text-slate-400 hover:bg-slate-800 hover:text-slate-100{% endif %}"><span class="text-sm leading-none">🔒</span><span>Security Content</span></a>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ANALYSIS -->
+            <div>
+                <p x-show="!collapsed"
+                   class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1">Analysis</p>
+                <div :class="collapsed ? 'space-y-1' : 'space-y-0.5'">
+                    <a href="/compare" :title="collapsed ? 'Compare' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/compare') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🔍</span><span x-show="!collapsed">Compare</span></a>
+                    <a href="/benchmarks" :title="collapsed ? 'Benchmarks' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/benchmarks') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🏆</span><span x-show="!collapsed">Benchmarks</span></a>
+                    <a href="/gap-analysis" :title="collapsed ? 'Gap Analysis' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/gap-analysis') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🧩</span><span x-show="!collapsed">Gap Analysis</span></a>
+                    <a href="/content-gaps" :title="collapsed ? 'Content Gaps' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/content-gaps') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📌</span><span x-show="!collapsed">Content Gaps</span></a>
+                    <a href="/geo-monitor" :title="collapsed ? 'GEO Monitor' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/geo-monitor') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🌐</span><span x-show="!collapsed">GEO Monitor</span></a>
+                    <a href="/cross-reference" :title="collapsed ? 'Cross-Reference' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/cross-reference') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🔗</span><span x-show="!collapsed">Cross-Reference</span></a>
+                </div>
+            </div>
+
+            <!-- CONTENT -->
+            <div>
+                <p x-show="!collapsed"
+                   class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1">Content</p>
+                <div :class="collapsed ? 'space-y-1' : 'space-y-0.5'">
+                    <a href="/briefs" :title="collapsed ? 'Briefs' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/briefs') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📝</span><span x-show="!collapsed">Briefs</span></a>
+                    <a href="/action-cards" :title="collapsed ? 'Action Cards' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/action-cards') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🗂️</span><span x-show="!collapsed">Action Cards</span></a>
+                    <a href="/schema" :title="collapsed ? 'Schema Generator' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/schema') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🏷️</span><span x-show="!collapsed">Schema Generator</span></a>
+                </div>
+            </div>
+
+            <!-- TOOLS -->
+            <div>
+                <p x-show="!collapsed"
+                   class="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-2 mb-1">Tools</p>
+                <div :class="collapsed ? 'space-y-1' : 'space-y-0.5'">
+                    <a href="/citations" :title="collapsed ? 'Citation Tracker' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/citations') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🔗</span><span x-show="!collapsed">Citation Tracker</span></a>
+                    <a href="/portfolio" :title="collapsed ? 'Portfolio' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/portfolio') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📊</span><span x-show="!collapsed">Portfolio</span></a>
+                    <a href="/costs" :title="collapsed ? 'Cost Tracking' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/costs') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">💸</span><span x-show="!collapsed">Cost Tracking</span></a>
+                    <a href="/templates" :title="collapsed ? 'Audit Templates' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/templates') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🧱</span><span x-show="!collapsed">Audit Templates</span></a>
+                    <a href="/branding" :title="collapsed ? 'Branding' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/branding') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🎨</span><span x-show="!collapsed">Branding</span></a>
+                    <a href="/settings" :title="collapsed ? 'Score Weights' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/settings') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">⚖️</span><span x-show="!collapsed">Score Weights</span></a>
+                    <a href="/keyword-research" :title="collapsed ? 'Keyword Research' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/keyword-research') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🔎</span><span x-show="!collapsed">Keyword Research</span></a>
+                    <a href="/gsc" :title="collapsed ? 'GSC Data' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/gsc') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📈</span><span x-show="!collapsed">GSC Data</span></a>
+                    <a href="/optimize" :title="collapsed ? 'Page Optimizer' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/optimize') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">⚡</span><span x-show="!collapsed">Page Optimizer</span></a>
+                    <a href="/ga4" :title="collapsed ? 'GA4 Data' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/ga4') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📊</span><span x-show="!collapsed">GA4 Data</span></a>
+                    <a href="/ads" :title="collapsed ? 'Google Ads' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/ads') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">💰</span><span x-show="!collapsed">Google Ads</span></a>
+                    <a href="/insights" :title="collapsed ? 'AI Insights' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/insights') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">🤖</span><span x-show="!collapsed">AI Insights</span></a>
+                    <a href="/llms-txt" :title="collapsed ? 'llms.txt' : ''" class="flex items-center rounded-md text-sm font-medium transition-colors" :class="[collapsed?'justify-center px-1 py-2':'space-x-2.5 px-2 py-1.5','{{ 'bg-slate-700 text-white' if p.startswith('/llms-txt') else 'text-slate-400 hover:bg-slate-800 hover:text-slate-100' }}']"><span class="text-base leading-none flex-shrink-0">📄</span><span x-show="!collapsed">llms.txt</span></a>
+                </div>
+            </div>
+
+        </nav>
+
+        <!-- ── Bottom bar ─────────────────────────────────────────────────── -->
+        <div class="flex-shrink-0 border-t border-slate-700/60 px-3 py-3 flex items-center"
+             :class="collapsed ? 'justify-center' : 'justify-between'">
+            <span x-show="!collapsed" class="text-[10px] text-slate-500">v2.1 · Multi-provider AI</span>
+            <a href="/api/health" target="_blank"
+                class="text-[10px] text-slate-500 hover:text-slate-300 transition-colors flex items-center space-x-1"
+                :title="collapsed ? 'API Health' : ''"
+                title="API Health">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400 inline-block animate-pulse flex-shrink-0"></span>
+                <span x-show="!collapsed">API</span>
+            </a>
+        </div>
+
+    </aside>
+
+    <!-- ===== MAIN AREA ===== -->
+    <div id="main-wrapper"
+         class="flex-1 flex flex-col min-h-screen"
+         :class="collapsed ? 'lg:ml-14' : 'lg:ml-60'">
+
+        <!-- ── Top bar ─────────────────────────────────────────────────────── -->
+        <header class="h-12 bg-white border-b border-slate-200 flex items-center px-4 lg:px-6 flex-shrink-0 sticky top-0 z-10">
+            <!-- Mobile hamburger -->
+            <button @click="mobileOpen = !mobileOpen"
+                    class="lg:hidden mr-3 p-1.5 rounded-md text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0"
+                    aria-label="Open menu">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+                </svg>
+            </button>
+
+            <!-- Breadcrumb -->
+            <span class="text-sm text-slate-500 truncate">
+                {% block breadcrumb %}
+                <span class="text-slate-400">GEO Analyzer</span>
+                {% endblock %}
+            </span>
+        </header>
+
+        <!-- Page content -->
+        <main class="flex-1 py-6">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="bg-white border-t border-slate-200 flex-shrink-0">
+            <div class="max-w-7xl mx-auto py-3 px-4 sm:px-6">
+                <p class="text-center text-xs text-slate-400">
+                    Website LLM Analyzer MASTER &bull; Gemini · Claude · OpenAI · Mistral
+                </p>
+            </div>
+        </footer>
+
+    </div>
+
+    <script>
+    function sidebarApp() {
+        return {
+            // Collapsed = icon-only desktop mode. Default: auto-collapse if screen < 1280px
+            collapsed: localStorage.getItem('sidebarCollapsed') !== null
+                ? localStorage.getItem('sidebarCollapsed') === 'true'
+                : window.innerWidth < 1280,
+            mobileOpen: false,
+
+            toggleCollapse() {
+                this.collapsed = !this.collapsed;
+                localStorage.setItem('sidebarCollapsed', this.collapsed);
+            },
+        };
+    }
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+
+</html>

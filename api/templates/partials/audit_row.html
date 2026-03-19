@@ -1,0 +1,9 @@
+<tr id="audit-row-{{ audit.id }}" 
+    class="hover:bg-slate-50 transition-colors"
+    {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
+    hx-get="/partials/audit-row/{{ audit.id }}"
+    hx-trigger="every 3s"
+    hx-swap="outerHTML"
+    {% endif %}>
+    {% include "partials/audit_row_content.html" %}
+</tr>

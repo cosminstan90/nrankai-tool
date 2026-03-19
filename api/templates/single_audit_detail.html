@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+
+{% block title %}Single Page Audit: {{ audit.website }}{% endblock %}
+
+{% block content %}
+<div x-data="singleAuditViewer()" x-init="init()" class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-start">
+        <div>
+            <nav class="flex mb-4" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-2">
+                    <li><a href="/" class="text-slate-400 hover:text-slate-500">Dashboard</a></li>
+                    <li><span class="text-slate-400">/</span></li>
+                    <li class="text-slate-700 font-medium">{{ audit.website }}</li>
+                </ol>
+            </nav>
+            <h1 class="text-2xl font-bold text-slate-900">{{ audit.website }}</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Instant Audit using {{ audit.provider | capitalize }} ({{ audit.model }})
+            </p>
+        </div>
+        <div class="flex items-center space-x-3">
+            <button type="button" @click="exportCSV()"
+                class="inline-flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500">
+                <svg class="mr-1.5 -ml-0.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
+                Export CSV
+            </button>
+            <button type="button" @click="downloadPDF($event)"
+                class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                <svg class="mr-1.5 -ml-0.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Download PDF
+            </button>
+            <a href="/api/reports/{{ audit.id }}/pdf" target="_blank"
+                class="inline-flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded shadow-sm text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500">
+                <svg class="mr-1.5 -ml-0.5 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                    </path>
+                </svg>
+                Professional PDF
+            </a>
+            <button
+                onclick="if(confirm('Delete this audit?')) fetch('/api/audits/{{ audit.id }}?force=true', {method: 'DELETE'}).then(r => { if(r.ok) window.location.href = '/'; else alert('Delete failed'); })"
+                class="inline-flex items-center px-3 py-2 border border-red-300 shadow-sm text-sm font-medium rounded-lg text-red-700 bg-white hover:bg-red-50">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                    </path>
+                </svg>
+                Delete
+            </button>
+        </div>
+    </div>
+
+    <!-- Expand / Collapse all controls -->
+    <div class="flex items-center justify-end gap-3 text-xs text-slate-400 -mt-2 mb-2">
+        <button type="button" @click="expandAll()"
+            class="flex items-center gap-1 hover:text-slate-700 transition-colors">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+            </svg>
+            Expand all
+        </button>
+        <span>·</span>
+        <button type="button" @click="collapseAll()"
+            class="flex items-center gap-1 hover:text-slate-700 transition-colors">
+            <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+            </svg>
+            Collapse all
+        </button>
+    </div>
+
+    <!-- Same structure as new_audit.html -->
+    <div id="pdf-wrapper" class="bg-slate-50 p-6 -mx-6 -mt-6 mb-6">
+        <div id="pdf-content" class="bg-white p-6 pb-2 border border-slate-200">
+            <!-- Header for PDF -->
+            <div class="mb-8 border-b pb-4">
+                <h2 class="text-2xl font-bold text-slate-900">{{ audit.website }}</h2>
+                <p class="text-slate-500 text-sm mt-1">Instant Audit &bull; {{ audit.created_at.strftime('%Y-%m-%d
+                    %H:%M') }} &bull; {{ audit.provider }}</p>
+                {% if audit.average_score %}
+                <div class="mt-2 inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-slate-100">
+                    Score:
+                    <span
+                        class="ml-1 {% if audit.average_score >= 85 %}text-green-600{% elif audit.average_score >= 70 %}text-emerald-500{% elif audit.average_score >= 50 %}text-yellow-500{% else %}text-red-500{% endif %}">
+                        {{ "%.1f"|format(audit.average_score) }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+
+            <template x-for="([type, data]) in Object.entries(singleResults)" :key="type">
+                <div
+                    class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm mb-6 break-inside-avoid">
+                    <div class="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between cursor-pointer select-none hover:bg-slate-100 transition-colors"
+                        @click="toggleType(type)">
+                        <h3 class="text-lg font-bold text-slate-900 capitalize"
+                            x-text="type.replace(/_/g, ' ').toLowerCase()"></h3>
+                        <svg class="h-5 w-5 text-slate-400 flex-shrink-0 transition-transform duration-200"
+                            :class="{'rotate-180': !collapsedTypes[type]}"
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </div>
+                    <div class="p-6" x-show="!collapsedTypes[type]">
+                        <!-- Error state -->
+                        <template x-if="data.error">
+                            <div class="text-red-600 bg-red-50 p-4 rounded-md text-sm border border-red-200">
+                                <span class="font-bold">Error:</span> <span x-text="data.error"></span>
+                            </div>
+                        </template>
+
+                        <!-- Success state -->
+                        <template x-if="!data.error">
+                            <div class="space-y-6">
+                                <template x-for="([key, val]) in Object.entries(data)" :key="key">
+                                    <div class="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                                        <h4 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2"
+                                            x-text="key.replace(/_/g, ' ')"></h4>
+
+                                        <!-- Array of Objects -->
+                                        <template
+                                            x-if="Array.isArray(val) && val.length > 0 && typeof val[0] === 'object'">
+                                            <div class="grid gap-4 sm:grid-cols-1 lg:grid-cols-2 mt-2">
+                                                <template x-for="(item, idx) in val" :key="idx">
+                                                    <div
+                                                        class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm shadow-sm transition hover:shadow-md">
+                                                        <template x-for="([k, v]) in Object.entries(item)" :key="k">
+                                                            <div class="mb-2 last:mb-0">
+                                                                <span class="font-semibold text-slate-700 capitalize"
+                                                                    x-text="k.replace(/_/g, ' ') + ': '"></span>
+                                                                <span class="text-slate-600"
+                                                                    x-html="formatText(v)"></span>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+
+                                        <!-- Simple Array -->
+                                        <template
+                                            x-if="Array.isArray(val) && (val.length === 0 || typeof val[0] !== 'object')">
+                                            <ul
+                                                class="list-disc list-inside text-sm text-slate-700 space-y-1 mt-1 pl-2">
+                                                <template x-for="(item, idx) in val" :key="idx">
+                                                    <li x-text="item"></li>
+                                                </template>
+                                                <template x-if="val.length === 0">
+                                                    <li class="text-slate-400 italic list-none">None found</li>
+                                                </template>
+                                            </ul>
+                                        </template>
+
+                                        <!-- Nested Object (Not Array) -->
+                                        <template x-if="val !== null && typeof val === 'object' && !Array.isArray(val)">
+                                            <div
+                                                class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-sm mt-2 grid gap-4 grid-cols-1 sm:grid-cols-2">
+                                                <template x-for="([k, v]) in Object.entries(val)" :key="k">
+                                                    <div>
+                                                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1"
+                                                            x-text="k.replace(/_/g, ' ')"></div>
+                                                        <div class="font-medium text-slate-800" x-html="formatText(v)">
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+
+                                        <!-- Primitive Value -->
+                                        <template
+                                            x-if="val === null || (typeof val !== 'object' && !Array.isArray(val))">
+                                            <div class="text-base text-slate-800 mt-1" x-html="formatText(val)">
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<!-- html2pdf -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+<script>
+    function singleAuditViewer() {
+        return {
+            singleResults: {},
+            collapsedTypes: {},
+
+            init() {
+                this.singleResults = {{ single_results_dict | tojson | safe }};
+            },
+
+            toggleType(type) {
+                this.collapsedTypes[type] = !this.collapsedTypes[type];
+            },
+
+            collapseAll() {
+                const next = {};
+                for (const type of Object.keys(this.singleResults)) {
+                    next[type] = true;
+                }
+                this.collapsedTypes = next;
+            },
+
+            expandAll() {
+                this.collapsedTypes = {};
+            },
+
+            formatText(text) {
+                if (text === null || text === undefined) return 'N/A';
+                if (typeof text !== 'string') return String(text);
+
+                // Convert markdown headers and bold
+                let formatted = text
+                    .replace(/^### (.*$)/gim, '<h4 class="text-sm font-bold text-slate-800 mt-3 mb-1">$1</h4>')
+                    .replace(/^## (.*$)/gim, '<h3 class="text-md font-bold text-slate-900 mt-4 mb-2">$1</h3>')
+                    .replace(/^# (.*$)/gim, '<h2 class="text-lg font-bold text-slate-900 mt-5 mb-3">$1</h2>')
+                    .replace(/\*\*(.*?)\*\*/g, '<span class="font-bold text-slate-900">$1</span>')
+                    .replace(/\*(.*?)\*/g, '<span class="italic text-slate-700">$1</span>')
+                    .replace(/\n\n/g, '<br><br>')
+                    .replace(/\n/g, '<br>');
+
+                // Keep links working
+                formatted = formatted.replace(
+                    /\[([^\]]+)\]\(([^)]+)\)/g,
+                    '<a href="$2" target="_blank" class="text-primary-600 hover:text-primary-800 hover:underline">$1</a>'
+                );
+                return formatted;
+            },
+
+            exportCSV() {
+                let csvContent = "data:text/csv;charset=utf-8,Category,Subcategory,Value\n";
+
+                for (const [auditType, data] of Object.entries(this.singleResults)) {
+                    if (data.error) {
+                        csvContent += `"${auditType}","Error","${data.error.replace(/"/g, '""')}"\n`;
+                        continue;
+                    }
+
+                    for (const [key, val] of Object.entries(data)) {
+                        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+                            val.forEach((item, idx) => {
+                                for (const [k, v] of Object.entries(item)) {
+                                    const cleanVal = String(v).replace(/"/g, '""').replace(/\n/g, ' ');
+                                    csvContent += `"${auditType}","${key} [${idx + 1}] - ${k}","${cleanVal}"\n`;
+                                }
+                            });
+                        } else if (Array.isArray(val)) {
+                            const joined = val.join('; ').replace(/"/g, '""');
+                            csvContent += `"${auditType}","${key}","${joined}"\n`;
+                        } else if (val !== null && typeof val === 'object') {
+                            for (const [k, v] of Object.entries(val)) {
+                                const cleanVal = String(v).replace(/"/g, '""').replace(/\n/g, ' ');
+                                csvContent += `"${auditType}","${key} - ${k}","${cleanVal}"\n`;
+                            }
+                        } else {
+                            const cleanVal = String(val !== null ? val : '').replace(/"/g, '""').replace(/\n/g, ' ');
+                            csvContent += `"${auditType}","${key}","${cleanVal}"\n`;
+                        }
+                    }
+                }
+
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `audit_{{ audit.website | replace(' ', '') }}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            },
+
+            downloadPDF(event) {
+                const element = document.getElementById('pdf-content');
+                if (!element) return;
+
+                const btn = event.currentTarget;
+                const originalHtml = btn.innerHTML;
+                const spinnerHtml = `<svg class="animate-spin mr-1.5 -ml-0.5 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Generating...`;
+                btn.innerHTML = spinnerHtml;
+                btn.disabled = true;
+
+                const reset = () => { btn.innerHTML = originalHtml; btn.disabled = false; };
+                const currentScroll = window.scrollY;
+
+                this.$nextTick(() => {
+                    window.scrollTo(0, 0);
+
+                    // Wait two animation frames so the scroll has settled and
+                    // any x-show display changes have been painted before capture
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        const opt = {
+                            margin: [10, 10, 10, 10],
+                            filename: `Audit_{{ audit.website | replace(' ', '_') }}.pdf`,
+                            image: { type: 'jpeg', quality: 0.92 },
+                            html2canvas: {
+                                scale: 1,
+                                useCORS: true,
+                                logging: false,
+                                scrollX: 0,
+                                scrollY: 0,
+                                width: element.scrollWidth,
+                                height: element.scrollHeight
+                            },
+                            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+                            pagebreak: { mode: ['css', 'legacy'] }
+                        };
+
+                        html2pdf().set(opt).from(element).save()
+                            .then(() => {
+                                window.scrollTo(0, currentScroll);
+                                reset();
+                            })
+                            .catch(err => {
+                                console.error('PDF generation failed:', err);
+                                alert('PDF generation failed. For large audits, use the Professional PDF button instead.');
+                                window.scrollTo(0, currentScroll);
+                                reset();
+                            });
+                    }));
+                });
+            }
+        };
+    }
+</script>
+{% endblock %}

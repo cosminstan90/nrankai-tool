@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Dashboard</h1>
+            <p class="mt-1 text-sm text-slate-500">Monitor and manage your website audits</p>
+        </div>
+        <a href="/new"
+            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-colors">
+            <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6">
+                </path>
+            </svg>
+            New Audit
+        </a>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="flex flex-wrap gap-2">
+        <a href="/new"
+            class="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-primary-50 text-primary-700 hover:bg-primary-100 border border-primary-200 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+            </svg>New Audit
+        </a>
+        <a href="/schedules"
+            class="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>Schedules
+        </a>
+        <a href="/compare"
+            class="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>Compare
+        </a>
+        <a href="/benchmarks"
+            class="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>Benchmarks
+        </a>
+        <a href="/briefs"
+            class="inline-flex items-center px-3 py-1.5 rounded-md text-sm font-medium bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>Briefs
+        </a>
+    </div>
+
+    <!-- Stats Cards -->
+    <div id="stats-container" hx-get="/partials/stats" hx-trigger="every 5s" hx-swap="innerHTML">
+        {% include "partials/stats.html" %}
+    </div>
+
+    <!-- Dashboard Charts -->
+    {% if stats.completed_audits > 0 %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Score Distribution (All Audits) -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4">Overall Score Distribution</h3>
+            <div class="relative" style="height: 260px">
+                <canvas id="globalScoreChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Score Trend -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+            <h3 class="text-sm font-semibold text-slate-900 mb-4">Recent Audit Scores</h3>
+            <div class="relative" style="height: 260px">
+                <canvas id="scoreTrendChart"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Provider Status -->
+    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
+        <h3 class="text-sm font-medium text-slate-700 mb-3">Configured Providers</h3>
+        <div class="flex flex-wrap gap-3">
+            {% for provider, configured in providers.items() %}
+            <div
+                class="flex items-center space-x-2 px-3 py-1.5 rounded-full {% if configured %}bg-green-50 text-green-700{% else %}bg-slate-100 text-slate-400{% endif %}">
+                {% if configured %}
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                {% else %}
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12">
+                    </path>
+                </svg>
+                {% endif %}
+                <span class="text-sm font-medium capitalize">{{ provider }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Sites Needing Attention -->
+    {% if sites_needing_attention %}
+    <div class="bg-white shadow-sm rounded-lg border border-red-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-red-100 bg-red-50 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                <h2 class="text-sm font-semibold text-red-800">Sites Needing Attention</h2>
+            </div>
+            <span class="text-xs text-red-500 font-medium">avg score &lt; 70 across all audit types</span>
+        </div>
+        <div class="divide-y divide-slate-100">
+            {% for site in sites_needing_attention %}
+            <div class="px-6 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                <a href="/sites/{{ site.website }}" class="text-sm font-medium text-slate-800 hover:text-primary-600 truncate flex-1">
+                    {{ site.website }}
+                </a>
+                <div class="flex items-center gap-3 ml-4 flex-shrink-0">
+                    <span class="text-sm font-bold
+                        {% if site.avg_score >= 50 %}text-orange-500{% else %}text-red-600{% endif %}">
+                        {{ site.avg_score }}
+                    </span>
+                    <div class="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div class="h-2 rounded-full
+                            {% if site.avg_score >= 50 %}bg-orange-400{% else %}bg-red-500{% endif %}"
+                             style="width: {{ site.avg_score }}%"></div>
+                    </div>
+                    <a href="/new?website={{ site.website }}"
+                       class="text-xs px-2 py-1 rounded bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors whitespace-nowrap">
+                        + Run Audit
+                    </a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Audits -->
+    <div class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-900">Recent Audits</h2>
+        </div>
+
+        {% if audits %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Website</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Audit Type</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Provider</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Status</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Score</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Created</th>
+                        <th scope="col" class="relative px-6 py-3">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-slate-200">
+                    {% for audit in audits %}
+                    <tr id="audit-row-{{ audit.id }}" class="hover:bg-slate-50 transition-colors" {% if audit.status in
+                        ['pending', 'scraping' , 'converting' , 'analyzing' ] %}
+                        hx-get="/partials/audit-row/{{ audit.id }}" hx-trigger="every 3s" hx-swap="outerHTML" {% endif
+                        %}>
+                        {% include "partials/audit_row_content.html" %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="px-6 py-12 text-center">
+            <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4">
+                </path>
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-slate-900">No audits yet</h3>
+            <p class="mt-1 text-sm text-slate-500">Get started by creating a new audit.</p>
+            <div class="mt-6">
+                <a href="/new"
+                    class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700">
+                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                    </svg>
+                    New Audit
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Single Page Audits -->
+    <div id="recent-single" class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden mt-8">
+        <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-indigo-50">
+            <h2 class="text-lg font-semibold text-indigo-900">Recent Single-Page Audits (God Mode & Instant)</h2>
+        </div>
+
+        {% if single_audits %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-slate-200">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">URL
+                        </th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Audit Type</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Provider</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Score</th>
+                        <th scope="col"
+                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                            Created</th>
+                        <th scope="col" class="relative px-6 py-3">
+                            <span class="sr-only">Actions</span>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-slate-200">
+                    {% for audit in single_audits %}
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-900 max-w-[250px] truncate"
+                            title="{{ audit.website }}">
+                            {{ audit.website }}
+                        </td>
+                        <td
+                            class="px-6 py-4 whitespace-nowrap text-sm text-slate-900 {% if audit.audit_type == 'SINGLE_PAGE_GOD_MODE' %}font-bold text-indigo-600{% endif %}">
+                            {{ audit.audit_type.replace('SINGLE_', '').replace('_', ' ').title() }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span
+                                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-800">
+                                {{ audit.provider }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if audit.average_score is not none %}
+                            <span
+                                class="text-sm font-bold {% if audit.average_score >= 85 %}text-green-600{% elif audit.average_score >= 70 %}text-emerald-500{% elif audit.average_score >= 50 %}text-yellow-500{% else %}text-red-500{% endif %}">
+                                {{ "%.1f"|format(audit.average_score) }}
+                            </span>
+                            {% else %}
+                            <span class="text-sm text-slate-500">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            {{ audit.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <a href="/audits/{{ audit.id }}"
+                                class="text-primary-600 hover:text-primary-900 mr-3">View</a>
+                            <a href="/compare?audit1={{ audit.id }}"
+                                class="text-indigo-600 hover:text-indigo-900">Compare</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if not all_single %}
+        <div class="bg-indigo-50/50 px-6 py-3 border-t border-slate-200 text-center">
+            <a href="/?all_single=1#recent-single"
+                class="text-sm font-medium text-indigo-600 hover:text-indigo-900 transition-colors">
+                View Older Instant Audits &rarr;
+            </a>
+        </div>
+        {% else %}
+        <div class="bg-indigo-50/50 px-6 py-3 border-t border-slate-200 text-center">
+            <a href="/#recent-single" class="text-sm font-medium text-slate-500 hover:text-slate-700 transition-colors">
+                &larr; Show Less
+            </a>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="px-6 py-12 text-center bg-indigo-50/30">
+            <p class="text-sm text-slate-500">No Instant Audits found.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if stats.completed_audits > 0 %}
+<script>
+    async function loadDashboardCharts() {
+        try {
+            const distResp = await fetch('/api/charts/score-distribution');
+            const distData = await distResp.json();
+
+            const distCtx = document.getElementById('globalScoreChart');
+            if (distCtx) {
+                new Chart(distCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: distData.labels,
+                        datasets: [{
+                            data: distData.values,
+                            backgroundColor: distData.colors,
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { position: 'bottom', labels: { padding: 16, usePointStyle: true } }
+                        },
+                        cutout: '60%'
+                    }
+                });
+            }
+
+            const trendResp = await fetch('/api/charts/score-trend?limit=15');
+            const trendData = await trendResp.json();
+
+            const trendCtx = document.getElementById('scoreTrendChart');
+            if (trendCtx && trendData.values.length > 0) {
+                new Chart(trendCtx, {
+                    type: 'line',
+                    data: {
+                        labels: trendData.labels,
+                        datasets: [{
+                            label: 'Average Score',
+                            data: trendData.values,
+                            borderColor: '#0ea5e9',
+                            backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 4,
+                            pointBackgroundColor: trendData.values.map(v =>
+                                v >= 85 ? '#22c55e' : v >= 70 ? '#10b981' : v >= 50 ? '#eab308' : '#ef4444'
+                            ),
+                            pointBorderColor: '#ffffff',
+                            pointBorderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    afterLabel: function (context) {
+                                        const detail = trendData.details[context.dataIndex];
+                                        return detail ? `${detail.website} — ${detail.audit_type}` : '';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: { min: 0, max: 100, grid: { color: '#f1f5f9' } },
+                            x: {
+                                ticks: { maxRotation: 45, font: { size: 10 } },
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            }
+        } catch (err) {
+            console.warn('Failed to load charts:', err);
+        }
+    }
+    loadDashboardCharts();
+</script>
+{% endif %}
+{% endblock %}

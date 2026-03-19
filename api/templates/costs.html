@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}Cost Tracking - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="costsApp()" x-init="init()" class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">💰 Cost Tracking</h1>
+            <p class="text-gray-600 mt-1">Monitor API costs and client margins</p>
+        </div>
+        
+        <!-- Period Selector -->
+        <div class="flex gap-2">
+            <template x-for="p in periods" :key="p.value">
+                <button
+                    @click="selectedPeriod = p.value; loadData()"
+                    :class="selectedPeriod === p.value ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                    class="px-4 py-2 rounded-lg font-medium border shadow-sm transition-colors"
+                    x-text="p.label"
+                ></button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="text-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p class="text-gray-600 mt-4">Loading cost data...</p>
+    </div>
+
+    <!-- Main Content -->
+    <div x-show="!loading" style="display: none;">
+        
+        <!-- KPI Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <!-- Total Cost (Period) -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Total Cost <span x-text="`(${selectedPeriod})`"></span></p>
+                        <p class="text-2xl font-bold text-gray-900 mt-2">
+                            $<span x-text="summary.total_cost_usd?.toFixed(2) || '0.00'"></span>
+                        </p>
+                    </div>
+                    <div class="bg-blue-100 rounded-full p-3">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Average Cost per Audit -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Avg Cost/Audit</p>
+                        <p class="text-2xl font-bold text-gray-900 mt-2">
+                            $<span x-text="avgCostPerAudit.toFixed(2)"></span>
+                        </p>
+                    </div>
+                    <div class="bg-green-100 rounded-full p-3">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Total Margin (This Month) -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Total Margin (MTD)</p>
+                        <p class="text-2xl font-bold mt-2" :class="totalMargin >= 0 ? 'text-green-600' : 'text-red-600'">
+                            €<span x-text="totalMargin.toFixed(2)"></span>
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1" x-text="`${totalMarginPercent.toFixed(1)}% margin`"></p>
+                    </div>
+                    <div class="rounded-full p-3" :class="totalMargin >= 0 ? 'bg-green-100' : 'bg-red-100'">
+                        <svg class="w-6 h-6" :class="totalMargin >= 0 ? 'text-green-600' : 'text-red-600'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Calls -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600">Total API Calls</p>
+                        <p class="text-2xl font-bold text-gray-900 mt-2" x-text="totalCalls"></p>
+                    </div>
+                    <div class="bg-purple-100 rounded-full p-3">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Cost Trend Chart -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">📈 Cost Trend (Last 30 Days)</h3>
+                <div style="position: relative; height: 300px;">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Provider Breakdown Chart -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">🎯 Cost by Provider</h3>
+                <div style="position: relative; height: 300px;">
+                    <canvas id="providerChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cost by Website Chart -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">🌐 Cost by Website</h3>
+            <div style="position: relative; height: 400px;">
+                <canvas id="websiteChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Client Margins Table -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-900">💼 Client Margins</h3>
+                    <p class="text-sm text-gray-600 mt-1">Monthly fees vs actual costs</p>
+                </div>
+                <button
+                    @click="showBillingModal = true"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                    + Add Client
+                </button>
+            </div>
+            
+            <div x-show="margins.clients && margins.clients.length > 0">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Client</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Website</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Monthly Fee</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cost (MTD)</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Margin</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Margin %</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <template x-for="client in margins.clients" :key="client.website">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm font-medium text-gray-900" x-text="client.client_name || 'N/A'"></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-600" x-text="client.website"></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right">
+                                        <div class="text-sm font-medium text-gray-900">€<span x-text="client.monthly_fee_eur.toFixed(2)"></span></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right">
+                                        <div class="text-sm text-gray-600">€<span x-text="client.cost_this_month_eur.toFixed(2)"></span></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right">
+                                        <div class="text-sm font-semibold" :class="client.margin_eur >= 0 ? 'text-green-600' : 'text-red-600'">
+                                            €<span x-text="client.margin_eur.toFixed(2)"></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right">
+                                        <span 
+                                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                                            :class="{
+                                                'bg-green-100 text-green-800': client.margin_percent >= 90,
+                                                'bg-yellow-100 text-yellow-800': client.margin_percent >= 70 && client.margin_percent < 90,
+                                                'bg-red-100 text-red-800': client.margin_percent < 70
+                                            }"
+                                            x-text="`${client.margin_percent.toFixed(1)}%`"
+                                        ></span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button @click="editBilling(client)" class="text-blue-600 hover:text-blue-900 mr-3">Edit</button>
+                                        <button @click="deleteBilling(client.website)" class="text-red-600 hover:text-red-900">Delete</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div x-show="!margins.clients || margins.clients.length === 0" class="p-12 text-center">
+                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="mt-4 text-gray-600">No client billing configurations yet</p>
+                <button
+                    @click="showBillingModal = true"
+                    class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                >
+                    Add Your First Client
+                </button>
+            </div>
+        </div>
+
+        <!-- Recent Costs Table -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-6 border-b border-gray-200">
+                <h3 class="text-lg font-semibold text-gray-900">📋 Recent API Calls</h3>
+                <p class="text-sm text-gray-600 mt-1">Last 50 cost records</p>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Website</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Provider</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Model</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens In</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Tokens Out</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="record in recentCosts" :key="record.id">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600" x-text="formatDate(record.created_at)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800" x-text="record.source"></span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600" x-text="record.website || '-'"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900" x-text="record.provider"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600" x-text="record.model"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-600" x-text="record.input_tokens.toLocaleString()"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-600" x-text="record.output_tokens.toLocaleString()"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-gray-900">$<span x-text="record.estimated_cost_usd.toFixed(4)"></span></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Billing Modal -->
+    <div x-show="showBillingModal" class="fixed inset-0 z-50 overflow-y-auto" style="display: none;">
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div @click="showBillingModal = false" class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"></div>
+            
+            <div class="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4" x-text="billingForm.id ? 'Edit Client Billing' : 'Add Client Billing'"></h3>
+                
+                <form @submit.prevent="saveBilling" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Website</label>
+                        <input
+                            type="text"
+                            x-model="billingForm.website"
+                            :disabled="billingForm.id"
+                            required
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="example.com"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
+                        <input
+                            type="text"
+                            x-model="billingForm.client_name"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Client Company Name"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Monthly Fee (EUR)</label>
+                        <input
+                            type="number"
+                            step="0.01"
+                            x-model="billingForm.monthly_fee_eur"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="500.00"
+                        />
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                        <textarea
+                            x-model="billingForm.notes"
+                            rows="3"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Additional notes..."
+                        ></textarea>
+                    </div>
+                    
+                    <div class="flex gap-3 pt-4">
+                        <button
+                            type="submit"
+                            class="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                        >
+                            Save
+                        </button>
+                        <button
+                            type="button"
+                            @click="showBillingModal = false"
+                            class="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function costsApp() {
+    return {
+        loading: true,
+        selectedPeriod: '30d',
+        periods: [
+            { value: '7d', label: '7 Days' },
+            { value: '30d', label: '30 Days' },
+            { value: '90d', label: '90 Days' },
+            { value: 'all', label: 'All Time' }
+        ],
+        summary: {},
+        margins: { clients: [] },
+        recentCosts: [],
+        trendChart: null,
+        providerChart: null,
+        websiteChart: null,
+        showBillingModal: false,
+        billingForm: {
+            id: null,
+            website: '',
+            client_name: '',
+            monthly_fee_eur: null,
+            notes: ''
+        },
+        
+        get totalMargin() {
+            return this.margins.clients.reduce((sum, c) => sum + c.margin_eur, 0);
+        },
+        
+        get totalMarginPercent() {
+            const totalFees = this.margins.clients.reduce((sum, c) => sum + c.monthly_fee_eur, 0);
+            return totalFees > 0 ? (this.totalMargin / totalFees * 100) : 0;
+        },
+        
+        get avgCostPerAudit() {
+            const auditSource = this.summary.by_source?.find(s => s.source === 'audit');
+            return auditSource ? auditSource.cost / auditSource.calls : 0;
+        },
+        
+        get totalCalls() {
+            return this.summary.by_source?.reduce((sum, s) => sum + s.calls, 0) || 0;
+        },
+        
+        async init() {
+            await this.loadData();
+        },
+        
+        async loadData() {
+            this.loading = true;
+            try {
+                // Load summary
+                const summaryRes = await fetch(`/api/costs/summary?period=${this.selectedPeriod}`);
+                this.summary = await summaryRes.json();
+                
+                // Load margins
+                const marginsRes = await fetch('/api/costs/margins');
+                this.margins = await marginsRes.json();
+                
+                // Load recent costs
+                const recentRes = await fetch('/api/costs/recent?limit=50');
+                const recentData = await recentRes.json();
+                this.recentCosts = recentData.records;
+                
+                // Render charts
+                await this.$nextTick();
+                this.renderCharts();
+            } catch (error) {
+                console.error('Failed to load cost data:', error);
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        renderCharts() {
+            // Trend Chart
+            if (this.trendChart) this.trendChart.destroy();
+            const trendCtx = document.getElementById('trendChart');
+            this.trendChart = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: this.summary.daily_trend?.map(d => d.date) || [],
+                    datasets: [{
+                        label: 'Daily Cost (USD)',
+                        data: this.summary.daily_trend?.map(d => d.cost) || [],
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => `$${value.toFixed(2)}`
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Provider Chart
+            if (this.providerChart) this.providerChart.destroy();
+            const providerCtx = document.getElementById('providerChart');
+            this.providerChart = new Chart(providerCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: this.summary.by_provider?.map(p => p.provider) || [],
+                    datasets: [{
+                        data: this.summary.by_provider?.map(p => p.cost) || [],
+                        backgroundColor: [
+                            'rgb(59, 130, 246)',
+                            'rgb(16, 185, 129)',
+                            'rgb(251, 146, 60)'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: context => `${context.label}: $${context.parsed.toFixed(2)}`
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Website Chart
+            if (this.websiteChart) this.websiteChart.destroy();
+            const websiteCtx = document.getElementById('websiteChart');
+            this.websiteChart = new Chart(websiteCtx, {
+                type: 'bar',
+                data: {
+                    labels: this.summary.by_website?.map(w => w.website) || [],
+                    datasets: [{
+                        label: 'Cost (USD)',
+                        data: this.summary.by_website?.map(w => w.cost) || [],
+                        backgroundColor: 'rgb(59, 130, 246)'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: context => `Cost: $${context.parsed.x.toFixed(2)}`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: value => `$${value.toFixed(2)}`
+                            }
+                        }
+                    }
+                }
+            });
+        },
+        
+        editBilling(client) {
+            this.billingForm = {
+                id: client.website,
+                website: client.website,
+                client_name: client.client_name,
+                monthly_fee_eur: client.monthly_fee_eur,
+                notes: ''
+            };
+            this.showBillingModal = true;
+        },
+        
+        async saveBilling() {
+            try {
+                const response = await fetch('/api/costs/billing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.billingForm)
+                });
+                
+                if (response.ok) {
+                    this.showBillingModal = false;
+                    this.billingForm = { id: null, website: '', client_name: '', monthly_fee_eur: null, notes: '' };
+                    await this.loadData();
+                }
+            } catch (error) {
+                console.error('Failed to save billing:', error);
+                alert('Failed to save billing configuration');
+            }
+        },
+        
+        async deleteBilling(website) {
+            if (!confirm(`Delete billing config for ${website}?`)) return;
+            
+            try {
+                const response = await fetch(`/api/costs/billing/${encodeURIComponent(website)}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    await this.loadData();
+                }
+            } catch (error) {
+                console.error('Failed to delete billing:', error);
+                alert('Failed to delete billing configuration');
+            }
+        },
+        
+        formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleString('en-GB', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    };
+}
+</script>
+{% endblock %}

@@ -1,0 +1,741 @@
+{% extends "base.html" %}
+
+{% block title %}Scheduled Audits - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="scheduleApp()" x-init="init()">
+    <div class="mb-8">
+        <h1 class="text-3xl font-bold text-slate-900">Scheduled Audits</h1>
+        <p class="mt-2 text-slate-600">Automate recurring audits with cron schedules and track performance trends over time</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Left Column: Create & List -->
+        <div class="space-y-6">
+            <!-- Create Schedule Form -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h2 class="text-lg font-semibold text-slate-900 mb-4">Create New Schedule</h2>
+                
+                <form @submit.prevent="createSchedule()" class="space-y-4">
+                    <!-- Name -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Schedule Name</label>
+                        <input 
+                            type="text" 
+                            x-model="form.name" 
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            placeholder="e.g., Weekly SEO - example.com"
+                        >
+                    </div>
+
+                    <!-- Website -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Website URL</label>
+                        <input 
+                            type="url" 
+                            x-model="form.website" 
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            placeholder="https://example.com"
+                        >
+                    </div>
+
+                    <!-- Sitemap URL -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Sitemap URL (optional)</label>
+                        <input 
+                            type="url" 
+                            x-model="form.sitemap_url"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            placeholder="https://example.com/sitemap.xml"
+                        >
+                    </div>
+
+                    <!-- Audit Type -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Audit Type</label>
+                        <select 
+                            x-model="form.audit_type" 
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                            <option value="">Select audit type...</option>
+                            <template x-for="type in auditTypes" :key="type">
+                                <option :value="type" x-text="type"></option>
+                            </template>
+                        </select>
+                    </div>
+
+                    <!-- Provider & Model -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+                            <select 
+                                x-model="form.provider" 
+                                @change="updateModels()"
+                                required
+                                class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            >
+                                <option value="">Select...</option>
+                                <template x-for="prov in providers" :key="prov.name">
+                                    <option :value="prov.name" x-text="prov.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                            <select 
+                                x-model="form.model"
+                                class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            >
+                                <option value="">Default</option>
+                                <template x-for="model in availableModels" :key="model">
+                                    <option :value="model" x-text="model"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Language -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Language</label>
+                        <select 
+                            x-model="form.language"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                        >
+                            <option value="English">English</option>
+                            <option value="Romanian">Romanian</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                        </select>
+                    </div>
+
+                    <!-- Schedule -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Schedule</label>
+                        <select 
+                            x-model="selectedPreset" 
+                            @change="applyPreset()"
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 mb-2"
+                        >
+                            <option value="">Choose a preset...</option>
+                            <template x-for="(preset, key) in presets" :key="key">
+                                <option :value="key" x-text="preset.label"></option>
+                            </template>
+                        </select>
+                        <input 
+                            type="text" 
+                            x-model="form.schedule_cron"
+                            required
+                            class="w-full px-3 py-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
+                            placeholder="0 9 * * 1"
+                        >
+                        <p class="text-xs text-slate-500 mt-1">Cron format: minute hour day month weekday</p>
+                    </div>
+
+                    <!-- Advanced Options -->
+                    <div class="border-t border-slate-200 pt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-slate-700">Use Perplexity Research</label>
+                            <input 
+                                type="checkbox" 
+                                x-model="form.use_perplexity"
+                                class="w-4 h-4 text-primary-600 rounded focus:ring-2 focus:ring-primary-500"
+                            >
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Concurrency (1-20)</label>
+                            <input 
+                                type="range" 
+                                x-model.number="form.concurrency" 
+                                min="1" 
+                                max="20"
+                                class="w-full"
+                            >
+                            <div class="text-sm text-slate-600 text-center" x-text="`${form.concurrency} pages at once`"></div>
+                        </div>
+                    </div>
+
+                    <!-- Auto-Summary -->
+                    <div class="border-t border-slate-200 pt-4">
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Auto-generate Summary?</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <select 
+                                    x-model="form.summary_provider"
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                                >
+                                    <option value="">No auto-summary</option>
+                                    <template x-for="prov in providers" :key="prov.name">
+                                        <option :value="prov.name" x-text="prov.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div x-show="form.summary_provider">
+                                <select 
+                                    x-model="form.summary_model"
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-md text-sm"
+                                >
+                                    <option value="">Default</option>
+                                    <template x-for="model in getSummaryModels()" :key="model">
+                                        <option :value="model" x-text="model"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1">Automatically generate AI summary after each audit completes</p>
+                    </div>
+
+                    <!-- Submit -->
+                    <button 
+                        type="submit" 
+                        class="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+                        :disabled="loading"
+                    >
+                        <span x-show="!loading">Create Schedule</span>
+                        <span x-show="loading">Creating...</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Schedules List -->
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200">
+                <div class="p-4 border-b border-slate-200">
+                    <h2 class="text-lg font-semibold text-slate-900">Active Schedules</h2>
+                </div>
+                
+                <div class="divide-y divide-slate-200">
+                    <template x-if="schedules.length === 0">
+                        <div class="p-8 text-center text-slate-500">
+                            No schedules yet. Create your first one above!
+                        </div>
+                    </template>
+
+                    <template x-for="schedule in schedules" :key="schedule.id">
+                        <div 
+                            class="p-4 hover:bg-slate-50 cursor-pointer transition-colors"
+                            :class="{'bg-blue-50': selectedScheduleId === schedule.id}"
+                            @click="selectSchedule(schedule.id)"
+                        >
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <h3 class="font-semibold text-slate-900" x-text="schedule.name"></h3>
+                                    <div class="flex items-center gap-2 mt-1 text-sm text-slate-600">
+                                        <span x-text="schedule.website" class="truncate max-w-[200px]"></span>
+                                        <span>•</span>
+                                        <span x-text="schedule.audit_type"></span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 mt-1" x-text="schedule.schedule_human"></div>
+                                    <div class="flex items-center gap-2 mt-2">
+                                        <span 
+                                            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                            :class="schedule.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'"
+                                        >
+                                            <span x-show="schedule.is_active">Active</span>
+                                            <span x-show="!schedule.is_active">Paused</span>
+                                        </span>
+                                        <span class="text-xs text-slate-500">
+                                            <span x-text="schedule.run_count"></span> runs
+                                        </span>
+                                        <span class="text-xs text-slate-500" x-show="schedule.history_count">
+                                            • <span x-text="schedule.history_count"></span> completed
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="flex items-center gap-2">
+                                    <button 
+                                        @click.stop="toggleActive(schedule.id, !schedule.is_active)"
+                                        class="p-1 text-slate-400 hover:text-slate-600"
+                                        :title="schedule.is_active ? 'Pause' : 'Resume'"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path x-show="schedule.is_active" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6"></path>
+                                            <path x-show="!schedule.is_active" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                                        </svg>
+                                    </button>
+                                    <button 
+                                        @click.stop="runNow(schedule.id)"
+                                        class="p-1 text-slate-400 hover:text-primary-600"
+                                        title="Run Now"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Detail View -->
+        <div>
+            <template x-if="!selectedScheduleId">
+                <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
+                    <div class="text-slate-400">
+                        <svg class="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                        </svg>
+                        <p class="text-lg font-medium text-slate-600">Select a schedule to view history</p>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="selectedScheduleId && detail">
+                <div class="space-y-6">
+                    <!-- Schedule Info Card -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <div class="flex items-start justify-between mb-4">
+                            <div>
+                                <h2 class="text-xl font-bold text-slate-900" x-text="detail.name"></h2>
+                                <p class="text-sm text-slate-600 mt-1" x-text="detail.schedule_human"></p>
+                            </div>
+                            <button 
+                                @click="deleteSchedule(detail.id)"
+                                class="text-red-600 hover:text-red-800 text-sm font-medium"
+                            >
+                                Delete
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <span class="text-slate-500">Website:</span>
+                                <span class="font-medium text-slate-900 ml-1" x-text="detail.website"></span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Type:</span>
+                                <span class="font-medium text-slate-900 ml-1" x-text="detail.audit_type"></span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Last Run:</span>
+                                <span class="font-medium text-slate-900 ml-1" x-text="formatDate(detail.last_run_at)"></span>
+                            </div>
+                            <div>
+                                <span class="text-slate-500">Total Runs:</span>
+                                <span class="font-medium text-slate-900 ml-1" x-text="detail.run_count"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trend Indicator -->
+                    <div x-show="detail.trend" class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-4">Performance Trend</h3>
+                        
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <template x-if="detail.trend && detail.trend.direction === 'improving'">
+                                    <div class="flex items-center gap-2 text-green-600">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                                        </svg>
+                                        <span class="text-lg font-bold">Improving</span>
+                                    </div>
+                                </template>
+                                <template x-if="detail.trend && detail.trend.direction === 'declining'">
+                                    <div class="flex items-center gap-2 text-red-600">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0v-8m0 8l-8-8-4 4-6-6"></path>
+                                        </svg>
+                                        <span class="text-lg font-bold">Declining</span>
+                                    </div>
+                                </template>
+                                <template x-if="detail.trend && detail.trend.direction === 'stable'">
+                                    <div class="flex items-center gap-2 text-slate-600">
+                                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14"></path>
+                                        </svg>
+                                        <span class="text-lg font-bold">Stable</span>
+                                    </div>
+                                </template>
+                            </div>
+                            
+                            <div class="text-right" x-show="detail.trend">
+                                <div class="text-2xl font-bold text-slate-900">
+                                    <span x-text="detail.trend.first_score"></span>
+                                    →
+                                    <span x-text="detail.trend.latest_score"></span>
+                                </div>
+                                <div class="text-sm text-slate-600">
+                                    <span 
+                                        :class="detail.trend.delta > 0 ? 'text-green-600' : detail.trend.delta < 0 ? 'text-red-600' : 'text-slate-600'"
+                                        x-text="(detail.trend.delta > 0 ? '+' : '') + detail.trend.delta"
+                                    ></span>
+                                    points change
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-200">
+                            <div>
+                                <div class="text-xs text-slate-500">Best Score</div>
+                                <div class="text-lg font-semibold text-green-600" x-text="detail.trend.best" x-show="detail.trend"></div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-slate-500">Worst Score</div>
+                                <div class="text-lg font-semibold text-red-600" x-text="detail.trend.worst" x-show="detail.trend"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- History Chart -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                        <h3 class="text-lg font-semibold text-slate-900 mb-4">Score History</h3>
+                        
+                        <div x-show="chartData && chartData.scores.length > 0">
+                            <canvas id="historyChart" class="w-full" style="height: 300px;"></canvas>
+                        </div>
+                        
+                        <div x-show="!chartData || chartData.scores.length === 0" class="text-center py-8 text-slate-500">
+                            No audit history yet. Run the schedule to start tracking trends.
+                        </div>
+                    </div>
+
+                    <!-- Audit History Table -->
+                    <div class="bg-white rounded-lg shadow-sm border border-slate-200">
+                        <div class="p-4 border-b border-slate-200">
+                            <h3 class="text-lg font-semibold text-slate-900">Audit History</h3>
+                        </div>
+                        
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-slate-50 border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left font-medium text-slate-700">Date</th>
+                                        <th class="px-4 py-2 text-left font-medium text-slate-700">Score</th>
+                                        <th class="px-4 py-2 text-left font-medium text-slate-700">Pages</th>
+                                        <th class="px-4 py-2 text-left font-medium text-slate-700">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-200">
+                                    <template x-if="!detail.history || detail.history.length === 0">
+                                        <tr>
+                                            <td colspan="4" class="px-4 py-8 text-center text-slate-500">
+                                                No completed audits yet
+                                            </td>
+                                        </tr>
+                                    </template>
+                                    
+                                    <template x-for="audit in detail.history" :key="audit.id">
+                                        <tr class="hover:bg-slate-50">
+                                            <td class="px-4 py-3 text-slate-900" x-text="formatDate(audit.completed_at)"></td>
+                                            <td class="px-4 py-3">
+                                                <span 
+                                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                                    :class="getScoreClass(audit.average_score)"
+                                                    x-text="audit.average_score ? Math.round(audit.average_score) : 'N/A'"
+                                                ></span>
+                                            </td>
+                                            <td class="px-4 py-3 text-slate-600" x-text="audit.pages_analyzed"></td>
+                                            <td class="px-4 py-3">
+                                                <a 
+                                                    :href="`/audit/${audit.id}`" 
+                                                    class="text-primary-600 hover:text-primary-800 font-medium"
+                                                    target="_blank"
+                                                >
+                                                    View Details →
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+
+<script>
+function scheduleApp() {
+    return {
+        loading: false,
+        schedules: [],
+        selectedScheduleId: null,
+        detail: null,
+        chartData: null,
+        chartInstance: null,
+        presets: {},
+        selectedPreset: '',
+        
+        auditTypes: {{ audit_types | tojson }},
+        providers: {{ providers | tojson }},
+        
+        form: {
+            name: '',
+            website: '',
+            sitemap_url: '',
+            audit_type: '',
+            provider: '',
+            model: '',
+            language: 'English',
+            use_perplexity: false,
+            concurrency: 5,
+            schedule_cron: '',
+            summary_provider: '',
+            summary_model: ''
+        },
+        
+        availableModels: [],
+        
+        async init() {
+            await this.loadPresets();
+            await this.loadSchedules();
+            this.startPolling();
+        },
+        
+        async loadPresets() {
+            try {
+                const response = await fetch('/api/schedules/presets');
+                this.presets = await response.json();
+            } catch (error) {
+                console.error('Failed to load presets:', error);
+            }
+        },
+        
+        applyPreset() {
+            if (this.selectedPreset && this.presets[this.selectedPreset]) {
+                this.form.schedule_cron = this.presets[this.selectedPreset].cron;
+            }
+        },
+        
+        updateModels() {
+            const provider = this.providers.find(p => p.name === this.form.provider);
+            this.availableModels = provider ? provider.models : [];
+        },
+        
+        getSummaryModels() {
+            const provider = this.providers.find(p => p.name === this.form.summary_provider);
+            return provider ? provider.models : [];
+        },
+        
+        async createSchedule() {
+            if (this.loading) return;
+            
+            this.loading = true;
+            try {
+                const response = await fetch('/api/schedules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(this.form)
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Failed to create schedule');
+                }
+                
+                const schedule = await response.json();
+                alert(`Schedule "${schedule.name}" created successfully!`);
+                
+                // Reset form
+                this.form = {
+                    name: '',
+                    website: '',
+                    sitemap_url: '',
+                    audit_type: '',
+                    provider: '',
+                    model: '',
+                    language: 'English',
+                    use_perplexity: false,
+                    concurrency: 5,
+                    schedule_cron: '',
+                    summary_provider: '',
+                    summary_model: ''
+                };
+                this.selectedPreset = '';
+                
+                await this.loadSchedules();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        async loadSchedules() {
+            try {
+                const response = await fetch('/api/schedules');
+                this.schedules = await response.json();
+            } catch (error) {
+                console.error('Failed to load schedules:', error);
+            }
+        },
+        
+        async selectSchedule(id) {
+            this.selectedScheduleId = id;
+            await this.loadScheduleDetail(id);
+        },
+        
+        async loadScheduleDetail(id) {
+            try {
+                // Load detail
+                const detailResponse = await fetch(`/api/schedules/${id}`);
+                this.detail = await detailResponse.json();
+                
+                // Load chart data
+                const chartResponse = await fetch(`/api/schedules/${id}/history`);
+                this.chartData = await chartResponse.json();
+                
+                // Render chart
+                await this.$nextTick();
+                this.renderChart();
+            } catch (error) {
+                console.error('Failed to load schedule detail:', error);
+            }
+        },
+        
+        renderChart() {
+            if (!this.chartData || this.chartData.scores.length === 0) return;
+            
+            const ctx = document.getElementById('historyChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (this.chartInstance) {
+                this.chartInstance.destroy();
+            }
+            
+            // Create new chart
+            this.chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: this.chartData.labels,
+                    datasets: [{
+                        label: 'Average Score',
+                        data: this.chartData.scores,
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.3,
+                        fill: true,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: (context) => {
+                                    return `Audit: ${this.chartData.labels[context[0].dataIndex]}`;
+                                },
+                                label: (context) => {
+                                    return `Score: ${context.parsed.y}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: (value) => value
+                            }
+                        }
+                    }
+                }
+            });
+        },
+        
+        async toggleActive(id, isActive) {
+            try {
+                const response = await fetch(`/api/schedules/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                
+                if (!response.ok) throw new Error('Failed to update schedule');
+                
+                await this.loadSchedules();
+                if (this.selectedScheduleId === id) {
+                    await this.loadScheduleDetail(id);
+                }
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        },
+        
+        async runNow(id) {
+            if (!confirm('Run this schedule now?')) return;
+            
+            try {
+                const response = await fetch(`/api/schedules/${id}/run`, {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) throw new Error('Failed to trigger schedule');
+                
+                const result = await response.json();
+                alert(`Schedule triggered! Audit ID: ${result.audit_id}`);
+                
+                await this.loadSchedules();
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        },
+        
+        async deleteSchedule(id) {
+            if (!confirm('Delete this schedule? This will not delete past audits.')) return;
+            
+            try {
+                const response = await fetch(`/api/schedules/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (!response.ok) throw new Error('Failed to delete schedule');
+                
+                this.selectedScheduleId = null;
+                this.detail = null;
+                
+                await this.loadSchedules();
+                alert('Schedule deleted successfully');
+            } catch (error) {
+                alert(`Error: ${error.message}`);
+            }
+        },
+        
+        formatDate(dateStr) {
+            if (!dateStr) return 'Never';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        },
+        
+        getScoreClass(score) {
+            if (!score) return 'bg-slate-100 text-slate-600';
+            if (score >= 80) return 'bg-green-100 text-green-800';
+            if (score >= 60) return 'bg-yellow-100 text-yellow-800';
+            return 'bg-red-100 text-red-800';
+        },
+        
+        startPolling() {
+            setInterval(() => {
+                this.loadSchedules();
+                if (this.selectedScheduleId) {
+                    this.loadScheduleDetail(this.selectedScheduleId);
+                }
+            }, 10000); // Poll every 10 seconds
+        }
+    }
+}
+</script>
+{% endblock %}

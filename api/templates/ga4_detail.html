@@ -1,0 +1,560 @@
+{% extends "base.html" %}
+{% block title %}{{ property.name }} — GA4 Analytics{% endblock %}
+
+{% block content %}
+<div class="space-y-5"
+     x-data="ga4Detail('{{ property.id }}')"
+     x-init="init()">
+
+    <!-- Header -->
+    <div>
+        <nav class="flex mb-3" aria-label="Breadcrumb">
+            <ol class="flex items-center space-x-2 text-sm">
+                <li><a href="/ga4" class="text-slate-400 hover:text-slate-600">GA4 Analytics</a></li>
+                <li><span class="text-slate-300">/</span></li>
+                <li class="text-slate-700 font-medium truncate max-w-xs">{{ property.name }}</li>
+            </ol>
+        </nav>
+        <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">{{ property.name }}</h1>
+                <p class="mt-1 text-sm text-slate-500">
+                    <span class="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{{ property.site_url }}</span>
+                    &bull; {{ property.total_pages | default(0) }} pages
+                    &bull; {{ property.total_channels | default(0) }} channels
+                </p>
+            </div>
+            <!-- Upload shortcut -->
+            <div class="flex gap-2">
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Pages CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+                <label class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-medium text-slate-600 bg-white hover:bg-slate-50 cursor-pointer">
+                    <span>↑ Channels CSV</span>
+                    <input type="file" accept=".csv" class="hidden" @change="quickUpload($event)">
+                </label>
+            </div>
+        </div>
+        <!-- Upload status -->
+        <p x-show="uploadMsg" x-text="uploadMsg"
+           :class="uploadErr ? 'text-red-600' : 'text-emerald-600'"
+           class="text-xs mt-2 font-medium"></p>
+    </div>
+
+    <!-- Tab navigation -->
+    <div class="flex border-b border-slate-200 gap-1">
+        <button @click="switchTab('pages')"
+                :class="activeTab === 'pages'
+                    ? 'border-b-2 border-orange-600 text-orange-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            📄 Pages
+            <span x-show="{{ property.total_pages | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ property.total_pages | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('channels')"
+                :class="activeTab === 'channels'
+                    ? 'border-b-2 border-violet-600 text-violet-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            📊 Channels
+            <span x-show="{{ property.total_channels | default(0) }} > 0"
+                  class="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full font-normal">
+                {{ property.total_channels | default(0) | int | string }}
+            </span>
+        </button>
+        <button @click="switchTab('xref')"
+                :class="activeTab === 'xref'
+                    ? 'border-b-2 border-emerald-600 text-emerald-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔗 Cross-Reference
+        </button>
+    </div>
+
+    <!-- ── PAGES TAB ──────────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'pages'">
+
+        {% if property.total_pages == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No pages data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Pages CSV</strong> from GA4 → Reports → Engagement → Pages and screens → Export.</p>
+        </div>
+        {% else %}
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-3 items-center">
+            <input x-model="pSearch" @input.debounce.400ms="pPage = 0; loadPages()"
+                   type="text" placeholder="Filter pages…"
+                   class="border border-slate-300 rounded-lg px-3 py-2 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-orange-400">
+            <select x-model="pSort" @change="pPage = 0; loadPages()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                <option value="views_desc">Views ↓</option>
+                <option value="sessions_desc">Sessions ↓</option>
+                <option value="users_desc">Users ↓</option>
+                <option value="bounce_desc">Bounce rate ↓</option>
+                <option value="bounce_asc">Bounce rate ↑ (best first)</option>
+                <option value="page_asc">Page A→Z</option>
+            </select>
+            <select x-model.number="pMinSessions" @change="pPage = 0; loadPages()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400">
+                <option value="0">All sessions</option>
+                <option value="10">≥ 10 sessions</option>
+                <option value="100">≥ 100 sessions</option>
+                <option value="500">≥ 500 sessions</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="pTotal.toLocaleString() + ' pages'"></span>
+        </div>
+
+        <div x-show="pLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <div x-show="!pLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Page URL</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Views</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Sessions</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Users</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Eng. time</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Bounce%</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conv.</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="row in pRows" :key="row.id">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-4 py-2.5 max-w-sm">
+                                <a :href="row.page" target="_blank"
+                                   class="text-sky-600 hover:text-sky-800 hover:underline text-xs font-mono break-all"
+                                   x-text="row.page"></a>
+                            </td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.views || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.sessions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-500 tabular-nums" x-text="(row.users || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-600 tabular-nums"
+                                x-text="row.avg_engagement_time !== null ? row.avg_engagement_time + 's' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums"
+                                :class="row.bounce_rate !== null && row.bounce_rate > 60 ? 'text-red-600 font-semibold' : 'text-slate-700'"
+                                x-text="row.bounce_rate !== null ? row.bounce_rate + '%' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-600 tabular-nums"
+                                x-text="row.conversions !== null ? row.conversions : '—'"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="!pLoading && pRows.length === 0">
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">No pages match your filter.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(pPage * pPageSize + 1, pTotal) + '–' + Math.min((pPage + 1) * pPageSize, pTotal) + ' of ' + pTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="pPage--; loadPages()" :disabled="pPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="pPage++; loadPages()" :disabled="(pPage + 1) * pPageSize >= pTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── CHANNELS TAB ──────────────────────────────────────────────────── -->
+    <div x-show="activeTab === 'channels'">
+
+        {% if property.total_channels == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">No channel data yet.</p>
+            <p class="text-slate-400 text-xs mt-1">Upload a <strong>Channels CSV</strong> from GA4 → Reports → Acquisition → Traffic acquisition → Export.</p>
+        </div>
+        {% else %}
+
+        <!-- Controls -->
+        <div class="flex flex-wrap gap-3 items-center">
+            <select x-model="cSort" @change="cPage = 0; loadChannels()"
+                    class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400">
+                <option value="sessions_desc">Sessions ↓</option>
+                <option value="users_desc">Users ↓</option>
+                <option value="conv_desc">Conversions ↓</option>
+                <option value="channel_asc">Channel A→Z</option>
+            </select>
+            <span class="text-sm text-slate-500 ml-auto" x-text="cTotal.toLocaleString() + ' channels'"></span>
+        </div>
+
+        <div x-show="cLoading" class="py-8 text-center text-slate-400 text-sm">Loading…</div>
+
+        <div x-show="!cLoading" class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                        <th class="text-left px-4 py-3 font-semibold text-slate-600">Channel</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Sessions</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Users</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Eng. time</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conversions</th>
+                        <th class="text-right px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Conv. rate%</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="row in cRows" :key="row.id">
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="px-4 py-2.5 font-medium text-slate-800" x-text="row.channel"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums" x-text="(row.sessions || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-500 tabular-nums" x-text="(row.users || 0).toLocaleString()"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-600 tabular-nums"
+                                x-text="row.avg_engagement_time !== null ? row.avg_engagement_time + 's' : '—'"></td>
+                            <td class="px-4 py-2.5 text-right text-slate-700 tabular-nums"
+                                x-text="row.conversions !== null ? row.conversions : '—'"></td>
+                            <td class="px-4 py-2.5 text-right tabular-nums"
+                                :class="row.conversion_rate !== null && row.conversion_rate > 5 ? 'text-emerald-700 font-semibold' : 'text-slate-600'"
+                                x-text="row.conversion_rate !== null ? row.conversion_rate + '%' : '—'"></td>
+                        </tr>
+                    </template>
+                    <tr x-show="!cLoading && cRows.length === 0">
+                        <td colspan="6" class="px-4 py-8 text-center text-slate-400">No channel data.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="flex items-center justify-between text-sm text-slate-500">
+            <span x-text="'Showing ' + Math.min(cPage * cPageSize + 1, cTotal) + '–' + Math.min((cPage + 1) * cPageSize, cTotal) + ' of ' + cTotal.toLocaleString()"></span>
+            <div class="flex gap-2">
+                <button @click="cPage--; loadChannels()" :disabled="cPage === 0"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">← Prev</button>
+                <button @click="cPage++; loadChannels()" :disabled="(cPage + 1) * cPageSize >= cTotal"
+                        class="px-3 py-1 border border-slate-300 rounded-md disabled:opacity-40 hover:bg-slate-50 transition-colors">Next →</button>
+            </div>
+        </div>
+
+        {% endif %}
+    </div>
+
+    <!-- ── CROSS-REFERENCE TAB ──────────────────────────────────────────── -->
+    <div x-show="activeTab === 'xref'">
+
+        {% if property.total_pages == 0 %}
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+            <p class="text-slate-500 text-sm">Upload pages data first to see cross-reference insights.</p>
+        </div>
+        {% else %}
+
+        <div x-show="xrefLoading" class="py-12 text-center text-slate-400 text-sm">Computing cross-reference…</div>
+
+        <div x-show="!xrefLoading && xref" class="space-y-6">
+
+            <!-- Summary strip -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-slate-700" x-text="(xref?.summary?.total_ga4_pages || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">GA4 pages</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-emerald-700" x-text="(xref?.summary?.pages_with_all_data || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">Full data (GA4+GSC+Audit)</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-amber-600" x-text="(xref?.summary?.pages_no_audit || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">No audit score</div>
+                </div>
+                <div class="bg-white border border-slate-200 rounded-lg px-3 py-3 text-center">
+                    <div class="text-xl font-bold text-red-600" x-text="(xref?.summary?.high_bounce_count || 0).toLocaleString()"></div>
+                    <div class="text-[11px] text-slate-500 mt-0.5">High bounce (&gt;60%)</div>
+                </div>
+            </div>
+
+            <!-- ① Pages with full data (GA4 + GSC + Audit) -->
+            <div x-show="xref?.pages_with_all_data?.length > 0" class="bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-emerald-50 border-b border-emerald-200 flex items-center gap-2">
+                    <span class="text-base">✅</span>
+                    <div>
+                        <h3 class="font-semibold text-emerald-900 text-sm">Pages with GA4 + GSC + Audit data</h3>
+                        <p class="text-xs text-emerald-700 mt-0.5">Full picture: traffic + organic performance + audit score in one view.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.pages_with_all_data?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Sessions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Bounce%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Pos.</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Audit</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.pages_with_all_data || []).slice(0, xrefFullShow)" :key="i">
+                                <tr class="hover:bg-emerald-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.sessions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums"
+                                        :class="row.bounce_rate !== null && row.bounce_rate > 60 ? 'text-red-600 font-semibold' : 'text-slate-700'"
+                                        x-text="row.bounce_rate !== null ? row.bounce_rate + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600" x-text="row.position || '—'"></td>
+                                    <td class="px-4 py-2 text-right">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold"
+                                              :class="{
+                                                  'bg-emerald-100 text-emerald-800': row.audit_score >= 75,
+                                                  'bg-amber-100 text-amber-800':    row.audit_score >= 50 && row.audit_score < 75,
+                                                  'bg-red-100 text-red-800':        row.audit_score < 50,
+                                              }"
+                                              x-text="row.audit_score + '/100'"></span>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.pages_with_all_data?.length || 0) > xrefFullShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefFullShow += 50"
+                            class="text-sm text-emerald-600 hover:text-emerald-800 font-medium">
+                        Show more (<span x-text="(xref?.pages_with_all_data?.length || 0) - xrefFullShow"></span> remaining)
+                    </button>
+                </div>
+            </div>
+
+            <!-- ② High bounce pages -->
+            <div x-show="xref?.high_bounce_pages?.length > 0" class="bg-white rounded-xl border border-red-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
+                    <span class="text-base">📉</span>
+                    <div>
+                        <h3 class="font-semibold text-red-900 text-sm">High bounce rate pages (&gt;60% bounce, ≥50 sessions)</h3>
+                        <p class="text-xs text-red-700 mt-0.5">Users are leaving quickly. Review content relevance, page speed, and UX.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-red-200 text-red-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.high_bounce_pages?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Sessions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Bounce%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Views</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Eng. time</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.high_bounce_pages || []).slice(0, xrefBounceShow)" :key="i">
+                                <tr class="hover:bg-red-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.sessions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums font-semibold text-red-600" x-text="row.bounce_rate !== null ? row.bounce_rate + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-500" x-text="(row.views || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600"
+                                        x-text="row.avg_engagement_time !== null ? row.avg_engagement_time + 's' : '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.high_bounce_pages?.length || 0) > xrefBounceShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefBounceShow += 50"
+                            class="text-sm text-red-600 hover:text-red-800 font-medium">Show more</button>
+                </div>
+            </div>
+
+            <!-- ③ Pages with GSC but no audit -->
+            <div x-show="xref?.pages_no_audit?.length > 0" class="bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                <div class="px-5 py-3 bg-amber-50 border-b border-amber-200 flex items-center gap-2">
+                    <span class="text-base">⚠️</span>
+                    <div>
+                        <h3 class="font-semibold text-amber-900 text-sm">Pages with GA4+GSC data but no audit score</h3>
+                        <p class="text-xs text-amber-700 mt-0.5">Real traffic, known search performance, but never audited. Run an audit to complete the picture.</p>
+                    </div>
+                    <span class="ml-auto text-xs font-medium bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full"
+                          x-text="(xref?.pages_no_audit?.length || 0) + ' pages'"></span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-slate-50 border-b border-slate-100">
+                            <tr>
+                                <th class="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Sessions</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Bounce%</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">Clicks</th>
+                                <th class="text-right px-4 py-2 text-xs font-semibold text-slate-500">GSC Pos.</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="(row, i) in (xref?.pages_no_audit || []).slice(0, xrefNoAuditShow)" :key="i">
+                                <tr class="hover:bg-amber-50 transition-colors">
+                                    <td class="px-4 py-2 max-w-xs">
+                                        <a :href="row.page" target="_blank"
+                                           class="text-sky-600 hover:underline text-xs font-mono break-all" x-text="row.page"></a>
+                                    </td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.sessions || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums"
+                                        :class="row.bounce_rate !== null && row.bounce_rate > 60 ? 'text-red-600 font-semibold' : 'text-slate-600'"
+                                        x-text="row.bounce_rate !== null ? row.bounce_rate + '%' : '—'"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-700" x-text="(row.clicks || 0).toLocaleString()"></td>
+                                    <td class="px-4 py-2 text-right tabular-nums text-slate-600" x-text="row.position || '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+                <div x-show="(xref?.pages_no_audit?.length || 0) > xrefNoAuditShow"
+                     class="px-5 py-3 border-t border-slate-100 text-center">
+                    <button @click="xrefNoAuditShow += 50"
+                            class="text-sm text-amber-600 hover:text-amber-800 font-medium">Show more</button>
+                </div>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!xref?.pages_with_all_data?.length && !xref?.high_bounce_pages?.length && !xref?.pages_no_audit?.length"
+                 class="bg-slate-50 border border-slate-200 rounded-xl p-8 text-center">
+                <p class="text-slate-500 text-sm">No cross-reference matches found.</p>
+                <p class="text-slate-400 text-xs mt-1">Make sure you have GSC data and audit results to cross-reference against.</p>
+            </div>
+
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+<script>
+function ga4Detail(propertyId) {
+    return {
+        propertyId,
+        activeTab: 'pages',
+
+        // Pages state
+        pRows:       [],
+        pTotal:      0,
+        pPage:       0,
+        pPageSize:   50,
+        pSearch:     '',
+        pSort:       'views_desc',
+        pMinSessions: 0,
+        pLoading:    false,
+
+        // Channels state
+        cRows:     [],
+        cTotal:    0,
+        cPage:     0,
+        cPageSize: 50,
+        cSort:     'sessions_desc',
+        cLoading:  false,
+
+        // Cross-reference state
+        xref:        null,
+        xrefLoading: false,
+
+        // "Show more" caps per section
+        xrefFullShow:    20,
+        xrefBounceShow:  20,
+        xrefNoAuditShow: 20,
+
+        // Upload
+        uploadMsg: '',
+        uploadErr: false,
+
+        async init() {
+            await this.loadPages();
+        },
+
+        async switchTab(tab) {
+            this.activeTab = tab;
+            if (tab === 'pages'    && !this.pRows.length)    await this.loadPages();
+            if (tab === 'channels' && !this.cRows.length)    await this.loadChannels();
+            if (tab === 'xref'    && !this.xref)             await this.loadXref();
+        },
+
+        async loadPages() {
+            this.pLoading = true;
+            const params = new URLSearchParams({
+                q:            this.pSearch,
+                sort:         this.pSort,
+                page:         this.pPage,
+                page_size:    this.pPageSize,
+                min_sessions: this.pMinSessions,
+            });
+            const res  = await fetch(`/api/ga4/properties/${this.propertyId}/pages?${params}`);
+            const data = await res.json();
+            this.pRows  = data.items;
+            this.pTotal = data.total;
+            this.pLoading = false;
+        },
+
+        async loadChannels() {
+            this.cLoading = true;
+            const params = new URLSearchParams({
+                sort:      this.cSort,
+                page:      this.cPage,
+                page_size: this.cPageSize,
+            });
+            const res  = await fetch(`/api/ga4/properties/${this.propertyId}/channels?${params}`);
+            const data = await res.json();
+            this.cRows  = data.items;
+            this.cTotal = data.total;
+            this.cLoading = false;
+        },
+
+        async loadXref() {
+            this.xrefLoading = true;
+            const res  = await fetch(`/api/ga4/properties/${this.propertyId}/cross-reference`);
+            this.xref  = await res.json();
+            this.xrefLoading = false;
+        },
+
+        async quickUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            this.uploadMsg = '';
+            this.uploadErr = false;
+            const fd = new FormData();
+            fd.append('file', file);
+            try {
+                const res  = await fetch(`/api/ga4/properties/${this.propertyId}/upload`, {
+                    method: 'POST',
+                    body:   fd,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    this.uploadMsg = data.detail || 'Upload failed';
+                    this.uploadErr = true;
+                } else {
+                    this.uploadMsg = `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported`;
+                    if (data.report_type === 'pages') {
+                        this.pPage = 0;
+                        await this.loadPages();
+                    } else {
+                        this.cPage = 0;
+                        await this.loadChannels();
+                    }
+                    this.xref = null;
+                }
+            } catch(e) {
+                this.uploadMsg = 'Network error during upload';
+                this.uploadErr = true;
+            } finally {
+                event.target.value = '';
+            }
+        },
+    };
+}
+</script>
+{% endblock %}

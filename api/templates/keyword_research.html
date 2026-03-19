@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Keyword Research{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="kwResearch()" x-init="init()">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Keyword Research</h1>
+            <p class="mt-1 text-sm text-slate-500">
+                Expand seed keywords with DataForSEO, then detect questions with AI — ready for FAQ building.
+            </p>
+        </div>
+        <button @click="showForm = !showForm"
+                class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm">
+            <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            New Research
+        </button>
+    </div>
+
+    <!-- DataForSEO not configured warning -->
+    {% if not dataforseo_ready %}
+    <div class="bg-amber-50 border border-amber-200 rounded-lg px-5 py-4 flex items-start gap-3">
+        <span class="text-amber-500 text-lg mt-0.5">⚠️</span>
+        <div>
+            <p class="text-sm font-semibold text-amber-800">DataForSEO credentials not configured</p>
+            <p class="text-xs text-amber-700 mt-0.5">
+                Add <code class="bg-amber-100 px-1 rounded">DATAFORSEO_LOGIN</code> and
+                <code class="bg-amber-100 px-1 rounded">DATAFORSEO_PASSWORD</code> to your
+                <code class="bg-amber-100 px-1 rounded">.env</code> file.
+                Get credentials at <a href="https://app.dataforseo.com/register" target="_blank"
+                class="underline font-medium">app.dataforseo.com</a>.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- New Research Form -->
+    <div x-show="showForm" x-cloak
+         class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-5">
+        <h2 class="text-base font-semibold text-slate-900">New Research Session</h2>
+
+        <!-- Session name -->
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Session name</label>
+            <input type="text" x-model="form.name" placeholder="e.g. SEO tools – Romania Q1"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+        </div>
+
+        <!-- Seed keywords tag input -->
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+                Seed keywords
+                <span class="font-normal text-slate-400 ml-1">(press Enter or comma to add, max 20)</span>
+            </label>
+            <!-- Tag chips -->
+            <div class="flex flex-wrap gap-1.5 mb-2">
+                <template x-for="(kw, idx) in form.seeds" :key="idx">
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-50 border border-primary-200 text-primary-800 text-xs rounded-full font-medium">
+                        <span x-text="kw"></span>
+                        <button @click="removeSeed(idx)" class="text-primary-400 hover:text-primary-700 leading-none">&times;</button>
+                    </span>
+                </template>
+            </div>
+            <div class="flex gap-2">
+                <input type="text" x-model="seedInput"
+                       @keydown.enter.prevent="addSeed()"
+                       @keydown.comma.prevent="addSeed()"
+                       placeholder="Type a keyword and press Enter…"
+                       class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                <button @click="addSeed()" type="button"
+                        class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-lg transition-colors">
+                    Add
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <!-- Location -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Location</label>
+                <select x-model="form.location"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    {% for code, loc in locations.items() %}
+                    <option value="{{ code }}" {% if code == 'RO' %}selected{% endif %}>
+                        {{ loc.language_name }} ({{ code }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Pass 2 limit -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">
+                    Pass 2 depth
+                    <span class="font-normal text-slate-400 text-xs ml-1">top-N keywords to re-expand</span>
+                </label>
+                <input type="number" x-model.number="form.pass2_limit" min="10" max="200" step="10"
+                       class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+            </div>
+
+            <!-- LLM Provider for question detection -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">LLM for question detection</label>
+                <select x-model="form.llm_provider"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
+                    <option value="anthropic">Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
+                    <option value="google">Google Gemini{% if not providers.google %} — key not set{% endif %}</option>
+                    <option value="openai">OpenAI (GPT){% if not providers.openai %} — key not set{% endif %}</option>
+                    <option value="mistral">Mistral{% if not providers.mistral %} — key not set{% endif %}</option>
+                    <option value="perplexity">Perplexity{% if not providers.perplexity %} — key not set{% endif %}</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Submit row -->
+        <div class="flex items-center gap-3 pt-1">
+            <button @click="startSession()" :disabled="submitting || form.seeds.length === 0"
+                    class="inline-flex items-center px-6 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors">
+                <svg x-show="submitting" class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span x-text="submitting ? 'Starting…' : 'Start Research'"></span>
+            </button>
+            <button @click="showForm = false" type="button"
+                    class="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+            <span x-show="formError" x-text="formError" class="text-sm text-red-600"></span>
+        </div>
+    </div>
+
+    <!-- Sessions list -->
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-700">Research Sessions</h2>
+            <button @click="loadSessions()" class="text-xs text-slate-400 hover:text-slate-600 transition-colors">↻ Refresh</button>
+        </div>
+
+        <template x-if="sessions.length === 0 && !loading">
+            <div class="px-6 py-12 text-center">
+                <div class="text-4xl mb-3">🔎</div>
+                <p class="text-sm text-slate-500">No research sessions yet. Create one above.</p>
+            </div>
+        </template>
+
+        <template x-if="loading">
+            <div class="px-6 py-8 text-center text-sm text-slate-400">Loading…</div>
+        </template>
+
+        <div class="divide-y divide-slate-100">
+            <template x-for="s in sessions" :key="s.id">
+                <div class="px-6 py-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+                    <!-- Status badge -->
+                    <div class="flex-shrink-0">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              :class="{
+                                'bg-emerald-100 text-emerald-700': s.status === 'completed',
+                                'bg-sky-100 text-sky-700 animate-pulse': s.status === 'running',
+                                'bg-amber-100 text-amber-700': s.status === 'pending',
+                                'bg-red-100 text-red-700': s.status === 'failed',
+                              }"
+                              x-text="s.status">
+                        </span>
+                    </div>
+
+                    <!-- Main info -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <a :href="`/keyword-research/${s.id}`"
+                               class="text-sm font-semibold text-slate-900 hover:text-primary-600 truncate"
+                               x-text="s.name"></a>
+                            <span class="text-xs text-slate-400" x-text="s.language_name"></span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-1 mt-1">
+                            <template x-for="kw in s.seed_keywords.slice(0,5)" :key="kw">
+                                <span class="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-xs rounded" x-text="kw"></span>
+                            </template>
+                            <span x-show="s.seed_keywords.length > 5"
+                                  class="text-xs text-slate-400"
+                                  x-text="`+${s.seed_keywords.length - 5} more`"></span>
+                        </div>
+                        <!-- Progress bar (running) -->
+                        <div x-show="s.status === 'running'" class="mt-2">
+                            <div class="w-full bg-slate-100 rounded-full h-1.5">
+                                <div class="bg-sky-500 h-1.5 rounded-full transition-all duration-500"
+                                     :style="`width: ${s.progress}%`"></div>
+                            </div>
+                            <span class="text-xs text-slate-400 mt-0.5 block" x-text="s.progress_message || 'Processing…'"></span>
+                        </div>
+                        <!-- Error -->
+                        <p x-show="s.status === 'failed'" class="text-xs text-red-500 mt-1" x-text="s.error"></p>
+                    </div>
+
+                    <!-- Stats -->
+                    <div class="flex-shrink-0 text-right hidden sm:block">
+                        <div class="text-sm font-semibold text-slate-800" x-text="s.total_keywords ? s.total_keywords.toLocaleString() : '—'"></div>
+                        <div class="text-xs text-slate-400">keywords</div>
+                    </div>
+                    <div class="flex-shrink-0 text-right hidden sm:block">
+                        <div class="text-sm font-semibold text-emerald-700" x-text="s.total_questions ? s.total_questions.toLocaleString() : '—'"></div>
+                        <div class="text-xs text-slate-400">questions</div>
+                    </div>
+                    <div class="flex-shrink-0 text-right hidden md:block">
+                        <div class="text-xs text-slate-400" x-text="s.created_at ? s.created_at.slice(0,10) : ''"></div>
+                        <div class="text-xs text-slate-300 uppercase text-[10px]" x-text="s.llm_provider"></div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex-shrink-0 flex items-center gap-2">
+                        <a :href="`/keyword-research/${s.id}`"
+                           class="text-primary-600 hover:text-primary-900 text-sm font-medium px-2">
+                            View
+                        </a>
+                        <button @click="deleteSession(s.id, s.name)"
+                                class="text-red-400 hover:text-red-700 text-sm px-2">
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function kwResearch() {
+    return {
+        showForm:   false,
+        submitting: false,
+        formError:  '',
+        loading:    true,
+        sessions:   [],
+        seedInput:  '',
+        form: {
+            name:         '',
+            seeds:        [],
+            location:     'RO',
+            pass2_limit:  50,
+            llm_provider: '{% if providers.anthropic %}anthropic{% elif providers.google %}google{% elif providers.openai %}openai{% else %}mistral{% endif %}',
+        },
+        _pollTimer: null,
+
+        async init() {
+            await this.loadSessions();
+            // Auto-poll every 4s if any session is running
+            this._pollTimer = setInterval(() => {
+                if (this.sessions.some(s => s.status === 'running' || s.status === 'pending')) {
+                    this.loadSessions();
+                }
+            }, 4000);
+        },
+
+        async loadSessions() {
+            try {
+                const resp = await fetch('/api/keyword-research/sessions');
+                this.sessions = await resp.json();
+            } catch { /* silent */ } finally {
+                this.loading = false;
+            }
+        },
+
+        addSeed() {
+            const val = this.seedInput.trim().replace(/,$/, '').trim();
+            if (val && !this.form.seeds.includes(val) && this.form.seeds.length < 20) {
+                this.form.seeds.push(val);
+            }
+            this.seedInput = '';
+        },
+
+        removeSeed(idx) { this.form.seeds.splice(idx, 1); },
+
+        async startSession() {
+            this.formError = '';
+            if (!this.form.name.trim()) { this.formError = 'Session name is required.'; return; }
+            if (this.form.seeds.length === 0) { this.formError = 'Add at least one seed keyword.'; return; }
+
+            this.submitting = true;
+            try {
+                const resp = await fetch('/api/keyword-research/sessions', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        name:          this.form.name,
+                        seed_keywords: this.form.seeds,
+                        location:      this.form.location,
+                        pass2_limit:   this.form.pass2_limit,
+                        llm_provider:  this.form.llm_provider,
+                    }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.showForm = false;
+                    this.form = { name: '', seeds: [], location: 'RO', pass2_limit: 50, llm_provider: this.form.llm_provider };
+                    await this.loadSessions();
+                    window.location.href = `/keyword-research/${data.session_id}`;
+                } else {
+                    this.formError = data.detail || 'Failed to start session.';
+                }
+            } catch (e) {
+                this.formError = 'Network error: ' + e.message;
+            } finally {
+                this.submitting = false;
+            }
+        },
+
+        async deleteSession(id, name) {
+            if (!confirm(`Delete research session "${name}" and all its keywords?`)) return;
+            await fetch(`/api/keyword-research/sessions/${id}`, { method: 'DELETE' });
+            await this.loadSessions();
+        },
+    };
+}
+</script>
+{% endblock %}
