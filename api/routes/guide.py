@@ -393,7 +393,19 @@ async def get_guide(guide_id: int):
         }
         if guide.guide_json:
             try:
-                result["guide_json"] = json.loads(guide.guide_json)
+                gj = json.loads(guide.guide_json)
+                # Repair any {"raw": "..."} entries stored when LLM parsing failed
+                if isinstance(gj, dict) and "results" in gj:
+                    try:
+                        from json_repair import repair_json
+                        for key, val in gj["results"].items():
+                            if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
+                                repaired = repair_json(val["raw"], return_objects=True)
+                                if isinstance(repaired, dict) and len(repaired) > 1:
+                                    gj["results"][key] = repaired
+                    except Exception:
+                        pass
+                result["guide_json"] = gj
             except json.JSONDecodeError:
                 result["guide_json"] = None
 
