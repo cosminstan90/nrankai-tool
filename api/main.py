@@ -1282,7 +1282,7 @@ async def gsc_page_optimize_view(
                     if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
                         try:
                             repaired = repair_json(val["raw"], return_objects=True)
-                            if isinstance(repaired, dict) and len(repaired) > 1:
+                            if isinstance(repaired, dict) and repaired:
                                 gj["results"][key] = repaired
                         except Exception:
                             pass

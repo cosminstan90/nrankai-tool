@@ -401,7 +401,7 @@ async def get_guide(guide_id: int):
                         for key, val in gj["results"].items():
                             if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
                                 repaired = repair_json(val["raw"], return_objects=True)
-                                if isinstance(repaired, dict) and len(repaired) > 1:
+                                if isinstance(repaired, dict) and repaired:
                                     gj["results"][key] = repaired
                     except Exception:
                         pass
