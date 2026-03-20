@@ -1272,14 +1272,27 @@ async def gsc_page_optimize_view(
         .limit(10)
     )).scalars().all()
 
+    def _repair_guide_json(raw_json_str):
+        """Parse guide_json and repair any {"raw": "..."} audit entries using json_repair."""
+        try:
+            gj = _json.loads(raw_json_str)
+            if isinstance(gj, dict) and "results" in gj:
+                from json_repair import repair_json
+                for key, val in gj["results"].items():
+                    if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
+                        try:
+                            repaired = repair_json(val["raw"], return_objects=True)
+                            if isinstance(repaired, dict) and len(repaired) > 1:
+                                gj["results"][key] = repaired
+                        except Exception:
+                            pass
+            return gj
+        except Exception:
+            return None
+
     past_guides = []
     for g in past_guides_rows:
-        gj = None
-        if g.guide_json:
-            try:
-                gj = _json.loads(g.guide_json)
-            except Exception:
-                pass
+        gj = _repair_guide_json(g.guide_json) if g.guide_json else None
         past_guides.append({
             "id":         g.id,
             "provider":   g.provider,
@@ -1319,12 +1332,7 @@ async def standalone_optimize_page(
 
     past_guides = []
     for g in past_guides_rows:
-        gj = None
-        if g.guide_json:
-            try:
-                gj = _json.loads(g.guide_json)
-            except Exception:
-                pass
+        gj = _repair_guide_json(g.guide_json) if g.guide_json else None
         past_guides.append({
             "id":         g.id,
             "url":        g.url,
