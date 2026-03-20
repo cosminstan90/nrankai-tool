@@ -24,23 +24,29 @@ apt install -y python3.12 python3.12-venv python3.12-dev build-essential
 
 ---
 
-## 3. Upload & install the app
+## 3. Clone the repo & install the app
 
 ```bash
 # SSH into the server as the site user
 su - nrankai
 
-# Upload geo_tool_deploy.zip via SFTP/SCP, then:
+# Add your SSH deploy key to GitHub (one-time setup):
+ssh-keygen -t ed25519 -C "server@app.nrankai.com" -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+# → Copy this and add it to GitHub: Settings → SSH Keys → New SSH Key
+
+# Test the connection
+ssh -T git@github.com
+
+# Clone the repo
 cd /home/nrankai/htdocs/app.nrankai.com
-unzip geo_tool_deploy.zip
-rm geo_tool_deploy.zip
+git clone git@github.com:cosminstan90/nrankai-tool.git .
 
 # Create virtualenv and install dependencies
 python3.12 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r api/requirements.txt
-pip install google-auth-oauthlib google-api-python-client httpx
 ```
 
 ---
@@ -188,8 +194,12 @@ Then open `https://app.nrankai.com` in your browser — Basic Auth prompt should
 su - nrankai
 cd /home/nrankai/htdocs/app.nrankai.com
 
-# Upload new zip and extract (or use git pull if you set up a repo)
-unzip -o geo_tool_deploy.zip
+# Pull latest changes from GitHub
+git pull origin master
+
+# If new dependencies were added:
+source venv/bin/activate
+pip install -r api/requirements.txt
 
 # Restart service to pick up changes
 sudo systemctl restart geo-tool
