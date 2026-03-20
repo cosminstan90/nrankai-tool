@@ -9,39 +9,136 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-900">Keyword Research</h1>
             <p class="mt-1 text-sm text-slate-500">
-                Expand seed keywords with DataForSEO, then detect questions with AI — ready for FAQ building.
+                Import from Ahrefs / Semrush / any CSV, or expand seeds via DataForSEO — then cluster, classify intent, and detect questions with AI.
             </p>
         </div>
-        <button @click="showForm = !showForm"
-                class="inline-flex items-center px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors shadow-sm">
-            <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-            </svg>
-            New Research
-        </button>
+        <div class="flex gap-2">
+            <button @click="openImport()"
+                    class="inline-flex items-center px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors shadow-sm">
+                ↑ Import CSV
+            </button>
+            <button @click="openExpand()"
+                    :class="dataforseoReady ? 'bg-primary-600 hover:bg-primary-700' : 'bg-slate-300 cursor-not-allowed'"
+                    class="inline-flex items-center px-4 py-2 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+                    :disabled="!dataforseoReady"
+                    :title="dataforseoReady ? 'Expand seeds via DataForSEO' : 'DataForSEO credentials not configured'">
+                <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                Expand Seeds
+            </button>
+        </div>
     </div>
 
-    <!-- DataForSEO not configured warning -->
+    <!-- DataForSEO not configured — softer info banner -->
     {% if not dataforseo_ready %}
-    <div class="bg-amber-50 border border-amber-200 rounded-lg px-5 py-4 flex items-start gap-3">
-        <span class="text-amber-500 text-lg mt-0.5">⚠️</span>
-        <div>
-            <p class="text-sm font-semibold text-amber-800">DataForSEO credentials not configured</p>
-            <p class="text-xs text-amber-700 mt-0.5">
-                Add <code class="bg-amber-100 px-1 rounded">DATAFORSEO_LOGIN</code> and
-                <code class="bg-amber-100 px-1 rounded">DATAFORSEO_PASSWORD</code> to your
-                <code class="bg-amber-100 px-1 rounded">.env</code> file.
-                Get credentials at <a href="https://app.dataforseo.com/register" target="_blank"
-                class="underline font-medium">app.dataforseo.com</a>.
-            </p>
-        </div>
+    <div class="bg-slate-50 border border-slate-200 rounded-lg px-5 py-3 flex items-start gap-3">
+        <span class="text-slate-400 text-base mt-0.5">ℹ️</span>
+        <p class="text-xs text-slate-500">
+            <strong class="text-slate-600">DataForSEO not configured</strong> — keyword expansion is disabled,
+            but you can still <strong>Import CSV</strong> from any tool and run LLM analysis.
+            Add <code class="bg-slate-100 px-1 rounded">DATAFORSEO_LOGIN</code> / <code class="bg-slate-100 px-1 rounded">DATAFORSEO_PASSWORD</code> to enable expansion.
+        </p>
     </div>
     {% endif %}
 
-    <!-- New Research Form -->
-    <div x-show="showForm" x-cloak
+    <!-- ── IMPORT FORM ─────────────────────────────────────────────────────── -->
+    <div x-show="activeForm === 'import'" x-cloak
+         class="bg-white rounded-xl shadow-sm border border-emerald-200 p-6 space-y-5">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm">↑</div>
+            <div>
+                <h2 class="text-base font-semibold text-slate-900">Import Keywords</h2>
+                <p class="text-xs text-slate-500">Paste from Ahrefs, Semrush, Google Keyword Planner, or any tab/comma separated spreadsheet.</p>
+            </div>
+        </div>
+
+        <!-- Session name -->
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">Session name</label>
+            <input type="text" x-model="imp.name" placeholder="e.g. Client X — Ahrefs export March"
+                   class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+        </div>
+
+        <!-- Paste area -->
+        <div>
+            <label class="block text-sm font-medium text-slate-700 mb-1">
+                Paste keyword data
+                <span class="font-normal text-slate-400 ml-1 text-xs">— include the header row if present</span>
+            </label>
+            <textarea x-model="imp.raw" rows="10" @input="previewImport()"
+                      placeholder="Keyword&#9;Volume&#9;CPC&#9;Difficulty
+seo tools&#9;5400&#9;3.20&#9;45
+keyword research&#9;2900&#9;2.10&#9;38
+..."
+                      class="w-full border border-slate-300 rounded-lg px-3 py-2 text-xs font-mono focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-none"></textarea>
+            <p class="text-xs text-slate-400 mt-1">Supports tab-separated (Ahrefs/Semrush) and comma-separated (CSV). Plain keyword lists (one per line) also work.</p>
+        </div>
+
+        <!-- Preview -->
+        <div x-show="imp.preview.length > 0" class="overflow-x-auto rounded-lg border border-slate-200">
+            <table class="min-w-full text-xs">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-slate-500 font-medium">Keyword</th>
+                        <th class="px-3 py-2 text-right text-slate-500 font-medium">Volume</th>
+                        <th class="px-3 py-2 text-right text-slate-500 font-medium">CPC</th>
+                        <th class="px-3 py-2 text-right text-slate-500 font-medium">Difficulty</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="(row, i) in imp.preview.slice(0, 8)" :key="i">
+                        <tr>
+                            <td class="px-3 py-1.5 text-slate-800" x-text="row.keyword"></td>
+                            <td class="px-3 py-1.5 text-right font-mono text-slate-600" x-text="row.volume ?? '—'"></td>
+                            <td class="px-3 py-1.5 text-right font-mono text-slate-500" x-text="row.cpc ?? '—'"></td>
+                            <td class="px-3 py-1.5 text-right font-mono text-slate-500" x-text="row.difficulty ?? '—'"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <p class="px-3 py-1.5 text-[10px] text-slate-400 bg-slate-50 border-t border-slate-100"
+               x-text="`${imp.preview.length} keyword${imp.preview.length !== 1 ? 's' : ''} detected${imp.preview.length > 8 ? ' (showing first 8)' : ''}`"></p>
+        </div>
+
+        <!-- LLM provider -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">LLM for analysis</label>
+                <select x-model="imp.llm_provider"
+                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-transparent">
+                    <option value="anthropic">Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
+                    <option value="google">Google Gemini{% if not providers.google %} — key not set{% endif %}</option>
+                    <option value="openai">OpenAI (GPT){% if not providers.openai %} — key not set{% endif %}</option>
+                    <option value="mistral">Mistral{% if not providers.mistral %} — key not set{% endif %}</option>
+                    <option value="perplexity">Perplexity{% if not providers.perplexity %} — key not set{% endif %}</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <p class="text-xs text-slate-400">The LLM will classify <strong>intent</strong>, assign <strong>topic clusters</strong>, detect <strong>questions</strong>, and score <strong>priority</strong> for every keyword.</p>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="flex items-center gap-3 pt-1">
+            <button @click="startImport()" :disabled="submitting || imp.preview.length === 0"
+                    class="inline-flex items-center px-6 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors">
+                <svg x-show="submitting" class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span x-text="submitting ? 'Importing…' : `Import & Analyse ${imp.preview.length} keywords`"></span>
+            </button>
+            <button @click="activeForm = null" type="button"
+                    class="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+            <span x-show="formError" x-text="formError" class="text-sm text-red-600"></span>
+        </div>
+    </div>
+
+    <!-- ── EXPAND SEEDS FORM (DataForSEO) ─────────────────────────────────── -->
+    <div x-show="activeForm === 'expand'" x-cloak
          class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-5">
-        <h2 class="text-base font-semibold text-slate-900">New Research Session</h2>
+        <h2 class="text-base font-semibold text-slate-900">Expand Seed Keywords</h2>
 
         <!-- Session name -->
         <div>
@@ -56,7 +153,6 @@
                 Seed keywords
                 <span class="font-normal text-slate-400 ml-1">(press Enter or comma to add, max 20)</span>
             </label>
-            <!-- Tag chips -->
             <div class="flex flex-wrap gap-1.5 mb-2">
                 <template x-for="(kw, idx) in form.seeds" :key="idx">
                     <span class="inline-flex items-center gap-1 px-2.5 py-1 bg-primary-50 border border-primary-200 text-primary-800 text-xs rounded-full font-medium">
@@ -72,39 +168,30 @@
                        placeholder="Type a keyword and press Enter…"
                        class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                 <button @click="addSeed()" type="button"
-                        class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-lg transition-colors">
-                    Add
-                </button>
+                        class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm rounded-lg transition-colors">Add</button>
             </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <!-- Location -->
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Location</label>
                 <select x-model="form.location"
                         class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                     {% for code, loc in locations.items() %}
-                    <option value="{{ code }}" {% if code == 'RO' %}selected{% endif %}>
-                        {{ loc.language_name }} ({{ code }})
-                    </option>
+                    <option value="{{ code }}" {% if code == 'RO' %}selected{% endif %}>{{ loc.language_name }} ({{ code }})</option>
                     {% endfor %}
                 </select>
             </div>
-
-            <!-- Pass 2 limit -->
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">
                     Pass 2 depth
-                    <span class="font-normal text-slate-400 text-xs ml-1">top-N keywords to re-expand</span>
+                    <span class="font-normal text-slate-400 text-xs ml-1">top-N to re-expand</span>
                 </label>
                 <input type="number" x-model.number="form.pass2_limit" min="10" max="200" step="10"
                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-primary-500 focus:border-transparent">
             </div>
-
-            <!-- LLM Provider for question detection -->
             <div>
-                <label class="block text-sm font-medium text-slate-700 mb-1">LLM for question detection</label>
+                <label class="block text-sm font-medium text-slate-700 mb-1">LLM provider</label>
                 <select x-model="form.llm_provider"
                         class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent">
                     <option value="anthropic">Anthropic (Claude){% if not providers.anthropic %} — key not set{% endif %}</option>
@@ -116,7 +203,6 @@
             </div>
         </div>
 
-        <!-- Submit row -->
         <div class="flex items-center gap-3 pt-1">
             <button @click="startSession()" :disabled="submitting || form.seeds.length === 0"
                     class="inline-flex items-center px-6 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors">
@@ -126,7 +212,7 @@
                 </svg>
                 <span x-text="submitting ? 'Starting…' : 'Start Research'"></span>
             </button>
-            <button @click="showForm = false" type="button"
+            <button @click="activeForm = null" type="button"
                     class="px-4 py-2 text-sm text-slate-500 hover:text-slate-700">Cancel</button>
             <span x-show="formError" x-text="formError" class="text-sm text-red-600"></span>
         </div>
@@ -230,12 +316,16 @@
 <script>
 function kwResearch() {
     return {
-        showForm:   false,
-        submitting: false,
-        formError:  '',
-        loading:    true,
-        sessions:   [],
-        seedInput:  '',
+        activeForm:       null,   // null | 'import' | 'expand'
+        dataforseoReady:  {{ 'true' if dataforseo_ready else 'false' }},
+        submitting:       false,
+        formError:        '',
+        loading:          true,
+        sessions:         [],
+        seedInput:        '',
+        defaultProvider:  '{% if providers.anthropic %}anthropic{% elif providers.google %}google{% elif providers.openai %}openai{% else %}mistral{% endif %}',
+
+        // DataForSEO expand form
         form: {
             name:         '',
             seeds:        [],
@@ -243,16 +333,37 @@ function kwResearch() {
             pass2_limit:  50,
             llm_provider: '{% if providers.anthropic %}anthropic{% elif providers.google %}google{% elif providers.openai %}openai{% else %}mistral{% endif %}',
         },
+
+        // Import form
+        imp: {
+            name:         '',
+            raw:          '',
+            llm_provider: '{% if providers.anthropic %}anthropic{% elif providers.google %}google{% elif providers.openai %}openai{% else %}mistral{% endif %}',
+            preview:      [],   // parsed rows for preview table
+            headers:      [],
+            mapping:      {},
+        },
+
         _pollTimer: null,
 
         async init() {
             await this.loadSessions();
-            // Auto-poll every 4s if any session is running
             this._pollTimer = setInterval(() => {
                 if (this.sessions.some(s => s.status === 'running' || s.status === 'pending')) {
                     this.loadSessions();
                 }
             }, 4000);
+        },
+
+        openImport() {
+            this.activeForm = this.activeForm === 'import' ? null : 'import';
+            this.formError = '';
+        },
+
+        openExpand() {
+            if (!this.dataforseoReady) return;
+            this.activeForm = this.activeForm === 'expand' ? null : 'expand';
+            this.formError = '';
         },
 
         async loadSessions() {
@@ -264,6 +375,84 @@ function kwResearch() {
             }
         },
 
+        // ── Import helpers ──────────────────────────────────────────────────
+        previewImport() {
+            const raw = this.imp.raw.trim();
+            if (!raw) { this.imp.preview = []; return; }
+
+            const lines = raw.split('\n').filter(l => l.trim());
+            if (!lines.length) { this.imp.preview = []; return; }
+
+            const sep = (lines[0].split('\t').length > lines[0].split(',').length) ? '\t' : ',';
+            const plainList = sep === ',' && !lines[0].includes(',') && !lines[0].includes('\t');
+
+            if (plainList) {
+                this.imp.preview = lines.map(l => ({ keyword: l.trim(), volume: null, cpc: null, difficulty: null }));
+                return;
+            }
+
+            const parse = line => {
+                // simple split (doesn't handle quoted commas — good enough for preview)
+                return line.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+            };
+
+            const rows = lines.map(parse);
+            const headerWords = ['keyword','query','term','volume','search','cpc','difficulty','kd','competition','phrase'];
+            const firstLower  = rows[0].join(' ').toLowerCase();
+            const isHeader    = headerWords.some(w => firstLower.includes(w));
+
+            let headers, data;
+            if (isHeader) { headers = rows[0]; data = rows.slice(1); }
+            else          { headers = rows[0].map((_, i) => `col_${i}`); data = rows; }
+
+            // Auto-map columns
+            const hl = Object.fromEntries(headers.map((h, i) => [h.toLowerCase().trim(), i]));
+            const kwIdx   = hl['keyword'] ?? hl['query'] ?? hl['term'] ?? hl['phrase'] ?? 0;
+            const volIdx  = hl['volume'] ?? hl['search volume'] ?? hl['avg. monthly searches'] ?? hl['monthly searches'] ?? null;
+            const cpcIdx  = hl['cpc'] ?? hl['cost per click'] ?? hl['cpc (usd)'] ?? null;
+            const diffIdx = hl['difficulty'] ?? hl['keyword difficulty'] ?? hl['kd'] ?? hl['competition'] ?? null;
+
+            this.imp.preview = data.filter(r => r[kwIdx]?.trim()).map(r => ({
+                keyword:    r[kwIdx]?.trim() || '',
+                volume:     volIdx  !== null ? (r[volIdx]?.trim()  || null) : null,
+                cpc:        cpcIdx  !== null ? (r[cpcIdx]?.trim()  || null) : null,
+                difficulty: diffIdx !== null ? (r[diffIdx]?.trim() || null) : null,
+            }));
+        },
+
+        async startImport() {
+            this.formError = '';
+            if (!this.imp.raw.trim()) { this.formError = 'Paste some keyword data first.'; return; }
+            if (this.imp.preview.length === 0) { this.formError = 'No keywords detected in the pasted data.'; return; }
+
+            this.submitting = true;
+            try {
+                const resp = await fetch('/api/keyword-research/import', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        name:         this.imp.name || `Import — ${this.imp.preview.length} keywords`,
+                        raw_text:     this.imp.raw,
+                        llm_provider: this.imp.llm_provider,
+                    }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.activeForm = null;
+                    this.imp = { name: '', raw: '', llm_provider: this.defaultProvider, preview: [], headers: [], mapping: {} };
+                    await this.loadSessions();
+                    window.location.href = `/keyword-research/${data.session_id}`;
+                } else {
+                    this.formError = data.detail || 'Import failed.';
+                }
+            } catch (e) {
+                this.formError = 'Network error: ' + e.message;
+            } finally {
+                this.submitting = false;
+            }
+        },
+
+        // ── DataForSEO expand helpers ────────────────────────────────────────
         addSeed() {
             const val = this.seedInput.trim().replace(/,$/, '').trim();
             if (val && !this.form.seeds.includes(val) && this.form.seeds.length < 20) {
@@ -294,7 +483,7 @@ function kwResearch() {
                 });
                 const data = await resp.json();
                 if (resp.ok) {
-                    this.showForm = false;
+                    this.activeForm = null;
                     this.form = { name: '', seeds: [], location: 'RO', pass2_limit: 50, llm_provider: this.form.llm_provider };
                     await this.loadSessions();
                     window.location.href = `/keyword-research/${data.session_id}`;

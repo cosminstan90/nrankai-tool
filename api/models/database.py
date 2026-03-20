@@ -1050,6 +1050,7 @@ class KeywordSession(Base):
     language_name    = Column(String(60),  nullable=False, default="Romanian")
     pass2_limit      = Column(Integer,     nullable=False, default=50)
     llm_provider     = Column(String(50),  nullable=False, default="anthropic")
+    source           = Column(String(20),  nullable=False, default="dataforseo")  # dataforseo | import
     status           = Column(String(20),  nullable=False, default="pending")  # pending/running/completed/failed
     progress         = Column(Integer,     nullable=False, default=0)          # 0–100
     progress_message = Column(String(500), nullable=True)
@@ -1072,6 +1073,9 @@ class KeywordResult(Base):
     competition    = Column(Float,      nullable=True)   # 0.0–1.0
     is_question    = Column(Boolean,    nullable=False, default=False, index=True)
     pass_number    = Column(Integer,    nullable=False, default=1)  # 0=seed, 1=pass1, 2=pass2
+    intent         = Column(String(30), nullable=True)   # informational|commercial|transactional|navigational
+    cluster        = Column(String(200),nullable=True)   # topic cluster label
+    priority_score = Column(Float,      nullable=True)   # 1–10
     created_at     = Column(DateTime,   default=datetime.utcnow)
 
 

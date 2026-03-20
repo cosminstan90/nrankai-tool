@@ -459,3 +459,308 @@ async def delete_session(session_id: str):
         )
         await db.commit()
     return {"success": True}
+
+
+# ── CSV / Paste Import ────────────────────────────────────────────────────────
+
+class ImportSessionRequest(BaseModel):
+    name:         str
+    raw_text:     str            # pasted CSV / TSV content
+    llm_provider: str = "anthropic"
+
+
+_ANALYSIS_SYSTEM = """\
+You are a keyword strategist. Analyse the following keyword list and for each keyword determine:
+
+1. INTENT — exactly one of:
+   - informational : user wants to learn or research something
+   - commercial    : user is comparing options or researching before buying
+   - transactional : user wants to take action now (buy, sign up, book, download)
+   - navigational  : user wants to reach a specific website or brand
+
+2. CLUSTER — a short 2–4 word topic label. Be CONSISTENT: use the same label for closely related keywords.
+   Examples: "pricing plans", "how to guides", "competitor comparison", "product features", "local service"
+
+3. IS_QUESTION — true if the keyword is a question or implies seeking an answer, false otherwise
+
+4. PRIORITY — integer 1–10:
+   - 9–10 : transactional or commercial intent + any volume
+   - 6–8  : commercial intent OR high-volume informational
+   - 3–5  : informational at low/medium volume
+   - 1–2  : navigational or brand-only terms
+
+Respond ONLY with valid JSON, no preamble, using EXACTLY this structure:
+{
+  "keywords": [
+    {"keyword": "exact text from input", "intent": "informational", "cluster": "cluster label", "is_question": false, "priority": 6}
+  ]
+}\
+"""
+
+
+def _parse_imported_text(raw: str) -> tuple:
+    """
+    Parse pasted CSV/TSV into (headers, list-of-dicts).
+    Handles: tab-separated, comma-separated, plain one-per-line.
+    """
+    import csv as _csv, io as _io
+
+    lines = [l for l in raw.strip().splitlines() if l.strip()]
+    if not lines:
+        return [], []
+
+    # Detect separator
+    first = lines[0]
+    sep = "\t" if first.count("\t") >= first.count(",") else ","
+
+    # If no separator at all → treat as plain keyword list
+    if sep == "," and "," not in first and "\t" not in first:
+        return ["keyword"], [{"keyword": l.strip()} for l in lines if l.strip()]
+
+    reader = _csv.reader(_io.StringIO(raw.strip()), delimiter=sep)
+    rows = [r for r in reader if any(c.strip() for c in r)]
+    if not rows:
+        return [], []
+
+    # Detect header row
+    header_words = {"keyword", "keywords", "query", "search term", "term", "volume",
+                    "search volume", "cpc", "difficulty", "kd", "competition", "phrase"}
+    first_lower = " ".join(c.lower().strip() for c in rows[0])
+    is_header = any(w in first_lower for w in header_words)
+
+    if is_header:
+        headers = [c.strip() for c in rows[0]]
+        data = rows[1:]
+    else:
+        headers = [f"col_{i}" for i in range(len(rows[0]))]
+        data = rows
+
+    return headers, [dict(zip(headers, r)) for r in data if any(c.strip() for c in r)]
+
+
+def _map_columns(headers: list) -> dict:
+    """Auto-map header names → keyword/volume/cpc/difficulty."""
+    hl = {h.lower().strip(): h for h in headers}
+    mapping = {"keyword": None, "volume": None, "cpc": None, "difficulty": None}
+
+    for name in ["keyword", "keywords", "query", "search term", "term", "phrase", "search query"]:
+        if name in hl:
+            mapping["keyword"] = hl[name]; break
+    if not mapping["keyword"] and headers:
+        mapping["keyword"] = headers[0]  # fallback: first column
+
+    for name in ["volume", "search volume", "avg. monthly searches", "monthly searches",
+                 "monthly volume", "searches", "avg monthly searches"]:
+        if name in hl:
+            mapping["volume"] = hl[name]; break
+
+    for name in ["cpc", "cost per click", "cpc (usd)", "average cpc",
+                 "top of page bid (low range)", "suggested bid"]:
+        if name in hl:
+            mapping["cpc"] = hl[name]; break
+
+    for name in ["difficulty", "keyword difficulty", "kd", "kd (%)", "seo difficulty",
+                 "competition (indexed value)", "competition"]:
+        if name in hl:
+            mapping["difficulty"] = hl[name]; break
+
+    return mapping
+
+
+def _clean_number(val: str) -> Optional[float]:
+    """Parse numeric strings including ranges ('1,000 - 10,000') and K/M suffixes."""
+    if not val or not str(val).strip():
+        return None
+    s = str(val).strip()
+
+    # Handle ranges → midpoint
+    if " - " in s:
+        parts = s.split(" - ")
+        nums = [_clean_number(p) for p in parts]
+        nums = [n for n in nums if n is not None]
+        return sum(nums) / len(nums) if nums else None
+
+    # Remove currency symbols, spaces; keep digits, dot, comma, K, M
+    s = re.sub(r"[^\d.,KkMm]", "", s)
+    # Handle K / M suffixes
+    if s.upper().endswith("K"):
+        try: return float(s[:-1].replace(",", "")) * 1_000
+        except: return None
+    if s.upper().endswith("M"):
+        try: return float(s[:-1].replace(",", "")) * 1_000_000
+        except: return None
+    # Remove thousands commas: only remove if number looks like 1,234
+    s = re.sub(r",(?=\d{3}(?:[,.]|$))", "", s)
+    try:
+        return float(s)
+    except:
+        return None
+
+
+async def _analyze_keywords_llm(
+    keywords_data: List[dict],
+    provider: str,
+    model: str,
+) -> List[dict]:
+    """
+    Run combined LLM analysis: intent + cluster + is_question + priority.
+    Returns list of {keyword, intent, cluster, is_question, priority}.
+    Batches at 100 keywords per call.
+    """
+    from api.routes.schema_gen import call_llm_for_schema
+
+    results: dict = {}   # keyword.lower() → analysis dict
+    BATCH = 100
+
+    kw_list = [d["keyword"] for d in keywords_data]
+    for i in range(0, len(kw_list), BATCH):
+        batch = kw_list[i: i + BATCH]
+        lines = "\n".join(f"- {kw}" for kw in batch)
+        try:
+            text, _, _ = await call_llm_for_schema(
+                provider=provider,
+                model=model,
+                system_prompt=_ANALYSIS_SYSTEM,
+                user_content=f"Analyse these keywords:\n\n{lines}",
+                max_tokens=8192,
+                prefill="{",
+            )
+            parsed = _extract_json_safe(text)
+            for item in parsed.get("keywords", []):
+                kw = str(item.get("keyword", "")).strip()
+                if kw:
+                    results[kw.lower()] = item
+        except Exception as exc:
+            print(f"[keyword_research] LLM analysis batch {i // BATCH + 1} error: {exc}")
+
+    # Merge analysis back into keywords_data
+    merged = []
+    for d in keywords_data:
+        analysis = results.get(d["keyword"].lower(), {})
+        merged.append({**d, **{
+            "intent":         analysis.get("intent"),
+            "cluster":        analysis.get("cluster"),
+            "is_question":    bool(analysis.get("is_question", False)),
+            "priority_score": float(analysis.get("priority", 5)),
+        }})
+    return merged
+
+
+async def _run_import_session(session_id: str, keywords_data: List[dict], provider: str) -> None:
+    """Background task: run LLM analysis on imported keywords and save results."""
+    async with AsyncSessionLocal() as db:
+        session = await db.get(KeywordSession, session_id)
+        if not session:
+            return
+
+        async def _upd(progress: int, msg: str):
+            session.progress = progress
+            session.progress_message = msg
+            await db.commit()
+
+        try:
+            session.status = "running"
+            await _upd(5, f"Analysing {len(keywords_data)} keywords with LLM…")
+
+            model_name = LLM_DEFAULT_MODELS.get(provider.upper(), "claude-haiku-4-5-20251001")
+            analysed = await _analyze_keywords_llm(keywords_data, provider, model_name)
+
+            await _upd(80, "Saving results to database…")
+
+            rows = []
+            for item in analysed:
+                rows.append(KeywordResult(
+                    session_id=session_id,
+                    keyword=item["keyword"],
+                    search_volume=int(item["search_volume"]) if item.get("search_volume") is not None else None,
+                    cpc=item.get("cpc"),
+                    competition=item.get("competition"),
+                    pass_number=0,
+                    is_question=item.get("is_question", False),
+                    intent=item.get("intent"),
+                    cluster=item.get("cluster"),
+                    priority_score=item.get("priority_score"),
+                ))
+            db.add_all(rows)
+
+            q_count = sum(1 for r in rows if r.is_question)
+            session.total_keywords  = len(rows)
+            session.total_questions = q_count
+            session.status          = "completed"
+            session.progress        = 100
+            session.progress_message = "Done"
+            session.completed_at    = datetime.utcnow()
+            await db.commit()
+
+        except Exception as exc:
+            import traceback
+            session.status           = "failed"
+            session.error            = str(exc)
+            session.progress_message = f"Error: {exc}"
+            await db.commit()
+            traceback.print_exc()
+
+
+@router.post("/import", status_code=201)
+async def import_session(req: ImportSessionRequest):
+    """Create a keyword session from pasted CSV/TSV data and run LLM analysis."""
+    if not req.raw_text.strip():
+        raise HTTPException(400, "Paste some keyword data first.")
+
+    headers, rows = _parse_imported_text(req.raw_text)
+    if not rows:
+        raise HTTPException(400, "Could not parse any rows from the pasted data.")
+
+    mapping = _map_columns(headers)
+    kw_col   = mapping["keyword"]
+    vol_col  = mapping["volume"]
+    cpc_col  = mapping["cpc"]
+    diff_col = mapping["difficulty"]
+
+    keywords_data = []
+    seen: set = set()
+    for row in rows:
+        kw = row.get(kw_col, "").strip() if kw_col else ""
+        if not kw or kw.lower() in seen:
+            continue
+        seen.add(kw.lower())
+        vol  = _clean_number(row.get(vol_col,  "")) if vol_col  else None
+        cpc  = _clean_number(row.get(cpc_col,  "")) if cpc_col  else None
+        diff = _clean_number(row.get(diff_col, "")) if diff_col else None
+        # Normalise difficulty: if > 1 assume 0–100 scale → 0–1
+        if diff is not None and diff > 1:
+            diff = diff / 100
+        keywords_data.append({
+            "keyword":       kw,
+            "search_volume": int(vol) if vol is not None else None,
+            "cpc":           cpc,
+            "competition":   diff,
+        })
+
+    if not keywords_data:
+        raise HTTPException(400, "No valid keywords found after parsing.")
+
+    session_id = str(uuid.uuid4())
+    seeds = [d["keyword"] for d in keywords_data[:5]]
+
+    async with AsyncSessionLocal() as db:
+        session = KeywordSession(
+            id               = session_id,
+            name             = req.name.strip() or f"Import — {len(keywords_data)} keywords",
+            seed_keywords    = seeds,
+            location_key     = "—",
+            location_code    = 0,
+            language_code    = "",
+            language_name    = "Import",
+            pass2_limit      = 0,
+            llm_provider     = req.llm_provider,
+            source           = "import",
+            status           = "pending",
+            progress         = 0,
+            progress_message = "Queued for LLM analysis…",
+        )
+        db.add(session)
+        await db.commit()
+
+    asyncio.create_task(_run_import_session(session_id, keywords_data, req.llm_provider))
+    return {"session_id": session_id, "keywords_found": len(keywords_data), "status": "pending"}

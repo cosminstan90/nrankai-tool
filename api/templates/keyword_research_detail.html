@@ -107,8 +107,11 @@
                 <div class="flex items-center gap-2">
                     <select x-model="kwSort"
                             class="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600 bg-slate-50">
+                        <option value="priority_desc">↓ Priority</option>
                         <option value="volume_desc">↓ Volume</option>
                         <option value="volume_asc">↑ Volume</option>
+                        <option value="cluster">Cluster</option>
+                        <option value="intent">Intent</option>
                         <option value="alpha">A–Z</option>
                         <option value="pass">Pass #</option>
                     </select>
@@ -127,9 +130,11 @@
                     <thead class="bg-slate-50 sticky top-0 z-10">
                         <tr>
                             <th class="px-4 py-2 text-left font-medium text-slate-500 uppercase tracking-wider">Keyword</th>
+                            <th class="px-3 py-2 text-left font-medium text-slate-500 uppercase tracking-wider">Cluster</th>
+                            <th class="px-3 py-2 text-center font-medium text-slate-500 uppercase tracking-wider w-20">Intent</th>
                             <th class="px-3 py-2 text-right font-medium text-slate-500 uppercase tracking-wider w-20">Volume</th>
                             <th class="px-3 py-2 text-right font-medium text-slate-500 uppercase tracking-wider w-16">CPC</th>
-                            <th class="px-3 py-2 text-center font-medium text-slate-500 uppercase tracking-wider w-12">P</th>
+                            <th class="px-3 py-2 text-center font-medium text-slate-500 uppercase tracking-wider w-12">Pri</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100">
@@ -141,20 +146,49 @@
                                     <span x-show="kw.is_question"
                                           class="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-emerald-600 bg-emerald-100 px-1 py-0.5 rounded">Q</span>
                                 </td>
+                                <td class="px-3 py-2">
+                                    <span x-show="kw.cluster"
+                                          class="text-[10px] px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100"
+                                          x-text="kw.cluster"></span>
+                                    <span x-show="!kw.cluster" class="text-slate-300 text-xs">—</span>
+                                </td>
+                                <td class="px-3 py-2 text-center">
+                                    <template x-if="kw.intent">
+                                        <span class="text-[9px] font-semibold uppercase px-1.5 py-0.5 rounded"
+                                              :class="{
+                                                'bg-sky-100 text-sky-700':     kw.intent === 'informational',
+                                                'bg-amber-100 text-amber-700': kw.intent === 'commercial',
+                                                'bg-emerald-100 text-emerald-700': kw.intent === 'transactional',
+                                                'bg-slate-100 text-slate-600': kw.intent === 'navigational',
+                                              }"
+                                              x-text="kw.intent.slice(0,4)"></span>
+                                    </template>
+                                    <template x-if="!kw.intent">
+                                        <span class="text-[10px] px-1 py-0.5 rounded"
+                                              :class="kw.pass_number === 0 ? 'bg-violet-100 text-violet-700' :
+                                                      kw.pass_number === 1 ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'"
+                                              x-text="kw.pass_number === 0 ? 'seed' : 'P' + kw.pass_number"></span>
+                                    </template>
+                                </td>
                                 <td class="px-3 py-2 text-right font-mono text-slate-700"
                                     x-text="kw.search_volume ? kw.search_volume.toLocaleString() : '—'"></td>
                                 <td class="px-3 py-2 text-right font-mono text-slate-500"
-                                    x-text="kw.cpc ? '$' + kw.cpc : '—'"></td>
+                                    x-text="kw.cpc ? '$' + Number(kw.cpc).toFixed(2) : '—'"></td>
                                 <td class="px-3 py-2 text-center">
-                                    <span class="text-[10px] px-1 py-0.5 rounded"
-                                          :class="kw.pass_number === 0 ? 'bg-violet-100 text-violet-700' :
-                                                  kw.pass_number === 1 ? 'bg-sky-100 text-sky-700' : 'bg-orange-100 text-orange-700'"
-                                          x-text="kw.pass_number === 0 ? 'seed' : 'P' + kw.pass_number"></span>
+                                    <template x-if="kw.priority_score">
+                                        <span class="inline-flex items-center justify-center w-6 h-6 rounded text-[10px] font-bold"
+                                              :class="kw.priority_score >= 8 ? 'bg-emerald-100 text-emerald-700' :
+                                                      kw.priority_score >= 5 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'"
+                                              x-text="Math.round(kw.priority_score)"></span>
+                                    </template>
+                                    <template x-if="!kw.priority_score">
+                                        <span class="text-slate-300 text-xs">—</span>
+                                    </template>
                                 </td>
                             </tr>
                         </template>
                         <tr x-show="filteredKeywords.length === 0">
-                            <td colspan="4" class="px-4 py-6 text-center text-slate-400">No keywords match the filter.</td>
+                            <td colspan="6" class="px-4 py-6 text-center text-slate-400">No keywords match the filter.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -311,7 +345,7 @@ function kwDetail() {
 
         // Left panel
         kwSearch:          '',
-        kwSort:            'volume_desc',
+        kwSort:            'priority_desc',
         kwPage:            0,
         kwPageSize:        50,
 
@@ -359,10 +393,16 @@ function kwDetail() {
                 kws = kws.filter(k => k.keyword.toLowerCase().includes(q));
             }
             // Sort
-            if (this.kwSort === 'volume_desc')
+            if (this.kwSort === 'priority_desc')
+                kws = [...kws].sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0));
+            else if (this.kwSort === 'volume_desc')
                 kws = [...kws].sort((a, b) => (b.search_volume || 0) - (a.search_volume || 0));
             else if (this.kwSort === 'volume_asc')
                 kws = [...kws].sort((a, b) => (a.search_volume || 0) - (b.search_volume || 0));
+            else if (this.kwSort === 'cluster')
+                kws = [...kws].sort((a, b) => (a.cluster || 'zzz').localeCompare(b.cluster || 'zzz'));
+            else if (this.kwSort === 'intent')
+                kws = [...kws].sort((a, b) => (a.intent || 'zzz').localeCompare(b.intent || 'zzz'));
             else if (this.kwSort === 'alpha')
                 kws = [...kws].sort((a, b) => a.keyword.localeCompare(b.keyword));
             else if (this.kwSort === 'pass')

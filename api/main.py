@@ -68,6 +68,22 @@ async def lifespan(app: FastAPI):
     init_db()
     print("[OK] Database initialized")
 
+    # Safe column migrations (ADD COLUMN IF NOT EXISTS — SQLite silently fails if already present)
+    from sqlalchemy import text as _sa_text
+    async with AsyncSessionLocal() as _mdb:
+        for _stmt in [
+            "ALTER TABLE keyword_results ADD COLUMN intent VARCHAR(30)",
+            "ALTER TABLE keyword_results ADD COLUMN cluster VARCHAR(200)",
+            "ALTER TABLE keyword_results ADD COLUMN priority_score FLOAT",
+            "ALTER TABLE keyword_sessions ADD COLUMN source VARCHAR(20) DEFAULT 'dataforseo'",
+        ]:
+            try:
+                await _mdb.execute(_sa_text(_stmt))
+            except Exception:
+                pass  # column already exists
+        await _mdb.commit()
+    print("[OK] Keyword research schema migration complete")
+
     # Reset any guides that were left in pending/running state from a previous server run
     from sqlalchemy import update as _sa_update
     async with AsyncSessionLocal() as _db:
