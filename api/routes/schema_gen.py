@@ -240,10 +240,14 @@ async def call_llm_for_schema(
     model: str,
     system_prompt: str,
     user_content: str,
-    max_tokens: int = 2048
+    max_tokens: int = 2048,
+    prefill: str = ""
 ) -> tuple:
     """
     Call LLM provider to generate schema markup.
+
+    prefill: optional assistant-role prefix injected before generation (Anthropic only).
+             Forces the model to continue from that string — great for locking in JSON output.
 
     Returns:
         Tuple of (response_text, input_tokens, output_tokens)
@@ -256,13 +260,20 @@ async def call_llm_for_schema(
             raise ValueError("ANTHROPIC_API_KEY not configured")
 
         client = AsyncAnthropic(api_key=api_key)
+        messages = [{"role": "user", "content": user_content}]
+        if prefill:
+            messages.append({"role": "assistant", "content": prefill})
         response = await client.messages.create(
             model=model,
             max_tokens=max_tokens,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_content}]
+            messages=messages
         )
-        return response.content[0].text, response.usage.input_tokens, response.usage.output_tokens
+        text = response.content[0].text
+        # Re-attach the prefill so the caller gets a complete string
+        if prefill:
+            text = prefill + text
+        return text, response.usage.input_tokens, response.usage.output_tokens
 
     elif provider == "OPENAI":
         api_key = os.getenv("OPENAI_API_KEY")

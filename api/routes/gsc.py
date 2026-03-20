@@ -1109,32 +1109,42 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             "Generate 15–25 related keywords and 8–15 FAQ questions."
         )
 
-        def _extract_json(text: str) -> dict:
-            """Strip markdown fences and extract the outermost {...} block."""
+        def _extract_json(text: str, label: str = "") -> dict:
+            """Strip markdown fences, extract the outermost {...} block, repair if truncated."""
             cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE).strip()
             first = cleaned.find("{")
             last  = cleaned.rfind("}")
             if first != -1 and last > first:
-                cleaned = cleaned[first:last + 1]
+                candidate = cleaned[first:last + 1]
+            elif first != -1:
+                # JSON was truncated — try to close open braces/brackets
+                candidate = cleaned[first:]
+                open_braces   = candidate.count("{") - candidate.count("}")
+                open_brackets = candidate.count("[") - candidate.count("]")
+                candidate += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+            else:
+                candidate = cleaned
             try:
-                return json.loads(cleaned)
+                return json.loads(candidate)
             except Exception:
+                if label:
+                    print(f"[gsc optimize] ⚠ JSON parse failed for {label}. Raw response (first 500 chars):\n{text[:500]}")
                 return {"raw": text}
 
         results = {}
         for audit_type in req.audit_types:
             if audit_type == "FAQ_KEYWORDS":
                 system_prompt = _FAQ_SYSTEM + kw_block
-                max_tok = 4096
+                max_tok = 8192
                 # FAQ generation doesn't need the full page — trim to avoid token overflow
                 user_content = page_text[:15000]
             elif audit_type == "SCHEMA_GEN":
                 system_prompt = _SCHEMA_GEN_SYSTEM + kw_block
-                max_tok = 4096
+                max_tok = 8192
                 user_content = page_text
             else:
                 system_prompt = load_prompt(audit_type) + kw_block
-                max_tok = 4096
+                max_tok = 8192
                 user_content = page_text
 
             response_text, _, _ = await call_llm_for_schema(
@@ -1143,8 +1153,9 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                 system_prompt=system_prompt,
                 user_content=user_content,
                 max_tokens=max_tok,
+                prefill="{",
             )
-            results[audit_type] = _extract_json(response_text)
+            results[audit_type] = _extract_json(response_text, label=audit_type)
 
         # 5. Store completed result
         async with AsyncSessionLocal() as db:
