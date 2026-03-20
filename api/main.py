@@ -1239,6 +1239,25 @@ async def gsc_detail_page(
     })
 
 
+def _repair_guide_json(raw_json_str: str):
+    """Parse guide_json and repair any {"raw": "..."} audit entries using json_repair."""
+    try:
+        gj = json.loads(raw_json_str)
+        if isinstance(gj, dict) and "results" in gj:
+            from json_repair import repair_json
+            for key, val in gj["results"].items():
+                if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
+                    try:
+                        repaired = repair_json(val["raw"], return_objects=True)
+                        if isinstance(repaired, dict) and repaired:
+                            gj["results"][key] = repaired
+                    except Exception:
+                        pass
+        return gj
+    except Exception:
+        return None
+
+
 @app.get("/gsc/{property_id}/page-optimize", response_class=HTMLResponse)
 async def gsc_page_optimize_view(
     request: Request,
@@ -1247,7 +1266,6 @@ async def gsc_page_optimize_view(
     db: AsyncSession = Depends(get_db),
 ):
     """Dedicated page-optimization view — shows GSC queries and LLM optimization panel."""
-    import json as _json
     from urllib.parse import unquote
     from sqlalchemy import desc as _desc
     from api.models.database import GscProperty as GscProp, GscPageRow, UrlGuide as _UrlGuide
@@ -1271,24 +1289,6 @@ async def gsc_page_optimize_view(
         .order_by(_desc(_UrlGuide.created_at))
         .limit(10)
     )).scalars().all()
-
-    def _repair_guide_json(raw_json_str):
-        """Parse guide_json and repair any {"raw": "..."} audit entries using json_repair."""
-        try:
-            gj = _json.loads(raw_json_str)
-            if isinstance(gj, dict) and "results" in gj:
-                from json_repair import repair_json
-                for key, val in gj["results"].items():
-                    if isinstance(val, dict) and "raw" in val and isinstance(val["raw"], str):
-                        try:
-                            repaired = repair_json(val["raw"], return_objects=True)
-                            if isinstance(repaired, dict) and repaired:
-                                gj["results"][key] = repaired
-                        except Exception:
-                            pass
-            return gj
-        except Exception:
-            return None
 
     past_guides = []
     for g in past_guides_rows:
@@ -1317,7 +1317,6 @@ async def standalone_optimize_page(
     db: AsyncSession = Depends(get_db),
 ):
     """Standalone page optimizer — enter any URL + keywords without needing a GSC property."""
-    import json as _json
     from sqlalchemy import desc as _desc
     from api.models.database import UrlGuide as _UrlGuide
     past_guides_rows = (await db.execute(
