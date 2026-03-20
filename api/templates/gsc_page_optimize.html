@@ -313,6 +313,11 @@
                                       x-text="getAuditBlock(auditType, result).classification"></span>
                             </template>
                         </div>
+                        <!-- Copy button -->
+                        <button @click="copyAuditText(auditType, result)"
+                                class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 hover:text-slate-700 transition-colors">
+                            📋 Copy
+                        </button>
                     </div>
 
                     <!-- Sub-scores -->
@@ -927,8 +932,68 @@ function pageOptimize(propertyId, pageUrl) {
         },
 
         auditTypeLabel(auditType) {
-            const labels = { SEO_AUDIT: 'SEO Audit', GEO_AUDIT: 'GEO Audit', FAQ_KEYWORDS: 'FAQ & Keywords' };
+            const labels = { SEO_AUDIT: 'SEO Audit', GEO_AUDIT: 'GEO Audit', FAQ_KEYWORDS: 'FAQ & Keywords', SCHEMA_GEN: 'Schema.org Markup' };
             return labels[auditType] || auditType;
+        },
+
+        copyAuditText(auditType, result) {
+            let lines = [];
+            const label = this.auditTypeLabel(auditType);
+            const block = this.getAuditBlock(auditType, result);
+
+            lines.push(`=== ${label.toUpperCase()} ===`);
+            if (block.overall_score !== undefined) lines.push(`Score: ${block.overall_score}/100`);
+            if (block.classification)              lines.push(`Classification: ${block.classification}`);
+            if (result.seo_score_justification || result.geo_score_justification)
+                lines.push(`\n${result.seo_score_justification || result.geo_score_justification}`);
+
+            // Issues
+            if (result.issues && result.issues.length > 0) {
+                lines.push(`\nISSUES (${result.issues.length}):`);
+                result.issues.forEach((issue, i) => {
+                    lines.push(`${i+1}. [${(issue.severity||'').toUpperCase()}] ${issue.finding||''}`);
+                    if (issue.evidence || issue.impact) lines.push(`   ${issue.evidence || issue.impact}`);
+                });
+            }
+
+            // Recommendations
+            if (result.recommendations && result.recommendations.length > 0) {
+                lines.push(`\nRECOMMENDATIONS (${result.recommendations.length}):`);
+                result.recommendations.forEach((rec, i) => {
+                    lines.push(`${i+1}. [${(rec.priority||'').toUpperCase()}] ${rec.recommendation||''}`);
+                    if (rec.expected_impact) lines.push(`   Impact: ${rec.expected_impact}`);
+                    if (rec.before_example)  lines.push(`   Before: ${rec.before_example}`);
+                    if (rec.after_example)   lines.push(`   After:  ${rec.after_example}`);
+                });
+            }
+
+            // FAQ & Keywords
+            if (auditType === 'FAQ_KEYWORDS') {
+                if (result.related_keywords && result.related_keywords.length > 0) {
+                    lines.push(`\nRELATED KEYWORDS (${result.related_keywords.length}):`);
+                    result.related_keywords.forEach(kw => {
+                        lines.push(`- [${kw.type}] ${kw.keyword} (${kw.intent}, ${kw.priority})`);
+                    });
+                }
+                if (result.faq_questions && result.faq_questions.length > 0) {
+                    lines.push(`\nFAQ QUESTIONS (${result.faq_questions.length}):`);
+                    result.faq_questions.forEach((faq, i) => {
+                        lines.push(`${i+1}. ${faq.question||''}`);
+                        if (faq.answer) lines.push(`   ${faq.answer}`);
+                    });
+                }
+            }
+
+            // Schema
+            if (auditType === 'SCHEMA_GEN' && result.schemas) {
+                lines.push(`\nSCHEMA TYPES: ${(result.schema_types_detected||[]).join(', ')}`);
+                if (result.implementation_notes) lines.push(`\nNotes: ${result.implementation_notes}`);
+                if (result.implementation_html)  lines.push(`\nHTML:\n${result.implementation_html}`);
+            }
+
+            navigator.clipboard.writeText(lines.join('\n'))
+                .then(() => alert('✅ Copied to clipboard!'))
+                .catch(() => alert('❌ Copy failed — please select and copy manually.'));
         },
     };
 }
