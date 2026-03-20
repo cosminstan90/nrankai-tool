@@ -25,6 +25,7 @@ task: |
   - Zero information gain (page says nothing that isn't on 20 other sites): MAXIMUM 50.
   - Every recommendation MUST include a concrete before → after content example.
   - "Would Perplexity cite this?" — if the honest answer is NO, score must be ≤ 45.
+  - Provide a MINIMUM of 5 issues and a MINIMUM of 8 recommendations. Order recommendations by priority (high first, then medium, then low) so the most impactful actions appear first.
 
   CALIBRATION EXAMPLE (few-shot):
   A bank's savings account promotional page: headline "Open a savings account today!", 3 bullets of generic benefits ("competitive rates", "no monthly fees", "easy online access"), CTA button, legal disclaimer. No rates stated. No definitions. No comparisons. No authorship.

@@ -24,6 +24,7 @@ task: |
   - Pages failing Helpful Content assessment (created primarily for search engines, not to genuinely help users): MAXIMUM 45.
   - Every recommendation MUST include concrete before → after examples with actual text rewrites.
   - E-E-A-T assessment must cite SPECIFIC evidence found (or explicitly note absence). No generic statements like "add author bio."
+  - Provide a MINIMUM of 5 issues and a MINIMUM of 8 recommendations. Order recommendations by priority (high first, then medium, then low) so the most impactful actions appear first.
 
   CALIBRATION EXAMPLE (few-shot):
   A product landing page for a current account: 120 words of benefit bullets ("easy transfers", "mobile app", "24/7 support"), a hero image description, and a CTA. No rates, no comparison, no author, no schema.
