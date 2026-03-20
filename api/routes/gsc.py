@@ -933,6 +933,32 @@ async def get_page_queries(property_id: str, url: str, days: int = 90):
             "date_range": {"start": start_date.isoformat(), "end": end_date.isoformat()}}
 
 
+# ── Shared JSON extractor (used by optimize + cannibalization) ─────────────────
+
+def _extract_json(text: str, label: str = "") -> dict:
+    """Strip markdown fences, extract outermost {...} block, repair if truncated."""
+    import re as _re
+    cleaned = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=_re.MULTILINE).strip()
+    first = cleaned.find("{")
+    last  = cleaned.rfind("}")
+    if first != -1 and last > first:
+        candidate = cleaned[first:last + 1]
+    elif first != -1:
+        candidate = cleaned[first:]
+        open_braces   = candidate.count("{") - candidate.count("}")
+        open_brackets = candidate.count("[") - candidate.count("]")
+        candidate += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+    else:
+        candidate = cleaned
+    try:
+        import json as _json
+        return _json.loads(candidate)
+    except Exception:
+        if label:
+            print(f"[gsc] ⚠ JSON parse failed for {label}. Raw (first 500 chars):\n{text[:500]}")
+        return {"raw": text}
+
+
 # ── Page LLM Optimization ─────────────────────────────────────────────────────
 
 async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: PageOptimizeRequest):
@@ -1114,27 +1140,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             "Generate 15–25 related keywords and 8–15 FAQ questions."
         )
 
-        def _extract_json(text: str, label: str = "") -> dict:
-            """Strip markdown fences, extract the outermost {...} block, repair if truncated."""
-            cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.MULTILINE).strip()
-            first = cleaned.find("{")
-            last  = cleaned.rfind("}")
-            if first != -1 and last > first:
-                candidate = cleaned[first:last + 1]
-            elif first != -1:
-                # JSON was truncated — try to close open braces/brackets
-                candidate = cleaned[first:]
-                open_braces   = candidate.count("{") - candidate.count("}")
-                open_brackets = candidate.count("[") - candidate.count("]")
-                candidate += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
-            else:
-                candidate = cleaned
-            try:
-                return json.loads(candidate)
-            except Exception:
-                if label:
-                    print(f"[gsc optimize] ⚠ JSON parse failed for {label}. Raw response (first 500 chars):\n{text[:500]}")
-                return {"raw": text}
+        # _extract_json is now a module-level function
 
         results = {}
         for audit_type in req.audit_types:
@@ -1273,6 +1279,182 @@ async def page_optimize(property_id: str, req: PageOptimizeRequest):
     asyncio.create_task(_guarded(guide_id, property_id, req))
     return {"guide_id": guide_id, "status": "pending"}
 
+
+# ── Keyword Cannibalization Detection ─────────────────────────────────────────
+
+class CannibalizationRequest(BaseModel):
+    min_impressions: int = 100
+    days:            int = 90
+    provider:        str = "anthropic"
+    model:           str = "claude-haiku-4-5-20251001"
+
+
+@router.post("/properties/{property_id}/cannibalization")
+async def detect_cannibalization(property_id: str, req: CannibalizationRequest):
+    """Detect keyword cannibalization using GSC page+query data and LLM semantic clustering."""
+    from collections import defaultdict
+    from api.routes.schema_gen import call_llm_for_schema
+
+    creds = await _get_gsc_credentials()
+    if not creds:
+        raise HTTPException(status_code=400, detail="No GSC credentials. Please reconnect Google Search Console.")
+
+    async with AsyncSessionLocal() as db:
+        from sqlalchemy import select as _sel
+        prop = (await db.execute(_sel(GscProperty).where(GscProperty.id == property_id))).scalar_one_or_none()
+        if not prop:
+            raise HTTPException(status_code=404, detail="Property not found")
+        site_url = prop.site_url
+
+    end_date   = datetime.utcnow().date()
+    start_date = end_date - timedelta(days=req.days)
+
+    def _fetch_page_query():
+        from googleapiclient.discovery import build
+        svc  = build("searchconsole", "v1", credentials=creds)
+        body = {
+            "startDate":  start_date.isoformat(),
+            "endDate":    end_date.isoformat(),
+            "dimensions": ["page", "query"],
+            "rowLimit":   25000,
+        }
+        return svc.searchanalytics().query(siteUrl=site_url, body=body).execute().get("rows", [])
+
+    rows = await asyncio.get_event_loop().run_in_executor(None, _fetch_page_query)
+
+    # Parse + filter by min_impressions
+    page_query_data = []
+    for r in rows:
+        keys = r.get("keys", [])
+        if len(keys) < 2:
+            continue
+        impressions = int(r.get("impressions", 0))
+        if impressions < req.min_impressions:
+            continue
+        page_query_data.append({
+            "page":        keys[0],
+            "query":       keys[1],
+            "clicks":      int(r.get("clicks", 0)),
+            "impressions": impressions,
+            "position":    round(r.get("position", 0), 1),
+        })
+
+    if not page_query_data:
+        return {"conflicts": [], "total_conflicts": 0, "queries_analysed": 0,
+                "message": "No data found. Try lowering the minimum impressions threshold."}
+
+    # Find queries appearing on 2+ pages
+    query_pages: dict = defaultdict(list)
+    for row in page_query_data:
+        query_pages[row["query"]].append(row)
+    conflict_queries = {q: pages for q, pages in query_pages.items() if len(pages) >= 2}
+
+    if not conflict_queries:
+        return {"conflicts": [], "total_conflicts": 0, "queries_analysed": len(page_query_data),
+                "message": "No cannibalization detected — no queries appear on multiple pages."}
+
+    # LLM Step 1: semantically cluster conflict queries
+    query_list = list(conflict_queries.keys())[:200]
+    cluster_system = (
+        "You are an SEO specialist. Group these search queries into semantic clusters by search intent.\n"
+        "Only group queries that clearly target the same topic/intent. Be conservative.\n"
+        "LANGUAGE: Use the same language as the queries.\n"
+        "Return ONLY valid JSON:\n"
+        '{"clusters": [{"name": "cluster topic name", "queries": ["query1", "query2"]}]}'
+    )
+    cluster_text, _, _ = await call_llm_for_schema(
+        provider=req.provider, model=req.model,
+        system_prompt=cluster_system,
+        user_content="Search queries:\n" + "\n".join(f"- {q}" for q in query_list),
+        max_tokens=4096, prefill="{",
+    )
+    cluster_data = _extract_json(cluster_text, label="cannibalization_clustering")
+    clusters = cluster_data.get("clusters", []) if isinstance(cluster_data, dict) else []
+    if not clusters:
+        clusters = [{"name": q, "queries": [q]} for q in query_list[:50]]
+
+    # Build conflict list per cluster
+    conflicts = []
+    for cluster in clusters:
+        cluster_queries = cluster.get("queries", [])
+        page_stats: dict = defaultdict(lambda: {"clicks": 0, "impressions": 0, "positions": [], "queries": set()})
+        for cq in cluster_queries:
+            if cq not in conflict_queries:
+                continue
+            for row in conflict_queries[cq]:
+                s = page_stats[row["page"]]
+                s["clicks"]      += row["clicks"]
+                s["impressions"] += row["impressions"]
+                s["positions"].append(row["position"])
+                s["queries"].add(cq)
+        if len(page_stats) < 2:
+            continue
+        pages_ranked = sorted(
+            [{"url": url, "clicks": s["clicks"], "impressions": s["impressions"],
+              "avg_position": round(sum(s["positions"]) / len(s["positions"]), 1) if s["positions"] else 99,
+              "query_count": len(s["queries"])}
+             for url, s in page_stats.items()],
+            key=lambda x: (x["avg_position"], -x["clicks"])
+        )
+        conflicts.append({
+            "cluster_name": cluster.get("name", ""),
+            "queries":      list(cluster_queries),
+            "winner":       pages_ranked[0],
+            "losers":       pages_ranked[1:],
+            "recommendation": None,
+        })
+
+    # LLM Step 2: recommendations for all conflicts in one call
+    if conflicts:
+        rec_system = (
+            "You are an SEO specialist analyzing keyword cannibalization.\n"
+            "For each conflict, choose ONE action and explain in 1-2 sentences.\n"
+            "Actions:\n"
+            "- redirect: loser is clearly inferior → recommend 301 to winner\n"
+            "- consolidate: merge valuable content from loser into winner → 301\n"
+            "- noindex: loser has unique value but must not rank for these queries\n"
+            "- differentiate: rewrite loser to target a different search angle\n"
+            "- keep_both: pages serve distinct purposes, optimise each separately\n"
+            "LANGUAGE: Use the same language as the queries and URLs.\n"
+            "Return ONLY valid JSON:\n"
+            '{"recommendations": [{"cluster_name": "...", "action": "...", "reasoning": "...", "priority": "high|medium|low"}]}'
+        )
+        summaries = []
+        for c in conflicts[:20]:
+            w = c["winner"]
+            losers_txt = "; ".join(f"{l['url']} (pos {l['avg_position']}, {l['clicks']} clicks)" for l in c["losers"])
+            summaries.append(
+                f"Cluster: {c['cluster_name']}\n"
+                f"Queries: {', '.join(c['queries'][:5])}\n"
+                f"Winner: {w['url']} (pos {w['avg_position']}, {w['clicks']} clicks)\n"
+                f"Competing: {losers_txt}"
+            )
+        rec_text, _, _ = await call_llm_for_schema(
+            provider=req.provider, model=req.model,
+            system_prompt=rec_system,
+            user_content="\n\n---\n\n".join(summaries),
+            max_tokens=4096, prefill="{",
+        )
+        rec_data = _extract_json(rec_text, label="cannibalization_recommendations")
+        recs     = rec_data.get("recommendations", []) if isinstance(rec_data, dict) else []
+        rec_map  = {r["cluster_name"]: r for r in recs}
+        for c in conflicts:
+            r = rec_map.get(c["cluster_name"])
+            c["recommendation"] = {
+                "action":    r.get("action", "differentiate") if r else "differentiate",
+                "reasoning": r.get("reasoning", "") if r else "",
+                "priority":  r.get("priority", "medium") if r else "medium",
+            }
+
+    return {
+        "conflicts":        conflicts,
+        "total_conflicts":  len(conflicts),
+        "queries_analysed": len(query_list),
+        "min_impressions":  req.min_impressions,
+    }
+
+
+# ── Standalone Optimize ────────────────────────────────────────────────────────
 
 class StandaloneOptimizeRequest(BaseModel):
     url:          str

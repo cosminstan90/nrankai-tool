@@ -83,6 +83,16 @@
                   class="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-normal"
                   x-text="rTotal"></span>
         </button>
+        <button @click="switchTab('cannibalization')"
+                :class="activeTab === 'cannibalization'
+                    ? 'border-b-2 border-rose-600 text-rose-700 font-semibold'
+                    : 'text-slate-500 hover:text-slate-700'"
+                class="px-4 py-2.5 text-sm transition-colors">
+            🔀 Cannibalization
+            <span x-show="canTotal > 0"
+                  class="ml-1.5 text-xs bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded-full font-normal"
+                  x-text="canTotal"></span>
+        </button>
     </div>
 
     <!-- ── QUERIES TAB ──────────────────────────────────────────────────── -->
@@ -824,6 +834,170 @@
         </div>
     </div>
 
+    <!-- ── CANNIBALIZATION TAB ──────────────────────────────────────────── -->
+    <div x-show="activeTab === 'cannibalization'">
+        <!-- Controls -->
+        <div class="p-5 pb-3 flex flex-wrap items-end gap-4">
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Min. Impressions</label>
+                <input type="number" x-model.number="canMinImp" min="10" max="10000" step="10"
+                       class="w-28 px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">Date Range</label>
+                <select x-model.number="canDays" class="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+                    <option value="30">Last 30 days</option>
+                    <option value="90" selected>Last 90 days</option>
+                    <option value="180">Last 180 days</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">LLM Provider</label>
+                <select x-model="canProvider" class="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+                    <option value="anthropic">Anthropic</option>
+                    <option value="openai">OpenAI</option>
+                </select>
+            </div>
+            <button @click="runCannibalization()"
+                    :disabled="canLoading"
+                    class="px-4 py-2 bg-rose-600 text-white text-sm font-medium rounded-lg hover:bg-rose-700 disabled:opacity-50 transition-colors">
+                <span x-show="!canLoading">🔍 Analyse</span>
+                <span x-show="canLoading">⏳ Analysing…</span>
+            </button>
+        </div>
+
+        <!-- Loading -->
+        <div x-show="canLoading" class="p-8 text-center">
+            <div class="inline-block w-8 h-8 border-4 border-rose-200 border-t-rose-600 rounded-full animate-spin mb-3"></div>
+            <p class="text-sm text-slate-500">Fetching GSC data and clustering queries with AI…</p>
+            <p class="text-xs text-slate-400 mt-1">This may take 30–60 seconds for large sites.</p>
+        </div>
+
+        <!-- Error -->
+        <div x-show="canError" class="mx-5 mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700" x-text="canError"></div>
+
+        <!-- Empty state -->
+        <div x-show="!canLoading && !canError && canRan && canTotal === 0" class="p-8 text-center">
+            <p class="text-2xl mb-2">✅</p>
+            <p class="text-sm font-medium text-slate-700">No cannibalization detected</p>
+            <p class="text-xs text-slate-400 mt-1">No queries found appearing on multiple pages above your impressions threshold.</p>
+        </div>
+
+        <!-- Results -->
+        <div x-show="!canLoading && canTotal > 0" class="p-5 space-y-4">
+            <p class="text-xs text-slate-400">
+                <span x-text="canTotal"></span> conflicts found across
+                <span x-text="canQueriesAnalysed"></span> queries analysed.
+            </p>
+
+            <template x-for="(conflict, idx) in canConflicts" :key="idx">
+                <div class="border rounded-xl overflow-hidden"
+                     :class="{
+                        'border-red-200 bg-red-50':    conflict.recommendation?.action === 'redirect',
+                        'border-orange-200 bg-orange-50': conflict.recommendation?.action === 'consolidate',
+                        'border-amber-200 bg-amber-50': conflict.recommendation?.action === 'noindex',
+                        'border-blue-200 bg-blue-50':   conflict.recommendation?.action === 'differentiate',
+                        'border-emerald-200 bg-emerald-50': conflict.recommendation?.action === 'keep_both',
+                        'border-slate-200 bg-white':    !conflict.recommendation?.action,
+                     }">
+                    <!-- Conflict header -->
+                    <div class="px-4 py-3 flex items-start justify-between gap-3">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-semibold text-slate-800" x-text="conflict.cluster_name"></p>
+                            <p class="text-xs text-slate-500 mt-0.5">
+                                <span x-text="conflict.queries.length"></span> queries ·
+                                <span x-text="conflict.losers.length + 1"></span> competing pages
+                            </p>
+                        </div>
+                        <!-- Action badge -->
+                        <div x-show="conflict.recommendation?.action" class="flex items-center gap-2 shrink-0">
+                            <span class="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                                  :class="{
+                                    'bg-red-200 text-red-800':     conflict.recommendation?.action === 'redirect',
+                                    'bg-orange-200 text-orange-800': conflict.recommendation?.action === 'consolidate',
+                                    'bg-amber-200 text-amber-800': conflict.recommendation?.action === 'noindex',
+                                    'bg-blue-200 text-blue-800':   conflict.recommendation?.action === 'differentiate',
+                                    'bg-emerald-200 text-emerald-800': conflict.recommendation?.action === 'keep_both',
+                                  }"
+                                  x-text="conflict.recommendation?.action?.replace('_',' ')"></span>
+                            <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                                  :class="{
+                                    'bg-red-100 text-red-700':    conflict.recommendation?.priority === 'high',
+                                    'bg-amber-100 text-amber-700': conflict.recommendation?.priority === 'medium',
+                                    'bg-slate-100 text-slate-600': conflict.recommendation?.priority === 'low',
+                                  }"
+                                  x-text="conflict.recommendation?.priority"></span>
+                        </div>
+                    </div>
+
+                    <!-- AI reasoning -->
+                    <div x-show="conflict.recommendation?.reasoning" class="px-4 pb-2">
+                        <p class="text-xs text-slate-600 italic" x-text="'💡 ' + conflict.recommendation?.reasoning"></p>
+                    </div>
+
+                    <!-- Pages table -->
+                    <div class="px-4 pb-3">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-slate-400 border-b border-slate-200">
+                                    <th class="text-left py-1.5 font-medium">Page</th>
+                                    <th class="text-right py-1.5 font-medium w-16">Clicks</th>
+                                    <th class="text-right py-1.5 font-medium w-20">Avg Pos</th>
+                                    <th class="text-right py-1.5 font-medium w-16">Queries</th>
+                                    <th class="text-right py-1.5 font-medium w-20">Role</th>
+                                    <th class="w-20"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Winner row -->
+                                <tr class="border-b border-slate-100">
+                                    <td class="py-2 pr-2">
+                                        <a :href="conflict.winner.url" target="_blank"
+                                           class="text-emerald-700 hover:underline font-mono truncate block max-w-xs"
+                                           x-text="conflict.winner.url.replace(/^https?:\/\//, '')"></a>
+                                    </td>
+                                    <td class="text-right tabular-nums text-slate-700" x-text="(conflict.winner.clicks||0).toLocaleString()"></td>
+                                    <td class="text-right tabular-nums text-slate-700" x-text="conflict.winner.avg_position"></td>
+                                    <td class="text-right tabular-nums text-slate-500" x-text="conflict.winner.query_count"></td>
+                                    <td class="text-right"><span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">✓ Winner</span></td>
+                                    <td class="text-right pl-2">
+                                        <a :href="`/gsc/properties/{{ property.id }}/optimize?url=${encodeURIComponent(conflict.winner.url)}`"
+                                           class="text-violet-600 hover:text-violet-800 font-medium">Fix →</a>
+                                    </td>
+                                </tr>
+                                <!-- Loser rows -->
+                                <template x-for="(loser, li) in conflict.losers" :key="li">
+                                    <tr class="border-b border-slate-100 last:border-0">
+                                        <td class="py-2 pr-2">
+                                            <a :href="loser.url" target="_blank"
+                                               class="text-slate-500 hover:underline font-mono truncate block max-w-xs"
+                                               x-text="loser.url.replace(/^https?:\/\//, '')"></a>
+                                        </td>
+                                        <td class="text-right tabular-nums text-slate-500" x-text="(loser.clicks||0).toLocaleString()"></td>
+                                        <td class="text-right tabular-nums text-slate-500" x-text="loser.avg_position"></td>
+                                        <td class="text-right tabular-nums text-slate-400" x-text="loser.query_count"></td>
+                                        <td class="text-right"><span class="bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Competing</span></td>
+                                        <td></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Query tags -->
+                    <div class="px-4 pb-3 flex flex-wrap gap-1">
+                        <template x-for="(q, qi) in conflict.queries.slice(0,8)" :key="qi">
+                            <span class="text-xs bg-white border border-slate-200 text-slate-500 px-2 py-0.5 rounded-full" x-text="q"></span>
+                        </template>
+                        <span x-show="conflict.queries.length > 8"
+                              class="text-xs text-slate-400"
+                              x-text="'+' + (conflict.queries.length - 8) + ' more'"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -870,6 +1044,17 @@ function gscDetail(propertyId) {
         rView:    'bypage',   // 'timeline' | 'bypage'
         rExpanded: {},        // url → bool
 
+        // Cannibalization state
+        canConflicts:       [],
+        canTotal:           0,
+        canQueriesAnalysed: 0,
+        canLoading:         false,
+        canError:           '',
+        canRan:             false,
+        canMinImp:          100,
+        canDays:            90,
+        canProvider:        'anthropic',
+
         // Upload
         uploadMsg: '',
         uploadErr: false,
@@ -884,6 +1069,7 @@ function gscDetail(propertyId) {
             if (tab === 'pages'   && !this.pRows.length)  await this.loadPages();
             if (tab === 'xref'    && !this.xref)          await this.loadXref();
             if (tab === 'reports' && !this.rRows.length)  await this.loadReports();
+            // cannibalization is user-triggered (Analyse button), not auto-loaded
         },
 
         async loadReports() {
@@ -897,6 +1083,35 @@ function gscDetail(propertyId) {
                 // silent
             } finally {
                 this.rLoading = false;
+            }
+        },
+
+        async runCannibalization() {
+            this.canLoading = true;
+            this.canError   = '';
+            this.canRan     = false;
+            try {
+                const res  = await fetch(`/api/gsc/properties/${this.propertyId}/cannibalization`, {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        min_impressions: this.canMinImp,
+                        days:            this.canDays,
+                        provider:        this.canProvider,
+                        model:           this.canProvider === 'openai' ? 'gpt-4o-mini' : 'claude-haiku-4-5-20251001',
+                    }),
+                });
+                const data = await res.json();
+                if (!res.ok) { this.canError = data.detail || 'Failed to run analysis'; return; }
+                this.canConflicts       = data.conflicts        || [];
+                this.canTotal           = data.total_conflicts  || 0;
+                this.canQueriesAnalysed = data.queries_analysed || 0;
+                this.canRan             = true;
+                if (data.message && this.canTotal === 0) this.canError = '';
+            } catch(e) {
+                this.canError = 'Network error: ' + e.message;
+            } finally {
+                this.canLoading = false;
             }
         },
 
