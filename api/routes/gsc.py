@@ -937,21 +937,24 @@ async def get_page_queries(property_id: str, url: str, days: int = 90):
 
 def _extract_json(text: str, label: str = "") -> dict:
     """Strip markdown fences, extract outermost {...} block, repair if truncated."""
-    import re as _re
+    import re as _re, json as _json
     cleaned = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=_re.MULTILINE).strip()
     first = cleaned.find("{")
-    last  = cleaned.rfind("}")
-    if first != -1 and last > first:
-        candidate = cleaned[first:last + 1]
-    elif first != -1:
-        candidate = cleaned[first:]
-        open_braces   = candidate.count("{") - candidate.count("}")
-        open_brackets = candidate.count("[") - candidate.count("]")
-        candidate += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
-    else:
-        candidate = cleaned
+    if first == -1:
+        return {"raw": text}
+    last = cleaned.rfind("}")
+    # Try 1: obvious slice between outermost { and last }
+    if last > first:
+        try:
+            return _json.loads(cleaned[first:last + 1])
+        except Exception:
+            pass
+    # Try 2: repair truncated JSON by closing unmatched braces/brackets
+    candidate = cleaned[first:]
+    open_braces   = candidate.count("{") - candidate.count("}")
+    open_brackets = candidate.count("[") - candidate.count("]")
+    candidate += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
     try:
-        import json as _json
         return _json.loads(candidate)
     except Exception:
         if label:
