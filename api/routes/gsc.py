@@ -143,6 +143,7 @@ class PageOptimizeRequest(BaseModel):
     model:             str             = "claude-haiku-4-5"
     audit_types:       List[str]       = ["SEO_AUDIT", "GEO_AUDIT"]
     selected_queries:  Optional[List[dict]] = None  # if provided, skip API fetch and use these
+    page_content:      Optional[str]   = None        # if provided, skip scraping entirely
 
 
 # ── CSV parsing ───────────────────────────────────────────────────────────────
@@ -946,17 +947,21 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
         await db.commit()
 
     try:
-        # 1. Fetch page HTML and extract text
-        import httpx
-        from bs4 import BeautifulSoup
+        # 1. Fetch page HTML and extract text (or use provided content)
+        if req.page_content:
+            # User pasted content directly — skip scraping
+            page_text = req.page_content[:30000]
+        else:
+            import httpx
+            from bs4 import BeautifulSoup
 
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            resp = await client.get(req.url, headers={"User-Agent": "GEO-Analyzer/2.1"})
-            resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.extract()
-        page_text = soup.get_text(separator=" ", strip=True)[:30000]
+            async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
+                resp = await client.get(req.url, headers={"User-Agent": "GEO-Analyzer/2.1"})
+                resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for tag in soup(["script", "style", "noscript"]):
+                tag.extract()
+            page_text = soup.get_text(separator=" ", strip=True)[:30000]
 
         # 2. Get per-page queries — use caller-provided selection or fetch from OAuth API
         queries = []
@@ -1275,6 +1280,7 @@ class StandaloneOptimizeRequest(BaseModel):
     provider:     str             = "anthropic"
     model:        str             = "claude-haiku-4-5-20251001"
     audit_types:  List[str]       = ["SEO_AUDIT", "GEO_AUDIT", "FAQ_KEYWORDS", "SCHEMA_GEN"]
+    page_content: Optional[str]   = None  # if provided, skip scraping entirely
 
 
 @router.post("/optimize")
@@ -1291,6 +1297,7 @@ async def standalone_optimize(req: StandaloneOptimizeRequest):
         model=req.model,
         audit_types=req.audit_types,
         selected_queries=req.queries if req.queries else [],
+        page_content=req.page_content,
     )
     async with AsyncSessionLocal() as db:
         guide = UrlGuide(
