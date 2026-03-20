@@ -140,7 +140,7 @@ class CreatePropertyRequest(BaseModel):
 class PageOptimizeRequest(BaseModel):
     url:               str
     provider:          str             = "anthropic"
-    model:             str             = "claude-haiku-4-5"
+    model:             str             = "claude-sonnet-4-5"
     audit_types:       List[str]       = ["SEO_AUDIT", "GEO_AUDIT"]
     selected_queries:  Optional[List[dict]] = None  # if provided, skip API fetch and use these
     page_content:      Optional[str]   = None        # if provided, skip scraping entirely
