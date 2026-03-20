@@ -636,11 +636,12 @@ function standaloneOptimize() {
             if (end > start) {
                 try { return JSON.parse(s.slice(start, end + 1)); } catch(e) {}
             }
-            // Try 2: repair truncated JSON — close unmatched braces/brackets
+            // Try 2: repair truncated JSON — close unmatched braces/brackets + strip trailing commas
             let candidate = s.slice(start);
             const ob = (candidate.match(/\{/g)||[]).length - (candidate.match(/\}/g)||[]).length;
             const ol = (candidate.match(/\[/g)||[]).length - (candidate.match(/\]/g)||[]).length;
             candidate += ']'.repeat(Math.max(0,ol)) + '}'.repeat(Math.max(0,ob));
+            candidate = candidate.replace(/,(\s*[}\]])/g, '$1');
             try { return JSON.parse(candidate); } catch(e) {}
             return r;
         },
