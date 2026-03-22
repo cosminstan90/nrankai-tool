@@ -132,8 +132,23 @@ async def lifespan(app: FastAPI):
     
     scheduler_task = asyncio.create_task(scheduler_loop())
     print("[OK] Scheduler started (checks every 60 seconds)")
-    
+
+    # Start lead audit worker (polls nrankai.com for public free-audit jobs)
+    from api.workers.lead_audit_worker import lead_audit_worker_loop
+    lead_worker_task = asyncio.create_task(lead_audit_worker_loop())
+    if os.getenv("NRANKAI_WORKER_KEY"):
+        print("[OK] Lead audit worker started (nrankai.com integration)")
+    else:
+        print("[INFO] Lead audit worker disabled (set NRANKAI_WORKER_KEY to enable)")
+
     yield
+
+    # Shutdown lead worker
+    lead_worker_task.cancel()
+    try:
+        await lead_worker_task
+    except asyncio.CancelledError:
+        pass
     
     # Shutdown
     print("Shutting down...")
