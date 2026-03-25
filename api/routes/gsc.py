@@ -1135,17 +1135,20 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
 
         _FAQ_SYSTEM = (
             "You are an SEO content strategist. Analyse the provided web page content and its known search queries.\n\n"
-            "Generate semantically related keywords and FAQ questions to strengthen topical authority.\n\n"
+            "Generate semantically related keywords and complete FAQ question-and-answer pairs to strengthen topical authority.\n\n"
             "KEYWORD TYPES:\n"
             "- lsi: Latent Semantic Indexing terms (semantically related concepts)\n"
             "- long_tail: Longer, more specific query variations\n"
             "- synonym: Alternative terms for the same concept\n"
             "- semantic: Related but broader/narrower concepts within the topic cluster\n\n"
-            "FAQ QUESTIONS must be:\n"
-            "- Derived from real user intent visible in the known queries\n"
-            "- Written as natural language questions a user would search or ask\n"
-            "- Answerable with a paragraph (compatible with schema.org FAQPage markup)\n"
-            "- Prioritised by content gap and search opportunity\n\n"
+            "FAQ RULES:\n"
+            "- Generate exactly 10–12 Q&A pairs\n"
+            "- Questions must reflect real user intent from the known queries (or inferred from page content if no queries provided)\n"
+            "- Write natural language questions a user would actually search or ask\n"
+            "- Each answer must be a complete, helpful paragraph (3–5 sentences) — NOT a hint or placeholder\n"
+            "- Answers must be factual, based on the page content, and ready to publish as-is\n"
+            "- Compatible with schema.org FAQPage markup\n"
+            "- Prioritise by content gap and search opportunity\n\n"
             "LANGUAGE: Respond in the SAME LANGUAGE as the audited page content.\n\n"
             "Return ONLY valid JSON, no preamble:\n"
             "{\n"
@@ -1154,10 +1157,10 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             '"intent": "informational|commercial|navigational|transactional", "priority": "high|medium|low"}\n'
             "  ],\n"
             '  "faq_questions": [\n'
-            '    {"question": "string", "answer_hint": "string", "priority": "high|medium|low"}\n'
+            '    {"question": "string", "answer": "string", "priority": "high|medium|low"}\n'
             "  ]\n"
             "}\n\n"
-            "Generate 15–25 related keywords and 8–15 FAQ questions."
+            "Generate 15–25 related keywords and exactly 10–12 complete Q&A pairs."
         )
 
         # _extract_json is now a module-level function
