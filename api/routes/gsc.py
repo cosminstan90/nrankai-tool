@@ -1026,10 +1026,13 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     }
                     return svc.searchanalytics().query(siteUrl=site_url, body=body).execute().get("rows", [])
 
-                rows = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, _fetch_queries),
-                    timeout=30,
-                )
+                try:
+                    rows = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, _fetch_queries),
+                        timeout=20,
+                    )
+                except Exception:
+                    rows = []
                 queries = [
                     {
                         "query":       r["keys"][0] if r.get("keys") else "",
