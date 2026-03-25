@@ -1026,7 +1026,10 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     }
                     return svc.searchanalytics().query(siteUrl=site_url, body=body).execute().get("rows", [])
 
-                rows = await asyncio.get_event_loop().run_in_executor(None, _fetch_queries)
+                rows = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(None, _fetch_queries),
+                    timeout=30,
+                )
                 queries = [
                     {
                         "query":       r["keys"][0] if r.get("keys") else "",
@@ -1146,31 +1149,32 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
 
         # _extract_json is now a module-level function
 
-        results = {}
-        for audit_type in req.audit_types:
+        async def _run_single_audit(audit_type: str):
             if audit_type == "FAQ_KEYWORDS":
                 system_prompt = _FAQ_SYSTEM + kw_block
-                max_tok = 8192
-                # FAQ generation doesn't need the full page — trim to avoid token overflow
                 user_content = page_text[:15000]
             elif audit_type == "SCHEMA_GEN":
                 system_prompt = _SCHEMA_GEN_SYSTEM + kw_block
-                max_tok = 8192
                 user_content = page_text
             else:
                 system_prompt = load_prompt(audit_type) + kw_block
-                max_tok = 8192
                 user_content = page_text
 
-            response_text, _, _ = await call_llm_for_schema(
-                provider=req.provider,
-                model=req.model,
-                system_prompt=system_prompt,
-                user_content=user_content,
-                max_tokens=max_tok,
-                prefill="{",
+            response_text, _, _ = await asyncio.wait_for(
+                call_llm_for_schema(
+                    provider=req.provider,
+                    model=req.model,
+                    system_prompt=system_prompt,
+                    user_content=user_content,
+                    max_tokens=8192,
+                    prefill="{",
+                ),
+                timeout=120,
             )
-            results[audit_type] = _extract_json(response_text, label=audit_type)
+            return audit_type, _extract_json(response_text, label=audit_type)
+
+        pairs = await asyncio.gather(*[_run_single_audit(t) for t in req.audit_types])
+        results = dict(pairs)
 
         # 5. Store completed result
         async with AsyncSessionLocal() as db:
