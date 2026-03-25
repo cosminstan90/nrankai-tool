@@ -959,9 +959,18 @@ def _extract_json(text: str, label: str = "") -> dict:
     try:
         return _json.loads(candidate)
     except Exception:
-        if label:
-            print(f"[gsc] ⚠ JSON parse failed for {label}. Raw (first 500 chars):\n{text[:500]}")
-        return {"raw": text}
+        pass
+    # Try 3: json_repair handles unclosed strings, truncated values, etc.
+    try:
+        from json_repair import repair_json
+        repaired = repair_json(cleaned[first:])
+        if repaired and repaired != "{}":
+            return _json.loads(repaired)
+    except Exception:
+        pass
+    if label:
+        print(f"[gsc] ⚠ JSON parse failed for {label}. Raw (first 500 chars):\n{text[:500]}")
+    return {"raw": text}
 
 
 # ── Page LLM Optimization ─────────────────────────────────────────────────────
@@ -992,7 +1001,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             soup = BeautifulSoup(resp.text, "html.parser")
             for tag in soup(["script", "style", "noscript"]):
                 tag.extract()
-            page_text = soup.get_text(separator=" ", strip=True)[:30000]
+            page_text = soup.get_text(separator=" ", strip=True)[:15000]
 
         # 2. Get per-page queries — use caller-provided selection or fetch from OAuth API
         queries = []
@@ -1173,7 +1182,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     max_tokens=8192,
                     prefill="{",
                 ),
-                timeout=120,
+                timeout=240,
             )
             await track_cost(
                 source="page_optimize",
@@ -1285,7 +1294,7 @@ async def page_optimize(property_id: str, req: PageOptimizeRequest):
 
     async def _guarded(gid, pid, r):
         try:
-            await asyncio.wait_for(_run_page_optimize(gid, pid, r), timeout=300)
+            await asyncio.wait_for(_run_page_optimize(gid, pid, r), timeout=660)
         except asyncio.TimeoutError:
             async with AsyncSessionLocal() as db:
                 g = await db.get(UrlGuide, gid)
@@ -1515,13 +1524,13 @@ async def standalone_optimize(req: StandaloneOptimizeRequest):
 
     async def _guarded_standalone(gid, r):
         try:
-            await asyncio.wait_for(_run_page_optimize(gid, None, r), timeout=300)
+            await asyncio.wait_for(_run_page_optimize(gid, None, r), timeout=660)
         except asyncio.TimeoutError:
             async with AsyncSessionLocal() as db:
                 g = await db.get(UrlGuide, gid)
                 if g and g.status in ("pending", "running"):
                     g.status = "failed"
-                    g.error_message = "Timed out after 5 minutes"
+                    g.error_message = "Timed out after 11 minutes"
                     g.updated_at = datetime.utcnow()
                     await db.commit()
 
