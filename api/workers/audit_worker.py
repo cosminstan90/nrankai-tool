@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.models.database import Audit, AuditResult, AuditLog, AsyncSessionLocal
+from api.routes.costs import track_cost
 
 
 async def fire_webhook(webhook_url: str, payload: dict) -> None:
@@ -403,6 +404,17 @@ async def run_analysis_step(
             pages_analyzed = len(output_files)
             await update_audit_status(audit_id, pages_analyzed=pages_analyzed)
             await log_message(audit_id, f"Direct analysis complete: {pages_analyzed}/{total_pages} pages processed")
+
+            if stats and stats.total_input_tokens:
+                await track_cost(
+                    source="audit",
+                    provider=provider,
+                    model=model,
+                    input_tokens=stats.total_input_tokens,
+                    output_tokens=stats.total_output_tokens,
+                    audit_id=audit_id,
+                    website=website,
+                )
         else:
             # Use batch mode
             await log_message(audit_id, "Using batch mode (slower but cost-effective)")

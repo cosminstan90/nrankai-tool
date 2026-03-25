@@ -50,6 +50,7 @@ from api.models.database import (
     AuditResult,
     UrlGuide,
 )
+from api.routes.costs import track_cost
 
 # ── Google OAuth config ────────────────────────────────────────────────────────
 
@@ -1026,10 +1027,13 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     }
                     return svc.searchanalytics().query(siteUrl=site_url, body=body).execute().get("rows", [])
 
-                rows = await asyncio.wait_for(
-                    asyncio.get_event_loop().run_in_executor(None, _fetch_queries),
-                    timeout=30,
-                )
+                try:
+                    rows = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(None, _fetch_queries),
+                        timeout=20,
+                    )
+                except Exception:
+                    rows = []
                 queries = [
                     {
                         "query":       r["keys"][0] if r.get("keys") else "",
@@ -1160,7 +1164,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                 system_prompt = load_prompt(audit_type) + kw_block
                 user_content = page_text
 
-            response_text, _, _ = await asyncio.wait_for(
+            response_text, in_tok, out_tok = await asyncio.wait_for(
                 call_llm_for_schema(
                     provider=req.provider,
                     model=req.model,
@@ -1170,6 +1174,13 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     prefill="{",
                 ),
                 timeout=120,
+            )
+            await track_cost(
+                source="page_optimize",
+                provider=req.provider,
+                model=req.model,
+                input_tokens=in_tok,
+                output_tokens=out_tok,
             )
             return audit_type, _extract_json(response_text, label=audit_type)
 

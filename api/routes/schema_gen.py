@@ -263,12 +263,19 @@ async def call_llm_for_schema(
         messages = [{"role": "user", "content": user_content}]
         if prefill:
             messages.append({"role": "assistant", "content": prefill})
-        response = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=messages
-        )
+        for _attempt in range(3):
+            try:
+                response = await client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    system=system_prompt,
+                    messages=messages
+                )
+                break
+            except Exception as e:
+                if _attempt == 2 or "overloaded" not in str(e).lower():
+                    raise
+                await asyncio.sleep(5 * (_attempt + 1))
         text = response.content[0].text
         # Re-attach the prefill so the caller gets a complete string
         if prefill:
