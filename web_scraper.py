@@ -502,6 +502,14 @@ def scrape(
 
     options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537")
 
+    # Remove stale cached chromedriver to prevent WinError 183 on rename
+    _uc_exe = os.path.join(os.environ.get("APPDATA", ""), "undetected_chromedriver", "undetected_chromedriver.exe")
+    if os.path.exists(_uc_exe):
+        try:
+            os.remove(_uc_exe)
+        except OSError:
+            pass
+
     driver = uc.Chrome(options=options, version_main=145)
     driver.set_page_load_timeout(30)
 
