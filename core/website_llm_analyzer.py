@@ -16,16 +16,16 @@ import re
 import sys
 import time
 import argparse
-from monitor_completion_LLM_batch import monitor_job
+from core.monitor_completion_LLM_batch import monitor_job
 
 # Import configuration module
-import config
+from core import config
 
 # Import content chunker for intelligent content handling
-from content_chunker import ContentChunker
+from core.content_chunker import ContentChunker
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Initialize module logger
 logger = get_logger(__name__)

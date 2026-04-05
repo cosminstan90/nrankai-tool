@@ -13,7 +13,7 @@ import re
 import hashlib
 
 # Import all configuration from centralized config module
-from config import (
+from core.config import (
     client,
     PROVIDER,
     QUESTION_TYPE,
@@ -25,14 +25,14 @@ from config import (
 )
 
 # Import content chunker for merging multi-chunk results
-from content_chunker import AuditResultMerger, ChunkMetadata
+from core.content_chunker import AuditResultMerger, ChunkMetadata
 
 # Import prompt_loader for custom audit detection
-from prompt_loader import is_custom_audit, get_audit_definition
+from core.prompt_loader import is_custom_audit, get_audit_definition
 
 # Import audit_builder for custom audit processing
 try:
-    from audit_builder import (
+    from core.audit_builder import (
         get_score_prefix as get_custom_prefix,
         get_save_condition as check_custom_save_condition
     )
@@ -48,7 +48,7 @@ except ImportError:
     HISTORY_TRACKING_AVAILABLE = False
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Initialize module logger
 logger = get_logger(__name__)

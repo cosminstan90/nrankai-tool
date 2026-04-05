@@ -29,7 +29,7 @@ from openai import AsyncOpenAI
 from mistralai import Mistral
 
 # Local imports
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 logger = get_logger(__name__)
 

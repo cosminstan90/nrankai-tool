@@ -30,13 +30,13 @@ from selenium.webdriver.support.ui import WebDriverWait
 from tqdm import tqdm
 
 # Import configuration module
-import config
+from core import config
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Import scrape state management
-from scrape_state import (
+from core.scrape_state import (
     ScrapeStateManager,
     PageState,
     compute_content_hash,

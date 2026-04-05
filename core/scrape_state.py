@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 

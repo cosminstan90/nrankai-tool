@@ -25,7 +25,7 @@ from typing import List, Dict, Any, Optional, Tuple
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Initialize logger
 logger = get_logger(__name__)
@@ -398,8 +398,8 @@ def test_with_llm(yaml_path: str, sample_content: str = None) -> Tuple[bool, str
         Tuple of (success, message)
     """
     try:
-        from audit_builder import load_custom_audit, build_system_prompt, validate_audit_result
-        import config
+        from core.audit_builder import load_custom_audit, build_system_prompt, validate_audit_result
+        from core import config
     except ImportError as e:
         return False, f"Import error: {e}"
     
@@ -486,7 +486,7 @@ def test_with_llm(yaml_path: str, sample_content: str = None) -> Tuple[bool, str
     
     # Test prefix extraction
     try:
-        from audit_builder import get_score_prefix
+        from core.audit_builder import get_score_prefix
         prefix = get_score_prefix(definition, result)
         print(f"  ✓ Score prefix extracted: {prefix}")
     except Exception as e:

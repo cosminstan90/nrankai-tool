@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 
 # Import logger
 try:
-    from logger import get_logger, setup_logging
+    from core.logger import get_logger, setup_logging
     logger = get_logger(__name__)
 except ImportError:
     import logging
