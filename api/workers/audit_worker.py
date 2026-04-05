@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Add parent directory to path for imports
 
 from api.models.database import Audit, AuditResult, AuditLog, AsyncSessionLocal
-from api.routes.costs import track_cost
+# track_cost imported lazily inside run_analysis_step to avoid circular import:
+# audit_worker → api.routes.costs → api.routes.__init__ → audits.py → audit_worker
 
 
 async def fire_webhook(webhook_url: str, payload: dict) -> None:
@@ -421,6 +422,7 @@ async def run_analysis_step(
             await log_message(audit_id, f"Direct analysis complete: {pages_analyzed}/{total_pages} pages processed")
 
             if stats and stats.total_input_tokens:
+                from api.routes.costs import track_cost
                 await track_cost(
                     source="audit",
                     provider=provider,
