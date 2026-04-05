@@ -187,6 +187,23 @@
             </p>
         </div>
 
+        <!-- Prompt Version -->
+        <div x-show="mode === 'full'">
+            <label for="prompt_version" class="block text-sm font-medium text-slate-700">
+                Prompt Version
+            </label>
+            <div class="mt-1">
+                <select name="prompt_version" id="prompt_version"
+                    class="shadow-sm focus:ring-primary-500 focus:border-primary-500 block w-full sm:text-sm border-slate-300 rounded-lg">
+                    <option value="v3" selected>v3 — Current (prompts/)</option>
+                    <option value="v2">v2 — Backup (prompts_backup/)</option>
+                </select>
+            </div>
+            <p class="mt-1 text-xs text-slate-500">
+                Select <strong>v2</strong> to run audits using the original backup prompts. Useful for case studies comparing v2 vs v3 results.
+            </p>
+        </div>
+
         <!-- LLM Provider -->
         <div>
             <label for="provider" class="block text-sm font-medium text-slate-700">
@@ -594,6 +611,7 @@
                     use_perplexity: form.querySelector('[name="use_perplexity"]')?.checked || false,
                     language: form.querySelector('[name="language"]').value || 'English',
                     webhook_url: form.querySelector('[name="webhook_url"]')?.value || null,
+                    prompt_version: form.querySelector('[name="prompt_version"]')?.value || 'v3',
                 };
 
                 const createdIds = [];

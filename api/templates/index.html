@@ -146,47 +146,85 @@
     </div>
     {% endif %}
 
-    <!-- Recent Audits -->
+    <!-- Websites -->
     <div class="bg-white shadow-sm rounded-lg border border-slate-200 overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-200">
-            <h2 class="text-lg font-semibold text-slate-900">Recent Audits</h2>
+        <div class="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+            <h2 class="text-lg font-semibold text-slate-900">Projects</h2>
+            <span class="text-sm text-slate-500">{{ websites | length }} website{{ 's' if websites | length != 1 }}</span>
         </div>
 
-        {% if audits %}
+        {% if websites %}
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-slate-200">
                 <thead class="bg-slate-50">
                     <tr>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Website</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Audit Type</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Provider</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Status</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Score</th>
-                        <th scope="col"
-                            class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
-                            Created</th>
-                        <th scope="col" class="relative px-6 py-3">
-                            <span class="sr-only">Actions</span>
-                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Website</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Audits</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Pages</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Avg Score</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Total Cost</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Last Run</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                        <th class="relative px-6 py-3"><span class="sr-only">Actions</span></th>
                     </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-slate-200">
-                    {% for audit in audits %}
-                    <tr id="audit-row-{{ audit.id }}" class="hover:bg-slate-50 transition-colors" {% if audit.status in
-                        ['pending', 'scraping' , 'converting' , 'analyzing' ] %}
-                        hx-get="/partials/audit-row/{{ audit.id }}" hx-trigger="every 3s" hx-swap="outerHTML" {% endif
-                        %}>
-                        {% include "partials/audit_row_content.html" %}
+                    {% for site in websites %}
+                    <tr class="hover:bg-slate-50 transition-colors">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <a href="/sites/{{ site.website }}" class="text-sm font-medium text-primary-600 hover:text-primary-800">
+                                {{ site.website }}
+                            </a>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {{ site.audit_count }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {{ site.total_pages | default(0) }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if site.avg_score is not none %}
+                            <span class="text-sm font-bold
+                                {% if site.avg_score >= 85 %}text-emerald-600
+                                {% elif site.avg_score >= 70 %}text-yellow-500
+                                {% elif site.avg_score >= 50 %}text-orange-500
+                                {% else %}text-red-500{% endif %}">
+                                {{ site.avg_score }}
+                            </span>
+                            {% else %}
+                            <span class="text-sm text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
+                            {% if site.total_cost_usd > 0 %}
+                            ${{ "%.3f"|format(site.total_cost_usd) }}
+                            <span class="text-xs text-slate-400">(€{{ "%.3f"|format(site.total_cost_usd * 0.92) }})</span>
+                            {% else %}
+                            <span class="text-slate-400">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            {{ site.last_run.strftime('%b %d, %H:%M') if site.last_run else '—' }}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            {% if site.running_count > 0 %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-700">
+                                {{ site.running_count }} running
+                            </span>
+                            {% elif site.failed_count > 0 %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+                                {{ site.failed_count }} failed
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                                OK
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                            <a href="/sites/{{ site.website }}" class="text-primary-600 hover:text-primary-900">View</a>
+                            <a href="/new?website={{ site.website }}" class="text-slate-500 hover:text-slate-800">+ Audit</a>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -196,18 +234,12 @@
         <div class="px-6 py-12 text-center">
             <svg class="mx-auto h-12 w-12 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4">
-                </path>
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
             </svg>
             <h3 class="mt-2 text-sm font-medium text-slate-900">No audits yet</h3>
             <p class="mt-1 text-sm text-slate-500">Get started by creating a new audit.</p>
             <div class="mt-6">
-                <a href="/new"
-                    class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700">
-                    <svg class="-ml-1 mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
+                <a href="/new" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700">
                     New Audit
                 </a>
             </div>

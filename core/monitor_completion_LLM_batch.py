@@ -489,6 +489,17 @@ def monitor_job(job_id):
     """
     logger.info(f"Starting {PROVIDER} monitor for job: {job_id}")
 
+    # Abort early if job_id looks invalid for this provider
+    if PROVIDER == "ANTHROPIC" and not str(job_id).startswith("msgbatch_"):
+        logger.error(
+            f"Invalid Anthropic batch job ID: '{job_id}' — must start with 'msgbatch_'. "
+            f"Aborting monitor to avoid infinite retry loop."
+        )
+        return
+
+    consecutive_errors = 0
+    MAX_CONSECUTIVE_ERRORS = 5
+
     while True:
         try:
             if PROVIDER == "ANTHROPIC":
@@ -562,8 +573,15 @@ def monitor_job(job_id):
 
         except Exception as e:
             logger.error(f"Error during job monitoring: {e}", exc_info=True)
-            # Continue monitoring after error
-        
+            consecutive_errors += 1
+            if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                logger.error(
+                    f"Aborting monitor after {MAX_CONSECUTIVE_ERRORS} consecutive errors for job: {job_id}"
+                )
+                return
+        else:
+            consecutive_errors = 0  # Reset counter on success
+
         # Wait 300 seconds (5 minutes) for the next check
         time.sleep(300)
 

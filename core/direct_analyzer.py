@@ -86,7 +86,7 @@ ESTIMATED_OUTPUT_TOKENS_PER_PAGE = 2000
 # Retry configuration
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 529}
 MAX_RETRIES = 3
-BASE_BACKOFF_SECONDS = 1  # 1s, 4s, 16s (exponential: base * 4^attempt)
+BASE_BACKOFF_SECONDS = 5  # 5s, 20s, 80s — longer waits for TPM recovery
 
 # Per-page analysis timeout: if a single page takes longer than this, skip it
 PAGE_TIMEOUT_SECONDS = int(os.getenv("PAGE_ANALYSIS_TIMEOUT", "90"))
@@ -772,6 +772,7 @@ class DirectAnalyzer:
         language: str = "English",
         audit_id: Optional[str] = None,
         website: Optional[str] = None,
+        prompts_dir: Optional[str] = None,
     ):
         self.input_dir = input_dir
         self.output_dir = output_dir
@@ -785,6 +786,7 @@ class DirectAnalyzer:
         self.language = language
         self.audit_id = audit_id       # For cost tracking & DB logging
         self.website = website          # For cost tracking
+        self.prompts_dir = prompts_dir  # Custom prompts directory (None = use default)
 
         # Initialize content chunker for intelligent handling of large pages
         self.chunker = ContentChunker(provider=self.provider)
@@ -810,8 +812,13 @@ class DirectAnalyzer:
             # Fallback: very conservative 60 RPM if registry unavailable
             self._rate_limiter = ProviderRateLimiter(60)
         
-        # Load system message and append language instruction
-        self.system_message = load_prompt(question_type)
+        # Load system message — use custom prompts_dir if specified (for prompt version switching)
+        if self.prompts_dir:
+            from prompt_loader import PromptLoader
+            _loader = PromptLoader(prompts_dir=self.prompts_dir)
+            self.system_message = _loader.load_prompt(question_type)
+        else:
+            self.system_message = load_prompt(question_type)
         if language and language.lower() != "english":
             self.system_message += (
                 f"\n\nLANGUAGE INSTRUCTION: "
@@ -1042,11 +1049,44 @@ class DirectAnalyzer:
                 )
     
     def _get_txt_files(self) -> List[str]:
-        """Get list of .txt files in input directory."""
+        """Get list of .txt files in input directory, skipping already-processed ones.
+
+        Output filename format: "{score}_{classification}_{sanitized_input}.json"
+        e.g. "052_needs_work_ing.ro_some-page.json"
+        We match by checking whether any output file ENDS WITH "_{sanitized_input}.json".
+        """
+        # Collect all output JSON filenames for suffix matching
+        output_filenames: set = set()
+        if os.path.exists(self.output_dir):
+            for f in os.listdir(self.output_dir):
+                if f.endswith(".json"):
+                    output_filenames.add(f)
+
         files = []
+        skipped = 0
         for filename in os.listdir(self.input_dir):
-            if filename.endswith(".txt"):
-                files.append(filename)
+            if not filename.endswith(".txt"):
+                continue
+            # Reproduce the sanitized filename the way save_result_to_file does
+            sanitized = re.sub(r'[\\/*?:"<>|]', '_', filename)
+            expected_json = sanitized[:-4] + ".json"  # replace .txt → .json
+
+            # A page is "done" if any output file IS or ENDS WITH _{expected_json}
+            already = (
+                expected_json in output_filenames
+                or any(f.endswith("_" + expected_json) for f in output_filenames)
+            )
+            if already:
+                skipped += 1
+                continue
+            files.append(filename)
+
+        if skipped:
+            logger.info(
+                f"Resuming: skipping {skipped} already-processed pages, "
+                f"{len(files)} remaining"
+            )
+
         return sorted(files)
     
     async def run(self) -> AnalysisStats:
@@ -1186,6 +1226,7 @@ async def run_direct_analysis(
     language: str = "English",
     audit_id: Optional[str] = None,
     website: Optional[str] = None,
+    prompts_dir: Optional[str] = None,
 ) -> AnalysisStats:
     """
     Run direct (non-batch) LLM analysis.
@@ -1218,6 +1259,7 @@ async def run_direct_analysis(
         language=language,
         audit_id=audit_id,
         website=website,
+        prompts_dir=prompts_dir,
     )
 
     return await analyzer.run()

@@ -716,11 +716,28 @@ def scrape(
             # Use tqdm.write to maintain progress bar display
             tqdm.write(f"    [X] Failed {url}: {str(e)[:100]}")
             logger.error(f"Failed to scrape {url}: {e}", exc_info=False)
-            try:
-                driver.execute_script("window.stop();")
-            except Exception as stop_error:
-                logger.debug(f"Could not stop page load: {stop_error}")
-            
+
+            err_str = str(e).lower()
+            if any(sig in err_str for sig in ("no such window", "web view not found", "invalid session id", "session deleted")):
+                # Browser session is dead — restart Chrome
+                logger.warning("Browser session died, restarting Chrome...")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                try:
+                    driver = uc.Chrome(options=options, version_main=145)
+                    driver.set_page_load_timeout(30)
+                    logger.info("Chrome restarted successfully")
+                except Exception as restart_err:
+                    logger.error(f"Failed to restart Chrome: {restart_err}")
+                    break  # Can't continue without a browser
+            else:
+                try:
+                    driver.execute_script("window.stop();")
+                except Exception as stop_error:
+                    logger.debug(f"Could not stop page load: {stop_error}")
+
             if progress_callback:
                 try:
                     progress_callback(unchanged_count + succeeded + failed, len(entries))

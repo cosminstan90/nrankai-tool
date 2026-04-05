@@ -24,6 +24,9 @@
             </h1>
             <p class="mt-1 text-sm text-slate-500">
                 {{ total_audit_types }} audit type{{ 's' if total_audit_types != 1 }} · {{ total_audits_run }} total runs · most recent per type
+                {% if total_cost_usd > 0 %}
+                · <span class="font-medium text-slate-700">${{ "%.3f"|format(total_cost_usd) }} (€{{ "%.3f"|format(total_cost_usd * 0.92) }})</span> total cost
+                {% endif %}
             </p>
         </div>
 
@@ -84,6 +87,9 @@
                             <div class="text-xs font-semibold text-slate-700 truncate">{{ s.audit_type_label }}</div>
                             <div class="text-xs text-slate-400 mt-0.5">{{ s.completed_at }}</div>
                             <div class="text-xs text-slate-400">{{ s.page_count }} pages</div>
+                            {% if s.cost_usd > 0 %}
+                            <div class="text-xs text-slate-400 mt-0.5">${{ "%.3f"|format(s.cost_usd) }}</div>
+                            {% endif %}
                         </div>
                         <div class="ml-2 flex-shrink-0">
                             {% if s.avg_score is not none %}

@@ -52,21 +52,22 @@
                 Cancel Audit
             </button>
             {% endif %}
-            {% if audit.status == 'failed' %}
+            {% if audit.status in ['failed', 'completed', 'cancelled'] %}
             <button onclick="retryAudit('{{ audit.id }}', false)"
+                    title="Re-scrape the site and re-run the full analysis"
                     class="inline-flex items-center px-3 py-2 border border-emerald-300 shadow-sm text-sm font-medium rounded-lg text-emerald-700 bg-white hover:bg-emerald-50">
                 <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                 </svg>
-                Retry Full
+                {% if audit.status == 'completed' %}Re-run{% else %}Retry Full{% endif %}
             </button>
             <button onclick="retryAudit('{{ audit.id }}', true)"
-                    title="Skip scraping and conversion — re-run LLM analysis only (faster if HTML files exist)"
+                    title="Skip scraping — re-run LLM analysis only (reuses existing HTML files)"
                     class="inline-flex items-center px-3 py-2 border border-emerald-200 shadow-sm text-sm font-medium rounded-lg text-emerald-600 bg-emerald-50 hover:bg-emerald-100">
                 <svg class="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                 </svg>
-                Retry Analysis Only
+                Analysis Only
             </button>
             {% endif %}
             <button onclick="if(confirm('Delete this audit and all its data?')) fetch('/api/audits/{{ audit.id }}?force=true', {method: 'DELETE'}).then(r => { if(r.ok) window.location.href = '/'; else r.json().then(d => alert(d.detail || 'Delete failed')); })"
@@ -80,12 +81,7 @@
     </div>
     
     <!-- Status Card -->
-    <div id="status-card" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6"
-         {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
-         hx-ext="sse"
-         sse-connect="/api/audits/{{ audit.id }}/stream"
-         sse-swap="status"
-         {% endif %}>
+    <div id="status-card" class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-lg font-semibold text-slate-900">Status</h2>
             <span id="status-badge" class="badge 
@@ -170,14 +166,18 @@
     <!-- Log Output -->
     <div class="bg-white shadow-sm rounded-lg border border-slate-200 p-6">
         <h2 class="text-lg font-semibold text-slate-900 mb-4">Activity Log</h2>
-        <div id="log-output" class="log-output bg-slate-900 rounded-lg p-4 font-mono text-sm"
-             {% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
-             hx-ext="sse"
-             sse-connect="/api/audits/{{ audit.id }}/stream"
-             sse-swap="log"
-             hx-swap="beforeend scroll:bottom"
-             {% endif %}>
+        <div id="log-output" class="log-output bg-slate-900 rounded-lg p-4 font-mono text-sm">
+            {% if audit_logs %}
+                {% for log in audit_logs %}
+                <div class="log-line {% if log.level == 'ERROR' %}text-red-400{% elif log.level == 'WARNING' %}text-yellow-400{% else %}text-green-400{% endif %}">
+                    <span class="text-slate-500">[{{ log.created_at.strftime('%H:%M:%S') }}]</span>
+                    <span class="text-slate-400">[{{ log.level }}]</span>
+                    {{ log.message }}
+                </div>
+                {% endfor %}
+            {% else %}
             <div class="text-slate-400">Waiting for logs...</div>
+            {% endif %}
         </div>
     </div>
     
@@ -518,6 +518,16 @@
                 <dt class="text-sm font-medium text-slate-500">Output Language</dt>
                 <dd class="mt-1 text-sm text-slate-900">{{ audit.language or 'English' }}</dd>
             </div>
+            <div>
+                <dt class="text-sm font-medium text-slate-500">Prompt Version</dt>
+                <dd class="mt-1 text-sm text-slate-900">
+                    {% if audit.prompt_version == 'v2' %}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">v2 (backup)</span>
+                    {% else %}
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">v3 (current)</span>
+                    {% endif %}
+                </dd>
+            </div>
             {% if audit.webhook_url %}
             <div class="col-span-2">
                 <dt class="text-sm font-medium text-slate-500">Webhook URL</dt>
@@ -537,62 +547,79 @@
 
 {% block scripts %}
 <script>
-// Handle SSE events for real-time updates
-document.body.addEventListener('sse:status', function(event) {
-    const data = JSON.parse(event.detail.data);
-    
-    // Update status badge
-    const badge = document.getElementById('status-badge');
-    badge.className = 'badge badge-' + data.status;
-    badge.innerHTML = data.status.charAt(0).toUpperCase() + data.status.slice(1);
-    
-    // Update progress
-    document.getElementById('current-step').textContent = data.current_step;
-    document.getElementById('progress-percent').textContent = data.progress_percent + '%';
-    document.getElementById('progress-bar').style.width = data.progress_percent + '%';
-    
-    // Update stats
-    document.getElementById('total-pages').textContent = data.total_pages;
-    document.getElementById('pages-scraped').textContent = data.pages_scraped;
-    document.getElementById('pages-analyzed').textContent = data.pages_analyzed;
-    
-    if (data.average_score) {
-        const avgEl = document.getElementById('average-score');
-        avgEl.textContent = data.average_score;
-        avgEl.className = 'mt-1 text-2xl font-semibold ' + 
-            (data.average_score >= 70 ? 'text-green-600' : 
-             data.average_score >= 50 ? 'text-yellow-600' : 'text-red-600');
-    }
-});
+// ── Native EventSource (replaces HTMX SSE swap which dumped raw JSON) ────────
+{% if audit.status in ['pending', 'scraping', 'converting', 'analyzing'] %}
+(function() {
+    const AUDIT_ID = '{{ audit.id }}';
+    const es = new EventSource('/api/audits/' + AUDIT_ID + '/stream');
 
-document.body.addEventListener('sse:log', function(event) {
-    const data = JSON.parse(event.detail.data);
-    const logOutput = document.getElementById('log-output');
-    
-    // Clear "waiting" message on first log
-    if (logOutput.querySelector('.text-slate-400')) {
-        logOutput.innerHTML = '';
-    }
-    
-    const logLine = document.createElement('div');
-    logLine.className = 'py-0.5 ' + (data.level === 'ERROR' ? 'text-red-400' : 
-                                      data.level === 'WARNING' ? 'text-yellow-400' : 'text-green-400');
-    logLine.innerHTML = `<span class="text-slate-500">[${data.timestamp.split('T')[1].split('.')[0]}]</span> ${data.message}`;
-    logOutput.appendChild(logLine);
-    logOutput.scrollTop = logOutput.scrollHeight;
-});
+    es.addEventListener('status', function(e) {
+        const data = JSON.parse(e.data);
 
-document.body.addEventListener('sse:complete', function(event) {
-    const data = JSON.parse(event.detail.data);
-    
-    // Update progress bar color
-    const progressBar = document.getElementById('progress-bar');
-    progressBar.className = 'h-2.5 rounded-full progress-bar ' + 
-        (data.status === 'completed' ? 'bg-green-500' : 'bg-red-500');
-    
-    // Reload page to show results
-    setTimeout(() => window.location.reload(), 1000);
-});
+        // Badge
+        const badge = document.getElementById('status-badge');
+        const spinnerSVG = `<svg class="animate-spin mr-1 h-3 w-3 inline" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+        const running = ['scraping','converting','analyzing'].includes(data.status);
+        badge.className = 'badge badge-' + (running ? 'scraping' : data.status);
+        badge.innerHTML = (running ? spinnerSVG : '') + data.status.charAt(0).toUpperCase() + data.status.slice(1);
+
+        // Progress
+        const step = document.getElementById('current-step');
+        const pct  = document.getElementById('progress-percent');
+        const bar  = document.getElementById('progress-bar');
+        if (step) step.textContent = data.current_step || '';
+        if (pct)  pct.textContent  = (data.progress_percent || 0) + '%';
+        if (bar)  bar.style.width  = (data.progress_percent || 0) + '%';
+
+        // Stats
+        ['total-pages','pages-scraped','pages-analyzed'].forEach(id => {
+            const key = id.replace(/-([a-z])/g, (_, c) => '_' + c);
+            const el = document.getElementById(id);
+            if (el && data[key] != null) el.textContent = data[key];
+        });
+
+        if (data.average_score != null) {
+            const avg = document.getElementById('average-score');
+            if (avg) {
+                avg.textContent = data.average_score;
+                avg.className = 'mt-1 text-2xl font-semibold ' +
+                    (data.average_score >= 70 ? 'text-green-600' :
+                     data.average_score >= 50 ? 'text-yellow-600' : 'text-red-600');
+            }
+        }
+    });
+
+    es.addEventListener('log', function(e) {
+        const data = JSON.parse(e.data);
+        const logOutput = document.getElementById('log-output');
+
+        // Remove "Waiting for logs..." placeholder on first real entry
+        const placeholder = logOutput.querySelector('.text-slate-400');
+        if (placeholder) placeholder.remove();
+
+        const line = document.createElement('div');
+        line.className = 'py-0.5 ' + (
+            data.level === 'ERROR'   ? 'text-red-400'    :
+            data.level === 'WARNING' ? 'text-yellow-400' : 'text-green-400'
+        );
+        const ts = data.timestamp ? data.timestamp.split('T')[1].split('.')[0] : '';
+        line.innerHTML = `<span class="text-slate-500">[${ts}]</span> <span class="text-slate-400 text-xs">[${data.level}]</span> ${data.message}`;
+        logOutput.appendChild(line);
+        logOutput.scrollTop = logOutput.scrollHeight;
+    });
+
+    es.addEventListener('complete', function(e) {
+        const data = JSON.parse(e.data);
+        const bar = document.getElementById('progress-bar');
+        if (bar) bar.className = 'h-2.5 rounded-full progress-bar ' +
+            (data.status === 'completed' ? 'bg-green-500' : 'bg-red-500');
+        es.close();
+        setTimeout(() => window.location.reload(), 1200);
+    });
+
+    es.onerror = function() { es.close(); };
+})();
+{% endif %}
 
 async function cancelAudit(auditId) {
     if (!confirm('Cancel this audit? The audit will be marked as failed. You can still delete it later.')) return;
@@ -609,13 +636,89 @@ async function cancelAudit(auditId) {
     }
 }
 
-async function retryAudit(auditId, skipScraping) {
-    const msg = skipScraping
-        ? 'Re-run LLM analysis only (reuse existing scraped files)?\n\nUse this when the site content has not changed.'
-        : 'Restart the full audit (scrape → convert → analyze)?\n\nThis will re-scrape the site if a sitemap URL was provided.';
-    if (!confirm(msg)) return;
+// ── Retry modal ──────────────────────────────────────────────────────────────
+const PROVIDER_MODELS = {
+    anthropic: [
+        { v: 'claude-sonnet-4-20250514',   l: 'Claude Sonnet 4  ($3/$15 per M)' },
+        { v: 'claude-haiku-4-5-20251001',  l: 'Claude Haiku 4.5  ($1/$5 per M)' },
+        { v: 'claude-opus-4-5-20251101',   l: 'Claude Opus 4.5  ($15/$75 per M)' },
+    ],
+    openai: [
+        { v: 'gpt-4o',      l: 'GPT-4o  ($2.5/$10 per M)' },
+        { v: 'gpt-4o-mini', l: 'GPT-4o-mini  ($0.15/$0.60 per M)' },
+    ],
+    mistral: [
+        { v: 'mistral-large-latest', l: 'Mistral Large  ($2/$6 per M)' },
+        { v: 'mistral-small-latest', l: 'Mistral Small  ($0.20/$0.60 per M)' },
+    ],
+    google: [
+        { v: 'gemini-2.5-flash', l: 'Gemini 2.5 Flash  ($0.15/$0.60 per M)' },
+        { v: 'gemini-2.0-flash', l: 'Gemini 2.0 Flash  ($0.10/$0.40 per M)' },
+    ],
+};
+
+function openRetryModal(auditId, skipScraping) {
+    const currentProvider = '{{ audit.provider }}';
+    const currentModel    = '{{ audit.model }}';
+
+    // Build modal HTML
+    const providerOpts = Object.keys(PROVIDER_MODELS)
+        .map(p => `<option value="${p}" ${p === currentProvider ? 'selected' : ''}>${p.charAt(0).toUpperCase()+p.slice(1)}</option>`)
+        .join('');
+
+    const modalHtml = `
+    <div id="retry-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+        <h3 class="text-base font-semibold text-slate-900 mb-1">
+          ${skipScraping ? 'Retry — Analysis Only' : 'Retry — Full'}
+        </h3>
+        <p class="text-xs text-slate-500 mb-4">
+          ${skipScraping ? 'Refolosește fișierele deja scrape-uite, sare peste pagini deja procesate.' : 'Re-scrape complet + analiză.'}
+        </p>
+
+        <label class="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+        <select id="retry-provider" onchange="updateRetryModels()"
+                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-primary-400">
+          ${providerOpts}
+        </select>
+
+        <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+        <select id="retry-model"
+                class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-primary-400">
+        </select>
+
+        <div class="flex gap-3 justify-end">
+          <button onclick="document.getElementById('retry-modal').remove()"
+                  class="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50">
+            Cancel
+          </button>
+          <button onclick="submitRetry('${auditId}', ${skipScraping})"
+                  class="px-4 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700">
+            Start Retry
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    updateRetryModels(currentModel);
+}
+
+function updateRetryModels(preselect) {
+    const provider = document.getElementById('retry-provider').value;
+    const modelSel = document.getElementById('retry-model');
+    const models   = PROVIDER_MODELS[provider] || [];
+    modelSel.innerHTML = models
+        .map(m => `<option value="${m.v}" ${m.v === preselect ? 'selected' : ''}>${m.l}</option>`)
+        .join('');
+}
+
+async function submitRetry(auditId, skipScraping) {
+    const provider = document.getElementById('retry-provider').value;
+    const model    = document.getElementById('retry-model').value;
+    document.getElementById('retry-modal').remove();
     try {
-        const url = `/api/audits/${auditId}/retry?skip_scraping=${skipScraping}`;
+        const url = `/api/audits/${auditId}/retry?skip_scraping=${skipScraping}&provider=${provider}&model=${encodeURIComponent(model)}`;
         const resp = await fetch(url, { method: 'POST' });
         const data = await resp.json();
         if (resp.ok) {
@@ -626,6 +729,10 @@ async function retryAudit(auditId, skipScraping) {
     } catch (err) {
         alert('Error: ' + err.message);
     }
+}
+
+function retryAudit(auditId, skipScraping) {
+    openRetryModal(auditId, skipScraping);
 }
 
 {% if audit.status == 'completed' and results_summary %}
