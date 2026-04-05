@@ -82,6 +82,7 @@ class Audit(Base):
     # v2.1 additions — safe to add to existing DBs (nullable with sensible defaults)
     language = Column(String(30), nullable=True)           # Output language, e.g. "English"
     webhook_url = Column(String(512), nullable=True)       # Optional completion webhook
+    prompt_version = Column(String(10), nullable=True)     # "v3" (default) or "v2" (backup)
 
     # Relationship to results
     results = relationship("AuditResult", back_populates="audit", cascade="all, delete-orphan")
@@ -110,6 +111,7 @@ class Audit(Base):
             "progress_percent": self.progress_percent,
             "language": self.language or "English",
             "webhook_url": self.webhook_url,
+            "prompt_version": self.prompt_version or "v3",
         }
 
 
@@ -1479,6 +1481,18 @@ def init_db():
         except Exception as _e:
             print(f"[WARN] url_guides migration: {_e}")
 
+    # Migrate audits: add prompt_version if missing
+    with sync_engine.connect() as conn:
+        try:
+            rows = conn.execute(sa_text("PRAGMA table_info(audits)")).fetchall()
+            col_names = [row[1] for row in rows]
+            if col_names and "prompt_version" not in col_names:
+                conn.execute(sa_text("ALTER TABLE audits ADD COLUMN prompt_version VARCHAR(10) DEFAULT 'v3'"))
+                conn.commit()
+                print("✓ Migrated audits: added prompt_version")
+        except Exception as _e:
+            print(f"[WARN] audits migration (prompt_version): {_e}")
+
     # Seed default templates if table is empty
     from sqlalchemy.orm import Session
     with Session(sync_engine) as session:
@@ -1533,6 +1547,17 @@ async def init_db_async():
                 print("✓ Migrated url_guides: added reviewed")
         except Exception:
             pass
+
+    # Migrate audits: add prompt_version if missing
+    async with engine.begin() as conn:
+        try:
+            rows = await conn.execute(sa_text("PRAGMA table_info(audits)"))
+            col_names = [row[1] for row in rows.fetchall()]
+            if col_names and "prompt_version" not in col_names:
+                await conn.execute(sa_text("ALTER TABLE audits ADD COLUMN prompt_version VARCHAR(10) DEFAULT 'v3'"))
+                print("✓ Migrated audits: added prompt_version")
+        except Exception as _e:
+            print(f"[WARN] audits migration (prompt_version): {_e}")
 
     # Seed default templates if table is empty
     from sqlalchemy import select

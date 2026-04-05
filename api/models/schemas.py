@@ -28,6 +28,7 @@ class AuditCreate(BaseModel):
     use_direct_mode: Optional[bool] = True
     concurrency: Optional[int] = Field(10, ge=1, le=50)
     use_perplexity: Optional[bool] = False
+    prompt_version: Optional[str] = "v3"  # "v3" = prompts/, "v2" = prompts_backup/
 
 
 class SingleAuditRequest(BaseModel):
@@ -62,6 +63,7 @@ class AuditResponse(BaseModel):
     progress_percent: Optional[float] = None
     language: Optional[str] = "English"
     webhook_url: Optional[str] = None
+    prompt_version: Optional[str] = "v3"
 
     model_config = {"from_attributes": True}
 
