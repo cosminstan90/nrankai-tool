@@ -31,11 +31,6 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templa
 # TEMPLATE ROUTES (Server-rendered HTML)
 # ============================================================================
 
-@router.get("/presentation", response_class=HTMLResponse)
-async def presentation_page():
-    """Slide deck for the presentation."""
-    return FileResponse("presentation.html")
-
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
