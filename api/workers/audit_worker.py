@@ -181,10 +181,12 @@ async def run_scraping_step(
         abs_output = os.path.abspath(output_dir)
         await log_message(audit_id, f"Scraping to: {abs_output}")
         
-        # Check if we already have HTML files (reuse from previous audit)
+        # Skip scraping entirely if HTML files already exist
         existing_html = [f for f in os.listdir(output_dir) if f.endswith('.html')] if os.path.exists(output_dir) else []
         if len(existing_html) > 0:
-            await log_message(audit_id, f"Found {len(existing_html)} existing HTML files - incremental scraper will verify/resume them.")
+            await log_message(audit_id, f"Found {len(existing_html)} existing HTML files - skipping scrape step.")
+            await update_audit_status(audit_id, total_pages=len(existing_html), pages_scraped=len(existing_html), progress_percent=25)
+            return True
 
         await log_message(audit_id, f"Fetching sitemap: {sitemap_url}")
         await update_audit_status(audit_id, progress_percent=10)
@@ -332,7 +334,8 @@ async def run_analysis_step(
     use_direct_mode: bool,
     concurrency: int,
     research_dir: Optional[str] = None,
-    language: str = "English"
+    language: str = "English",
+    prompt_version: str = "v3",
 ) -> bool:
     """
     Run the LLM analysis step.
@@ -353,7 +356,10 @@ async def run_analysis_step(
         os.environ['QUESTION'] = audit_type
         
         input_dir = os.path.join(_safe_dir(website), "input_llm")
-        output_dir = os.path.join(_safe_dir(website), f"output_{audit_type.lower()}")
+        # Use version-suffixed output dir for non-default prompt versions
+        # so v2 results don't conflict with existing v3 results on disk
+        output_suffix = f"_{prompt_version}" if prompt_version and prompt_version != "v3" else ""
+        output_dir = os.path.join(_safe_dir(website), f"output_{audit_type.lower()}{output_suffix}")
 
         os.makedirs(output_dir, exist_ok=True)
         
@@ -376,15 +382,23 @@ async def run_analysis_step(
             return False
         
         if use_direct_mode:
+            # Resolve prompts directory from version
+            _base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            if prompt_version == "v2":
+                prompts_dir = os.path.join(_base_dir, "prompts_backup")
+            else:
+                prompts_dir = os.path.join(_base_dir, "prompts")
+            await log_message(audit_id, f"Using prompt version: {prompt_version} ({prompts_dir})")
+
             # Use direct analyzer for faster processing
             await log_message(audit_id, f"Using direct mode with {concurrency} concurrent requests")
             if research_dir and os.path.exists(research_dir):
                 await log_message(audit_id, f"Research context available from: {research_dir}")
             if language != "English":
                 await log_message(audit_id, f"Output language: {language}")
-            
+
             from direct_analyzer import run_direct_analysis
-            
+
             stats = await run_direct_analysis(
                 input_dir=input_dir,
                 output_dir=output_dir,
@@ -397,6 +411,7 @@ async def run_analysis_step(
                 language=language,
                 audit_id=audit_id,
                 website=website,
+                prompts_dir=prompts_dir,
             )
             
             # Update pages_analyzed from actual output files
@@ -422,7 +437,8 @@ async def run_analysis_step(
             import website_llm_analyzer
             from monitor_completion_LLM_batch import monitor_job
             
-            batch_file = os.path.join(website, f"{website}_{provider}.jsonl")
+            safe_website = _safe_dir(website)
+            batch_file = os.path.join(safe_website, f"{safe_website}_{provider}.jsonl")
             
             # Configure and prepare batch
             import config
@@ -440,11 +456,26 @@ async def run_analysis_step(
             job_id = website_llm_analyzer.start_batch_job(batch_file)
             await update_audit_status(audit_id, batch_job_id=job_id)
             await log_message(audit_id, f"Batch job submitted: {job_id}")
-            
+
+            # Validate job_id before monitoring (Anthropic requires msgbatch_ prefix)
+            if not job_id:
+                raise ValueError("Batch job submission returned empty job ID")
+            if provider.upper() == "ANTHROPIC" and not str(job_id).startswith("msgbatch_"):
+                raise ValueError(
+                    f"Invalid Anthropic batch job ID: '{job_id}' — expected 'msgbatch_...' prefix. "
+                    f"The batch submission may have failed silently."
+                )
+
             # Monitor job (synchronous)
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: monitor_job(job_id))
-        
+
+            # Update pages_analyzed from output files (same as direct mode)
+            output_files = [f for f in os.listdir(output_dir) if f.endswith('.json')]
+            pages_analyzed_count = len(output_files)
+            await update_audit_status(audit_id, pages_analyzed=pages_analyzed_count)
+            await log_message(audit_id, f"Batch analysis complete: {pages_analyzed_count}/{total_pages} pages processed")
+
         await update_audit_status(audit_id, progress_percent=90)
         await log_message(audit_id, "LLM analysis complete")
         
@@ -459,10 +490,10 @@ async def run_analysis_step(
         return False
 
 
-async def run_scoring_step(audit_id: str, website: str, audit_type: str) -> bool:
+async def run_scoring_step(audit_id: str, website: str, audit_type: str, prompt_version: str = "v3") -> bool:
     """
     Run the scoring and result collection step.
-    
+
     Returns True if successful, False otherwise.
     """
     await update_audit_status(
@@ -471,12 +502,23 @@ async def run_scoring_step(audit_id: str, website: str, audit_type: str) -> bool
         progress_percent=92
     )
     await log_message(audit_id, "Processing and scoring results")
-    
+
+    # Clear existing results before re-inserting (prevents duplicates on retry)
+    from sqlalchemy import delete as _sa_delete
+    async with AsyncSessionLocal() as _db:
+        deleted = await _db.execute(
+            _sa_delete(AuditResult).where(AuditResult.audit_id == audit_id)
+        )
+        await _db.commit()
+        if deleted.rowcount:
+            await log_message(audit_id, f"Cleared {deleted.rowcount} previous results before re-scoring")
+
     try:
         import re
         
-        output_dir = os.path.join(_safe_dir(website), f"output_{audit_type.lower()}")
-        
+        output_suffix = f"_{prompt_version}" if prompt_version and prompt_version != "v3" else ""
+        output_dir = os.path.join(_safe_dir(website), f"output_{audit_type.lower()}{output_suffix}")
+
         if not os.path.exists(output_dir):
             await log_message(audit_id, f"Output directory not found: {output_dir}", "WARNING")
             return True
@@ -672,6 +714,7 @@ async def start_audit_pipeline(
     use_perplexity: bool = False,
     language: str = "English",
     webhook_url: Optional[str] = None,
+    prompt_version: str = "v3",
 ):
     """
     Main entry point for running the audit pipeline.
@@ -716,7 +759,8 @@ async def start_audit_pipeline(
         # Step 3: Analysis
         success = await run_analysis_step(
             audit_id, website, audit_type, provider, model,
-            max_chars, use_direct_mode, concurrency, research_dir, language
+            max_chars, use_direct_mode, concurrency, research_dir, language,
+            prompt_version=prompt_version,
         )
         if not success:
             await update_audit_status(
@@ -727,7 +771,7 @@ async def start_audit_pipeline(
             return
         
         # Step 4: Scoring
-        success = await run_scoring_step(audit_id, website, audit_type)
+        success = await run_scoring_step(audit_id, website, audit_type, prompt_version=prompt_version)
         if not success:
             await update_audit_status(
                 audit_id,

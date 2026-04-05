@@ -244,7 +244,8 @@ async def stream_audit_status(
         last_log_id = 0
         last_status = None
         last_progress = None
-        
+        last_pages_analyzed = None
+
         while True:
             # Get fresh session
             from api.models.database import AsyncSessionLocal
@@ -254,18 +255,21 @@ async def stream_audit_status(
                     select(Audit).where(Audit.id == audit_id)
                 )
                 current_audit = result.scalar_one_or_none()
-                
+
                 if not current_audit:
                     yield {
                         "event": "error",
                         "data": json.dumps({"message": "Audit not found"})
                     }
                     break
-                
-                # Send status update if changed
-                if current_audit.status != last_status or current_audit.progress_percent != last_progress:
+
+                # Send status update if anything visible changed
+                if (current_audit.status != last_status
+                        or current_audit.progress_percent != last_progress
+                        or current_audit.pages_analyzed != last_pages_analyzed):
                     last_status = current_audit.status
                     last_progress = current_audit.progress_percent
+                    last_pages_analyzed = current_audit.pages_analyzed
                     
                     yield {
                         "event": "status",

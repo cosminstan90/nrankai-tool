@@ -43,11 +43,11 @@ for _k, _v in dotenv_values(_env_path).items():
         os.environ[_k] = _v
 
 # Import database and models
-from api.models.database import init_db, get_db, Audit, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, AsyncSessionLocal
+from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
 from api.routes import audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 
@@ -94,6 +94,20 @@ async def lifespan(app: FastAPI):
         )
         if stale.rowcount:
             print(f"[OK] Reset {stale.rowcount} stale guide(s) to failed")
+
+    # Reset any audits stuck in an active state from a previous server run
+    async with AsyncSessionLocal() as _db:
+        stale_audits = await _db.execute(
+            _sa_update(Audit)
+            .where(Audit.status.in_(["pending", "scraping", "converting", "analyzing"]))
+            .values(
+                status="failed",
+                error_message="Server restarted while audit was running — use Retry to resume (existing files will be reused)"
+            )
+        )
+        await _db.commit()
+        if stale_audits.rowcount:
+            print(f"[OK] Reset {stale_audits.rowcount} stale audit(s) to failed — retry to resume")
     
     # Check for API keys
     providers = {
@@ -255,20 +269,52 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     type: Optional[str] = Query(None, description="Filter by audit type")
 ):
-    """Dashboard page showing recent audits and stats."""
+    """Dashboard page showing websites with aggregated audit data."""
     # Build base query - optionally filter by audit type
-    audits_query = select(Audit).where(~Audit.audit_type.startswith('SINGLE_'))
     stats_base = select(func.count(Audit.id)).where(~Audit.audit_type.startswith('SINGLE_'))
 
     if type:
-        audits_query = audits_query.where(Audit.audit_type == type)
         stats_base = stats_base.where(Audit.audit_type == type)
 
-    # Get recent audits (filtered or all)
-    result = await db.execute(
-        audits_query.order_by(desc(Audit.created_at)).limit(10)
+    # Websites grouped query (replaces flat audit list)
+    websites_q = (
+        select(
+            Audit.website,
+            func.count(Audit.id).label("audit_count"),
+            func.sum(Audit.pages_analyzed).label("total_pages"),
+            func.avg(Audit.average_score).label("avg_score"),
+            func.max(Audit.created_at).label("last_run"),
+            func.sum(case((Audit.status.in_(["pending", "scraping", "converting", "analyzing"]), 1), else_=0)).label("running_count"),
+            func.sum(case((Audit.status == "failed", 1), else_=0)).label("failed_count"),
+        )
+        .where(~Audit.audit_type.startswith("SINGLE_"))
+        .group_by(Audit.website)
+        .order_by(func.max(Audit.created_at).desc())
+        .limit(50)
     )
-    audits = result.scalars().all()
+    websites_rows = (await db.execute(websites_q)).fetchall()
+
+    # Costs per website
+    costs_q = (
+        select(CostRecord.website, func.sum(CostRecord.estimated_cost_usd).label("total_cost"))
+        .where(CostRecord.website.isnot(None))
+        .group_by(CostRecord.website)
+    )
+    costs_by_website = {row[0]: row[1] for row in (await db.execute(costs_q)).fetchall()}
+
+    websites = [
+        {
+            "website": row.website,
+            "audit_count": row.audit_count,
+            "total_pages": int(row.total_pages or 0),
+            "avg_score": round(row.avg_score, 1) if row.avg_score else None,
+            "last_run": row.last_run,
+            "running_count": row.running_count or 0,
+            "failed_count": row.failed_count or 0,
+            "total_cost_usd": costs_by_website.get(row.website, 0.0),
+        }
+        for row in websites_rows
+    ]
 
     # Get recent single page audits
     single_audits_query = select(Audit).where(Audit.audit_type.startswith('SINGLE_'))
@@ -353,7 +399,7 @@ async def dashboard(
 
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "audits": audits,
+        "websites": websites,
         "single_audits": single_audits,
         "all_single": request.query_params.get("all_single") == "1",
         "active_type": type,
@@ -448,6 +494,15 @@ async def audit_detail(
             "bottom_results": bottom_results
         }
         
+    # Pre-load logs for completed/failed audits (SSE won't fire for these)
+    audit_logs = []
+    if audit.status in ("completed", "failed"):
+        logs_query = select(AuditLog).where(
+            AuditLog.audit_id == audit_id
+        ).order_by(AuditLog.created_at).limit(500)
+        logs_result = await db.execute(logs_query)
+        audit_logs = logs_result.scalars().all()
+
     if audit.audit_type.startswith('SINGLE_'):
         # Get all results for this single page audit
         results_query = select(AuditResult).where(AuditResult.audit_id == audit_id)
@@ -467,13 +522,15 @@ async def audit_detail(
         return templates.TemplateResponse("single_audit_detail.html", {
             "request": request,
             "audit": audit,
+            "audit_logs": audit_logs,
             "single_results_dict": single_results_dict
         })
-    
+
     return templates.TemplateResponse("audit_detail.html", {
         "request": request,
         "audit": audit,
-        "results_summary": results_summary
+        "results_summary": results_summary,
+        "audit_logs": audit_logs,
     })
 
 
@@ -775,6 +832,16 @@ async def site_health(
     # Load effective weights (DB override or hardcoded defaults)
     weights = await _load_weights(db)
 
+    # Costs per audit_id (single query for all audits of this website)
+    all_audit_ids = [a.id for a in latest_by_type.values()]
+    costs_q = (
+        select(CostRecord.audit_id, func.sum(CostRecord.estimated_cost_usd).label("cost"))
+        .where(CostRecord.audit_id.in_(all_audit_ids))
+        .group_by(CostRecord.audit_id)
+    )
+    costs_by_audit = {row[0]: row[1] for row in (await db.execute(costs_q)).fetchall()}
+    total_cost_usd = sum(costs_by_audit.values())
+
     # For each latest audit, get the site-average score from AuditResult
     audit_summaries = []
     for atype, audit in sorted(latest_by_type.items(),
@@ -789,6 +856,7 @@ async def site_health(
         count_q = select(func.count(AuditResult.id)).where(AuditResult.audit_id == audit.id)
         page_count = (await db.execute(count_q)).scalar() or 0
 
+        cost = costs_by_audit.get(audit.id, 0.0)
         audit_summaries.append({
             "audit_type": atype,
             "audit_type_label": _AUDIT_TYPE_LABELS.get(atype, atype),
@@ -799,6 +867,7 @@ async def site_health(
             "model": audit.model,
             "completed_at": audit.completed_at.strftime("%Y-%m-%d") if audit.completed_at else None,
             "weight_pct": round(weights.get(atype, 0.02) * 100),
+            "cost_usd": cost,
         })
 
     # Composite health score
@@ -868,6 +937,7 @@ async def site_health(
         "total_audit_types": len(audit_summaries),
         "total_audits_run": len(all_audits),
         "worst_pages_by_type": worst_pages_by_type,
+        "total_cost_usd": total_cost_usd,
     })
 
 

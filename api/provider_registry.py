@@ -105,8 +105,8 @@ def get_provider_rate_limits(provider_id: str) -> ProviderRateLimits:
     defaults = {
         "anthropic": ProviderRateLimits(requests_per_minute=int(os.getenv("ANTHROPIC_RPM", "2000")),
                                         tokens_per_minute=int(os.getenv("ANTHROPIC_TPM", "100000"))),
-        "openai":    ProviderRateLimits(requests_per_minute=int(os.getenv("OPENAI_RPM", "1500")),
-                                        tokens_per_minute=int(os.getenv("OPENAI_TPM", "125000"))),
+        "openai":    ProviderRateLimits(requests_per_minute=int(os.getenv("OPENAI_RPM", "30")),
+                                        tokens_per_minute=int(os.getenv("OPENAI_TPM", "190000"))),
         "mistral":   ProviderRateLimits(requests_per_minute=int(os.getenv("MISTRAL_RPM", "300"))),
         "google":    ProviderRateLimits(requests_per_minute=int(os.getenv("GOOGLE_RPM", "500"))),
     }

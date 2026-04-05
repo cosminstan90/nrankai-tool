@@ -92,6 +92,7 @@ async def create_audit(
         progress_percent=0,
         language=audit_data.language or "English",
         webhook_url=audit_data.webhook_url or None,
+        prompt_version=audit_data.prompt_version or "v3",
     )
 
     db.add(audit)
@@ -113,6 +114,7 @@ async def create_audit(
         use_perplexity=audit_data.use_perplexity,
         language=audit_data.language,
         webhook_url=audit_data.webhook_url,
+        prompt_version=audit_data.prompt_version or "v3",
     )
 
     return AuditResponse(**audit.to_dict())
@@ -483,11 +485,9 @@ async def cancel_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
 async def retry_audit(
     audit_id: str,
     background_tasks: BackgroundTasks,
-    skip_scraping: bool = Query(
-        False,
-        description="Skip scraping+conversion and jump straight to analysis "
-                    "(safe when HTML/text files already exist on disk)"
-    ),
+    skip_scraping: bool = Query(False),
+    provider: Optional[str] = Query(None, description="Override provider (anthropic/openai/mistral/google)"),
+    model: Optional[str] = Query(None, description="Override model name"),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -510,7 +510,21 @@ async def retry_audit(
                    "Cancel it first before retrying."
         )
 
-    # Reset audit state
+    # Resolve provider/model — use overrides or fall back to original
+    effective_provider = provider or audit.provider
+    if model:
+        effective_model = model
+    elif provider and provider != audit.provider:
+        # Provider changed — pick its default model
+        try:
+            from api.provider_registry import get_default_model as _gdm
+            effective_model = _gdm(effective_provider)
+        except Exception:
+            effective_model = audit.model
+    else:
+        effective_model = audit.model
+
+    # Reset audit state (update provider/model if changed)
     audit.status = "pending"
     audit.current_step = "Queued"
     audit.progress_percent = 0
@@ -518,33 +532,41 @@ async def retry_audit(
     audit.started_at = None
     audit.completed_at = None
     audit.pages_analyzed = 0
+    audit.provider = effective_provider
+    audit.model = effective_model
     await db.commit()
 
     # Snapshot values before session expires
     language = (audit.language or "English")
     webhook_url = audit.webhook_url
+    prompt_version = (audit.prompt_version or "v3")
 
-    # Re-start the pipeline (sitemap_url=None skips the scraping step)
+    # OpenAI has strict TPM limits — lower concurrency to avoid 429s
+    effective_concurrency = 3 if effective_provider.lower() == "openai" else 5
+
     background_tasks.add_task(
         start_audit_pipeline,
         audit_id=audit_id,
         website=audit.website,
         sitemap_url=None if skip_scraping else audit.sitemap_url,
         audit_type=audit.audit_type,
-        provider=audit.provider,
-        model=audit.model,
+        provider=effective_provider,
+        model=effective_model,
         max_chars=30000,
         use_direct_mode=True,
-        concurrency=5,
+        concurrency=effective_concurrency,
         use_perplexity=False,
         language=language,
         webhook_url=webhook_url,
+        prompt_version=prompt_version,
     )
 
     return {
         "message": "Audit retry started",
         "audit_id": audit_id,
         "skip_scraping": skip_scraping,
+        "provider": effective_provider,
+        "model": effective_model,
     }
 
 
