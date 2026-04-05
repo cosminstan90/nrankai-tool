@@ -29,14 +29,14 @@ from mistralai import Mistral
 from tqdm.asyncio import tqdm as async_tqdm
 
 # Local imports
-import config
-from prompt_loader import load_prompt, is_custom_audit, get_audit_definition
-from logger import get_logger, setup_logging
-from content_chunker import ContentChunker, ChunkMetadata, AuditResultMerger
+from core import config
+from core.prompt_loader import load_prompt, is_custom_audit, get_audit_definition
+from core.logger import get_logger, setup_logging
+from core.content_chunker import ContentChunker, ChunkMetadata, AuditResultMerger
 
 # Import audit_builder for custom audit support
 try:
-    from audit_builder import (
+    from core.audit_builder import (
         get_score_prefix as get_custom_prefix,
         get_save_condition as check_custom_save_condition
     )

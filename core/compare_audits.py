@@ -29,7 +29,7 @@ import json
 import sys
 from datetime import datetime
 
-from history_tracker import (
+from core.history_tracker import (
     get_run_history,
     get_run_metadata,
     compare_runs,
@@ -41,7 +41,7 @@ from history_tracker import (
 )
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 logger = get_logger(__name__)
 

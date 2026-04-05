@@ -17,14 +17,14 @@ import json
 import argparse
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Initialize module logger
 logger = get_logger(__name__)
 
 # Import audit_builder for custom audit bucket configurations
 try:
-    from audit_builder import (
+    from core.audit_builder import (
         get_registry,
         get_score_buckets as get_custom_buckets
     )

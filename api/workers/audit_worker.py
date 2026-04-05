@@ -22,7 +22,6 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.models.database import Audit, AuditResult, AuditLog, AsyncSessionLocal
 from api.routes.costs import track_cost
@@ -172,7 +171,7 @@ async def run_scraping_step(
     
     try:
         # Import scraper
-        import web_scraper
+        from core import web_scraper
         
         # Determine output directory
         output_dir = os.path.join(_safe_dir(website), "input_html")
@@ -266,7 +265,7 @@ async def run_conversion_step(audit_id: str, website: str) -> bool:
     await log_message(audit_id, "Starting HTML to text conversion")
     
     try:
-        import html2llm_converter
+        from core import html2llm_converter
         
         input_dir = os.path.join(_safe_dir(website), "input_html")
         output_dir = os.path.join(_safe_dir(website), "input_llm")
@@ -397,7 +396,8 @@ async def run_analysis_step(
             if language != "English":
                 await log_message(audit_id, f"Output language: {language}")
 
-            from direct_analyzer import run_direct_analysis
+            from core.direct_analyzer import run_direct_analysis
+
 
             stats = await run_direct_analysis(
                 input_dir=input_dir,
@@ -434,14 +434,14 @@ async def run_analysis_step(
             # Use batch mode
             await log_message(audit_id, "Using batch mode (slower but cost-effective)")
             
-            import website_llm_analyzer
-            from monitor_completion_LLM_batch import monitor_job
+            from core import website_llm_analyzer
+            from core.monitor_completion_LLM_batch import monitor_job
             
             safe_website = _safe_dir(website)
             batch_file = os.path.join(safe_website, f"{safe_website}_{provider}.jsonl")
             
             # Configure and prepare batch
-            import config
+            from core import config
             config.configure(
                 website=website,
                 question_type=audit_type,
@@ -657,7 +657,7 @@ async def run_research_step(
     await log_message(audit_id, "Starting Perplexity AI search research")
     
     try:
-        from perplexity_researcher import PerplexityResearcher
+        from core.perplexity_researcher import PerplexityResearcher
         
         input_dir = os.path.join(website, "input_llm")
         research_dir = os.path.join(website, "research")

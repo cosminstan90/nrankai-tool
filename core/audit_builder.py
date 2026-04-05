@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 from pathlib import Path
 
-from logger import get_logger
+from core.logger import get_logger
 
 # Initialize module logger
 logger = get_logger(__name__)

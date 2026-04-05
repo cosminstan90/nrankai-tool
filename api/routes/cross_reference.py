@@ -72,11 +72,7 @@ async def _run_cross_ref(
             await session.commit()
 
     try:
-        root = str(_project_root())
-        if root not in sys.path:
-            sys.path.insert(0, root)
-
-        from cross_reference_analyzer import run_cross_reference_analysis  # noqa: PLC0415
+        from core.cross_reference_analyzer import run_cross_reference_analysis
 
         output_path = await run_cross_reference_analysis(
             website=website,

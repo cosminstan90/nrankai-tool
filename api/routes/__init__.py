@@ -1,5 +1,6 @@
 """API route modules (master unified build)."""
 
+from .pages import router as pages_router
 from .audits import router as audits_router
 from .results import router as results_router
 from .health import router as health_router

@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Optional
 
 # Import logger
-from logger import get_logger
+from core.logger import get_logger
 
 # Initialize module logger
 logger = get_logger(__name__)

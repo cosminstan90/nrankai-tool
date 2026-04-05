@@ -17,7 +17,6 @@ import logging
 import os
 import socket
 import sys
-from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -56,10 +55,6 @@ CLOUD_BASE_URL = os.environ.get("NRANKAI_CLOUD_URL", "https://nrankai.com")
 WORKER_API_KEY = os.environ.get("NRANKAI_WORKER_KEY", "")
 POLL_INTERVAL = 30  # seconds between polls when idle
 
-# Ensure geo_tool root is on the path for prompt_loader / direct_analyzer
-_root = Path(__file__).parent.parent.parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
 
 
 # ── Audit logic ────────────────────────────────────────────────────────────────
@@ -80,8 +75,8 @@ async def _fetch_page_text(url: str) -> str:
 
 async def _run_geo_audit(text: str, language: str) -> dict:
     """Run the GEO_AUDIT prompt against extracted page text."""
-    from prompt_loader import load_prompt
-    from direct_analyzer import AsyncLLMClient, clean_json_response
+    from core.prompt_loader import load_prompt
+    from core.direct_analyzer import AsyncLLMClient, clean_json_response
     from api.provider_registry import get_cheapest_available_model
 
     cheapest = get_cheapest_available_model()
@@ -107,7 +102,7 @@ async def _synthesize_result(url: str, geo_data: dict, lead: dict, language: str
     Use a second LLM call to convert raw geo_audit output into the
     WorkerResultSuccess format expected by the cloud API.
     """
-    from direct_analyzer import AsyncLLMClient, clean_json_response
+    from core.direct_analyzer import AsyncLLMClient, clean_json_response
     from api.provider_registry import get_cheapest_available_model
 
     cheapest = get_cheapest_available_model()

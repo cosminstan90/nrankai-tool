@@ -213,5 +213,5 @@ async def health_check(
 @router.get("/api/audit-types")
 async def get_audit_types():
     """Get list of available audit types (reads YAML prompt definitions)."""
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     return list_available_audits()

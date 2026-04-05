@@ -13,14 +13,14 @@ import os
 from typing import List, Optional
 
 # Import configuration
-import config
+from core import config
 
 # Import individual scripts
-import web_scraper
-import html2llm_converter
-import website_llm_analyzer
-import determine_score
-import cross_reference_analyzer
+from core import web_scraper
+from core import html2llm_converter
+from core import website_llm_analyzer
+from core import determine_score
+from core import cross_reference_analyzer
 
 
 def run_scraping_step(args):

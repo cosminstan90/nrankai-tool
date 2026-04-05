@@ -20,10 +20,10 @@ from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
 
 # Import configuration module
-import config
+from core import config
 
 # Import logger
-from logger import get_logger, setup_logging
+from core.logger import get_logger, setup_logging
 
 # Initialize module logger
 logger = get_logger(__name__)

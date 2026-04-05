@@ -34,7 +34,7 @@ class PromptValidationError(PromptLoaderError):
 
 # Try to import audit_builder for custom audit support
 try:
-    from audit_builder import (
+    from core.audit_builder import (
         is_custom_audit as check_custom_audit,
         load_custom_audit,
         build_system_prompt as build_custom_prompt,
