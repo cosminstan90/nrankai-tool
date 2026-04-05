@@ -510,7 +510,7 @@ async def rerun_single_page(
     
     # Run analysis on single page
     try:
-        from direct_analyzer import DirectAnalyzer
+        from core.direct_analyzer import DirectAnalyzer
         
         analyzer = DirectAnalyzer(
             question_type=audit.audit_type,
@@ -524,7 +524,7 @@ async def rerun_single_page(
         
         if result_text:
             # Parse JSON result
-            from direct_analyzer import clean_json_response
+            from core.direct_analyzer import clean_json_response
             cleaned = clean_json_response(result_text)
             result_data = json.loads(cleaned)
             

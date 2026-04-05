@@ -17,7 +17,6 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from api.models.database import Audit, AuditResult, AuditLog, get_db
 from api.models.schemas import (
@@ -54,7 +53,7 @@ async def create_audit(
         )
     
     # Determine model based on provider
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     
     # Validate audit type
     available_audits = list_available_audits()
@@ -149,8 +148,8 @@ async def single_page_audit(
         max_chars = 30000
         text_content = text_content[:max_chars]
 
-        from prompt_loader import list_available_audits, load_prompt
-        from direct_analyzer import AsyncLLMClient, clean_json_response
+        from core.prompt_loader import list_available_audits, load_prompt
+        from core.direct_analyzer import AsyncLLMClient, clean_json_response
 
         # Determine audits to run
         audits_to_run = []
@@ -678,7 +677,7 @@ async def list_audit_types():
     """
     List all available audit types.
     """
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     
     audits = list_available_audits()
     return [AuditTypeInfo(**a) for a in audits]

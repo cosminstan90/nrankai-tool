@@ -1100,7 +1100,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             kw_block = ""
 
         # 4. Run each requested audit type with the augmented prompt
-        from prompt_loader import load_prompt
+        from core.prompt_loader import load_prompt
         from api.routes.schema_gen import call_llm_for_schema
 
         _SCHEMA_GEN_SYSTEM = (

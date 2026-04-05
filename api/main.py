@@ -26,9 +26,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv, dotenv_values
 
-# Add parent directory to path for imports
-parent_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(parent_dir))
 
 # Load environment variables.
 # We use dotenv_values first so we can explicitly overwrite any shell-level
@@ -375,7 +372,7 @@ async def dashboard(
 @app.get("/new", response_class=HTMLResponse)
 async def new_audit_form(request: Request):
     """New audit form page."""
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     
     audit_types = list_available_audits()
     providers_ui = get_providers_for_ui()
@@ -972,7 +969,7 @@ async def benchmarks_page(
 @app.get("/schedules", response_class=HTMLResponse)
 async def schedules_page(request: Request):
     """Scheduled audits page with history tracking."""
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     
     audit_types = list_available_audits()
     
