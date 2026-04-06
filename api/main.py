@@ -8,12 +8,15 @@ Author: Refactored for web by Claude
 Created: 2026-02-11
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime
 import json
+
+logger = logging.getLogger(__name__)
 
 from typing import Optional
 from fastapi import FastAPI, Request, Depends, HTTPException, Query
@@ -94,6 +97,23 @@ async def lifespan(app: FastAPI):
         if stale.rowcount:
             print(f"[OK] Reset {stale.rowcount} stale guide(s) to failed")
     
+    # Reset audits stuck in-progress from a previous server run
+    from sqlalchemy import update as sa_update
+    async with AsyncSessionLocal() as _session:
+        stuck = await _session.execute(
+            sa_update(Audit)
+            .where(Audit.status.in_(["pending", "scraping", "converting", "analyzing", "scoring"]))
+            .values(
+                status="failed",
+                error_message="Server restarted while audit was in progress",
+            )
+            .returning(Audit.id)
+        )
+        ids = stuck.fetchall()
+        if ids:
+            await _session.commit()
+            logger.info(f"[startup] Reset {len(ids)} stuck audit(s): {[r[0] for r in ids]}")
+
     # Check for API keys
     providers = {
         "Google Gemini": bool(os.getenv("GEMINI_API_KEY")),

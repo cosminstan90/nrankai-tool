@@ -20,6 +20,8 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from api.utils.task_runner import create_tracked_task
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -243,14 +245,14 @@ async def _run_insights(run_id: str) -> None:
                         user_content = user_content,
                         max_tokens   = 4096,
                     )
-                    asyncio.create_task(track_cost(
+                    create_tracked_task(track_cost(
                         source="insights",
                         provider=_HAIKU_PROVIDER,
                         model=_HAIKU_MODEL,
                         input_tokens=in_tok,
                         output_tokens=out_tok,
                         source_id=run_id,
-                    ))
+                    ), name=f"insights-track-cost-{run_id}", timeout=300)
                     parsed_cards = _extract_json_safe(text)
                 except Exception as llm_exc:
                     # Skip batch on error, continue with next
@@ -342,7 +344,7 @@ async def create_run(req: CreateRunRequest):
         db.add(run)
         await db.commit()
 
-    asyncio.create_task(_run_insights(run_id))
+    create_tracked_task(_run_insights(run_id), name=f"insights-run-{run_id}", timeout=300)
     return {"run_id": run_id, "status": "pending"}
 
 

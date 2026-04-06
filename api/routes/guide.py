@@ -18,6 +18,8 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
+from api.utils.task_runner import create_tracked_task
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, desc
@@ -342,7 +344,7 @@ async def generate_guide(req: GenerateGuideRequest):
         await db.refresh(guide)
         guide_id = guide.id
 
-    asyncio.create_task(_generate_guide(guide_id))
+    create_tracked_task(_generate_guide(guide_id), name=f"guide-generate-{guide_id}", timeout=600)
     return {"guide_id": guide_id, "status": "pending"}
 
 

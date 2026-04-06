@@ -24,6 +24,8 @@ from datetime import datetime
 from typing import Optional
 from urllib.parse import urlparse
 
+from api.utils.task_runner import create_tracked_task
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
@@ -248,7 +250,7 @@ async def _generate_llms_txt(job_id: str) -> None:
                 user_content = user_content,
                 max_tokens   = 4096,
             )
-            asyncio.create_task(track_cost(
+            create_tracked_task(track_cost(
                 source="llms_txt",
                 provider=job.llm_provider,
                 model=model,
@@ -256,7 +258,7 @@ async def _generate_llms_txt(job_id: str) -> None:
                 output_tokens=out_tok,
                 source_id=job.id,
                 website=job.site_url,
-            ))
+            ), name=f"llms-txt-track-cost-{job.id}", timeout=300)
 
             await _upd(progress=85, msg="Validating output…")
 
@@ -309,7 +311,7 @@ async def create_job(req: CreateJobRequest):
         db.add(job)
         await db.commit()
 
-    asyncio.create_task(_generate_llms_txt(job_id))
+    create_tracked_task(_generate_llms_txt(job_id), name=f"llms-txt-generate-{job_id}", timeout=300)
     return {"job_id": job_id, "status": "pending"}
 
 

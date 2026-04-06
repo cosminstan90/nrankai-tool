@@ -2,9 +2,12 @@
 Audit API routes for creating, listing, and managing audits.
 """
 
+import logging
 import os
 import sys
 import uuid
+
+logger = logging.getLogger(__name__)
 import json
 import asyncio
 from datetime import datetime
@@ -195,7 +198,7 @@ async def single_page_audit(
                 cleaned = clean_json_response(text)
                 return audit_type, json.loads(cleaned)
             except Exception as e:
-                return audit_type, {"error": str(e), "status": "failed"}
+                return audit_type, {"error": str(e), "status": "failed"}  # intentional: helper returns error dict
 
         # Run concurrently
         tasks = [run_single(a_type) for a_type in audits_to_run]
@@ -281,8 +284,9 @@ async def single_page_audit(
 
     except httpx.HTTPError as e:
         raise HTTPException(status_code=400, detail=f"Error fetching URL: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.exception("Unexpected error in single_page_audit")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("", response_model=AuditListResponse)
@@ -433,7 +437,7 @@ async def _count_sitemap_urls(url: str, visited: set) -> tuple[int, str]:
                 
             return 0, "No <url> or <sitemap> tags found in XML."
     except Exception as e:
-        return 0, f"Error fetching sitemap: {str(e)}"
+        return 0, f"Error fetching sitemap: {str(e)}"  # intentional: helper returns error dict
 
 @router.get("/sitemap/count", response_model=SitemapCountResponse)
 async def get_sitemap_count(url: str = Query(..., description="The full URL to the sitemap.xml file")):

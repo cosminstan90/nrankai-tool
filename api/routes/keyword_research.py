@@ -25,6 +25,8 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
+from api.utils.task_runner import create_tracked_task
+
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
@@ -397,7 +399,7 @@ async def create_session(req: CreateSessionRequest):
         db.add(session)
         await db.commit()
 
-    asyncio.create_task(_run_session(session_id))
+    create_tracked_task(_run_session(session_id), name=f"kw-research-session-{session_id}", timeout=600)
     return {"session_id": session_id, "status": "pending"}
 
 
@@ -762,5 +764,5 @@ async def import_session(req: ImportSessionRequest):
         db.add(session)
         await db.commit()
 
-    asyncio.create_task(_run_import_session(session_id, keywords_data, req.llm_provider))
+    create_tracked_task(_run_import_session(session_id, keywords_data, req.llm_provider), name=f"kw-import-session-{session_id}", timeout=600)
     return {"session_id": session_id, "keywords_found": len(keywords_data), "status": "pending"}

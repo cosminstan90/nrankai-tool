@@ -140,6 +140,33 @@ async def save_result(
         await db.commit()
 
 
+async def _run_with_retry(coro_factory, *, max_attempts: int = 3, base_delay: float = 30.0, timeout: float, label: str):
+    """
+    Run coro_factory() with retry on transient errors.
+
+    coro_factory is a callable (lambda/partial) that returns a fresh coroutine each call.
+    Retries on: asyncio.TimeoutError, and exceptions whose str contains
+    'rate limit', '429', '503', 'overloaded', 'temporarily unavailable'.
+    """
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await asyncio.wait_for(coro_factory(), timeout=timeout)
+        except asyncio.TimeoutError:
+            if attempt == max_attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            print(f"[retry] {label} timed out (attempt {attempt}/{max_attempts}), retrying in {delay}s")
+            await asyncio.sleep(delay)
+        except Exception as exc:
+            msg = str(exc).lower()
+            is_transient = any(k in msg for k in ["rate limit", "429", "503", "overloaded", "temporarily unavailable"])
+            if not is_transient or attempt == max_attempts:
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            print(f"[retry] {label} transient error (attempt {attempt}/{max_attempts}): {exc!r}, retrying in {delay}s")
+            await asyncio.sleep(delay)
+
+
 def _safe_dir(url: str) -> str:
     """Convert a URL like https://example.com into a Windows-safe directory name."""
     import re
@@ -729,7 +756,14 @@ async def start_audit_pipeline(
         
         # Step 1: Scraping
         if sitemap_url:
-            success = await run_scraping_step(audit_id, website, sitemap_url)
+            try:
+                success = await asyncio.wait_for(
+                    run_scraping_step(audit_id, website, sitemap_url),
+                    timeout=1800,
+                )
+            except asyncio.TimeoutError:
+                await update_audit_status(audit_id, status="failed", error_message="Scraping timed out after 30 minutes")
+                return
             if not success:
                 await update_audit_status(
                     audit_id,
@@ -743,7 +777,14 @@ async def start_audit_pipeline(
         
         # Step 2: Conversion (only needed when sitemap scraping was done)
         if sitemap_url:
-            success = await run_conversion_step(audit_id, website)
+            try:
+                success = await asyncio.wait_for(
+                    run_conversion_step(audit_id, website),
+                    timeout=600,
+                )
+            except asyncio.TimeoutError:
+                await update_audit_status(audit_id, status="failed", error_message="Conversion timed out after 10 minutes")
+                return
             if not success:
                 await update_audit_status(
                     audit_id,
@@ -758,12 +799,25 @@ async def start_audit_pipeline(
             research_dir = await run_research_step(audit_id, website, audit_type)
             # Research failure is non-fatal - continue without it
         
-        # Step 3: Analysis
-        success = await run_analysis_step(
-            audit_id, website, audit_type, provider, model,
-            max_chars, use_direct_mode, concurrency, research_dir, language,
-            prompt_version=prompt_version,
-        )
+        # Step 3: Analysis (with retry on transient errors, 2-hour timeout per attempt)
+        try:
+            success = await _run_with_retry(
+                lambda: run_analysis_step(
+                    audit_id, website, audit_type, provider, model,
+                    max_chars, use_direct_mode, concurrency, research_dir, language,
+                    prompt_version=prompt_version,
+                ),
+                max_attempts=3,
+                base_delay=30.0,
+                timeout=7200,
+                label="analysis_step",
+            )
+        except asyncio.TimeoutError:
+            await update_audit_status(audit_id, status="failed", error_message="Analysis timed out after 2 hours (all attempts exhausted)")
+            return
+        except Exception as exc:
+            await update_audit_status(audit_id, status="failed", error_message=f"Analysis step error: {exc}")
+            return
         if not success:
             await update_audit_status(
                 audit_id,
@@ -773,7 +827,14 @@ async def start_audit_pipeline(
             return
         
         # Step 4: Scoring
-        success = await run_scoring_step(audit_id, website, audit_type, prompt_version=prompt_version)
+        try:
+            success = await asyncio.wait_for(
+                run_scoring_step(audit_id, website, audit_type, prompt_version=prompt_version),
+                timeout=300,
+            )
+        except asyncio.TimeoutError:
+            await update_audit_status(audit_id, status="failed", error_message="Scoring timed out after 5 minutes")
+            return
         if not success:
             await update_audit_status(
                 audit_id,

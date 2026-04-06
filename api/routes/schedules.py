@@ -11,6 +11,8 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
+from api.utils.task_runner import create_tracked_task
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -284,7 +286,7 @@ async def check_and_run_schedules():
                 print(f"🕐 Scheduler: Running '{schedule.name}' (audit {audit_id})")
                 
                 # Start audit pipeline in background
-                asyncio.create_task(
+                create_tracked_task(
                     start_audit_pipeline(
                         audit_id=audit_id,
                         website=schedule.website,
@@ -297,18 +299,22 @@ async def check_and_run_schedules():
                         concurrency=schedule.concurrency,
                         use_perplexity=bool(schedule.use_perplexity),
                         language=schedule.language
-                    )
+                    ),
+                    name=f"schedule-audit-pipeline-{audit_id}",
+                    timeout=14400,
                 )
-                
+
                 # If auto-summary is enabled, start polling task
                 if schedule.summary_provider and schedule.summary_model:
-                    asyncio.create_task(
+                    create_tracked_task(
                         _poll_and_generate_summary(
                             audit_id,
                             schedule.summary_provider,
                             schedule.summary_model,
                             schedule.language
-                        )
+                        ),
+                        name=f"schedule-summary-{audit_id}",
+                        timeout=14400,
                     )
                 
         except Exception as e:
@@ -667,7 +673,7 @@ async def trigger_schedule_run(
     await db.commit()
     
     # Start pipeline
-    asyncio.create_task(
+    create_tracked_task(
         start_audit_pipeline(
             audit_id=audit_id,
             website=schedule.website,
@@ -680,18 +686,22 @@ async def trigger_schedule_run(
             concurrency=schedule.concurrency,
             use_perplexity=bool(schedule.use_perplexity),
             language=schedule.language
-        )
+        ),
+        name=f"schedule-trigger-pipeline-{audit_id}",
+        timeout=14400,
     )
-    
+
     # Auto-summary if enabled
     if schedule.summary_provider and schedule.summary_model:
-        asyncio.create_task(
+        create_tracked_task(
             _poll_and_generate_summary(
                 audit_id,
                 schedule.summary_provider,
                 schedule.summary_model,
                 schedule.language
-            )
+            ),
+            name=f"schedule-trigger-summary-{audit_id}",
+            timeout=14400,
         )
     
     return {
