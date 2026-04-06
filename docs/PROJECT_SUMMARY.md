@@ -45,7 +45,14 @@ geo_tool/
 │   │   ├── infra.py             # Benchmarks, Schedules, Costs, Billing
 │   │   └── database.py          # Re-exporter backward-compat + init_db()
 │   ├── routes/
-│   │   ├── pages.py             # 41 rute HTML (Jinja2)
+│   │   ├── pages/               # 41 rute HTML (Jinja2) — subpackage
+│   │   │   ├── _shared.py       # templates, constante, helpers
+│   │   │   ├── dashboard.py     # / și /new (4 rute)
+│   │   │   ├── audit_views.py   # /audits/*, /pages, /sites/*, /compare (7 rute)
+│   │   │   ├── tool_views.py    # /schema, /keyword-research, /optimize, etc. (7 rute)
+│   │   │   ├── integration_views.py  # /gsc/*, /ga4/*, /ads/* (7 rute)
+│   │   │   ├── analytics_views.py    # /insights/*, /geo-monitor, /benchmarks (5 rute)
+│   │   │   └── settings_views.py     # /settings, /briefs, /portfolio, etc. (11 rute)
 │   │   ├── audits.py            # 11 endpoints audit CRUD
 │   │   ├── gsc/                 # Google Search Console (subpackage)
 │   │   │   ├── _shared.py       # OAuth helpers
@@ -73,10 +80,12 @@ geo_tool/
 │   │   ├── llms_txt.py          # 5 endpoints
 │   │   ├── guide.py             # 5 endpoints
 │   │   ├── templates_manager.py # 7 endpoints
-│   │   ├── health.py            # 2 endpoints
-│   │   └── ...
+│   │   └── health.py            # 2 endpoints
+│   ├── utils/
+│   │   ├── errors.py            # raise_not_found(), raise_bad_request(), raise_conflict()
+│   │   └── task_runner.py       # create_tracked_task() — GC-safe + timeout
 │   ├── workers/
-│   │   ├── audit_worker.py      # Background pipeline audit
+│   │   ├── audit_worker.py      # Background pipeline audit (timeouts + retry)
 │   │   └── lead_audit_worker.py # Worker pentru api.nrankai.com leads
 │   └── templates/               # Jinja2 HTML templates
 │
@@ -85,7 +94,7 @@ geo_tool/
 └── docs/                        # Changelogs + documentatie
 ```
 
-**Total: ~232 rute HTTP, 36k+ linii de cod**
+**Total: ~232 rute HTTP**
 
 ---
 
@@ -148,21 +157,36 @@ geo_tool/
 ## Ce trebuie îmbunătățit
 
 ### Prioritate mare
-1. **Tests** — zero teste automate în momentul de față. Cel puțin unit tests pentru `core/` (scoring, validation, chunking) și integration tests pentru endpoint-urile critice.
-2. **Error handling uniform** — fiecare route gestionează erorile diferit; un middleware global + response model consistent ar simplifica mult.
-3. **`api/routes/pages.py` (1422 linii)** — routes HTML sunt toate într-un singur fișier; candidat pentru split pe domenii (audits_pages, content_pages, analytics_pages etc.)
-4. **`core/generate_dashboard.py` + `generate_report.py` (~2000 linii fiecare)** — cele mai mari fișiere din proiect, greu de navigat.
+1. **Tests** — zero teste automate. Cel puțin unit tests pentru `core/` (scoring, validation, chunking) și integration tests pentru endpoint-urile critice.
+2. **Auth / multi-tenant** — momentan fără autentificare; dacă se merge spre SaaS real, trebuie user accounts.
+3. **`core/generate_dashboard.py` + `generate_report.py` (~2000 linii fiecare)** — cele mai mari fișiere din proiect, greu de navigat.
 
 ### Prioritate medie
-5. **Auth / multi-tenant** — momentan fără autentificare; dacă se merge spre SaaS real, trebuie user accounts.
-6. **Background tasks mai robuste** — audit_worker rulează ca task asyncio simplu; pentru producție reală ar trebui Celery sau ARQ cu retry logic.
-7. **Config management** — `core/config.py` folosește `.env` direct; ar beneficia de Pydantic Settings cu validare la startup.
-8. **Logging structurat** — mix de `print()` și logger custom; ar trebui unificat pe structlog sau logging standard cu JSON output.
+4. **Config management** — `core/config.py` folosește `.env` direct; ar beneficia de Pydantic Settings cu validare la startup.
+5. **Logging structurat** — mix de `print()` și logger custom; ar trebui unificat pe structlog sau logging standard cu JSON output.
+6. **`api/utils/errors.py` adoptare completă** — helper-ele există dar nu sunt folosite încă în toate route-urile; migrare progresivă cu `raise_not_found()` în loc de HTTPException inline.
 
 ### Prioritate mică
-9. **`api/routes/action_cards.py` (1172 linii)** — candidat pentru refactoring.
-10. **Docs** — există changelogs în `docs/` dar fără API docs (FastAPI auto-docs la `/docs` există, dar fără descrieri pe endpoint-uri).
-11. **Alembic migrations** — verificat că sunt up-to-date cu modelele.
+7. **`api/routes/action_cards.py` (1172 linii)** — candidat pentru refactoring.
+8. **API docs** — FastAPI auto-docs la `/docs` există dar fără descrieri pe endpoint-uri (docstrings lipsesc).
+9. **Alembic migrations** — de verificat că sunt sincronizate cu modelele după split-ul din `database.py`.
+
+---
+
+## Refactoring-uri finalizate (sesiunea curentă)
+
+| Task | Commit | Detalii |
+|---|---|---|
+| `core/` package | `e14df80` | 19 module mutate din root, sys.path hacks eliminate |
+| `api/main.py` split | `e14df80` | 1710 → 236 linii, routes HTML extrase |
+| `api/models/` split | `e14df80` | database.py 1592 → 236 linii, 5 fișiere domeniu |
+| `api/routes/gsc/` subpackage | `e14df80` | gsc.py 1541 linii → 4 fișiere |
+| Circular import fix | `520a66d` | audit_worker → track_cost lazy import |
+| `api/routes/pages/` subpackage | `e37fb45` | pages.py 1422 linii → 6 submodule |
+| `api/utils/errors.py` | `e37fb45` | raise_not_found, raise_bad_request, raise_conflict |
+| `api/utils/task_runner.py` | `e37fb45` | create_tracked_task GC-safe + timeout |
+| audit_worker timeouts + retry | `e37fb45` | per-step timeouts, 3x retry cu backoff pe analysis |
+| Crash recovery la startup | `e37fb45` | reset audituri blocate în lifespan |
 
 ---
 
