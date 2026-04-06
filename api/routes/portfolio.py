@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from api.utils.errors import raise_not_found
 from sqlalchemy import desc, func, and_, distinct, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -483,7 +484,7 @@ async def get_website_details(domain: str, db: AsyncSession = Depends(get_db)):
     check_stmt = select(Audit.id).where(Audit.website == domain).limit(1)
     check_result = await db.execute(check_stmt)
     if not check_result.first():
-        raise HTTPException(status_code=404, detail=f"Website {domain} not found")
+        raise_not_found("Website", domain)
     
     # Get all metrics
     audits = await get_website_audits_data(db, domain)

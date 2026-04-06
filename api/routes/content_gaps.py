@@ -20,6 +20,7 @@ from difflib import SequenceMatcher
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -831,7 +832,7 @@ async def get_content_gap(gap_id: int):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Content gap not found")
+            raise_not_found("Content gap")
         
         return gap.to_dict()
 
@@ -850,7 +851,7 @@ async def update_content_gap(gap_id: int, request: UpdateGapStatusRequest):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Content gap not found")
+            raise_not_found("Content gap")
         
         # Validate status
         valid_statuses = ["identified", "approved", "in_progress", "published", "dismissed"]
@@ -890,7 +891,7 @@ async def generate_full_brief(
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Content gap not found")
+            raise_not_found("Content gap")
     
     # Get model
     model_to_use = model or get_default_model(provider)
@@ -1007,7 +1008,7 @@ async def delete_content_gap(gap_id: int):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Content gap not found")
+            raise_not_found("Content gap")
         
         await db.delete(gap)
         await db.commit()

@@ -13,6 +13,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -500,10 +501,10 @@ async def generate_schemas(request: GenerateSchemaRequest):
         )
         audit = audit_result.scalar_one_or_none()
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         
         if audit.status != "completed":
-            raise HTTPException(status_code=400, detail="Audit must be completed first")
+            raise_bad_request("Audit must be completed first")
         
         # Determine provider and model
         provider = request.provider or audit.provider
@@ -698,7 +699,7 @@ async def generate_schemas_from_url(request: GenerateFromUrlRequest):
     Returns results synchronously.
     """
     if not request.url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+        raise_bad_request("URL must start with http:// or https://")
 
     schemas = await generate_schemas_for_url(
         url=request.url,
@@ -769,7 +770,7 @@ async def get_schema(markup_id: int):
         markup = query.scalar_one_or_none()
         
         if not markup:
-            raise HTTPException(status_code=404, detail="Schema markup not found")
+            raise_not_found("Schema markup")
         
         return markup.to_dict()
 
@@ -789,7 +790,7 @@ async def get_schema_raw(markup_id: int):
         markup = query.scalar_one_or_none()
         
         if not markup:
-            raise HTTPException(status_code=404, detail="Schema markup not found")
+            raise_not_found("Schema markup")
         
         # Return raw JSON with proper content type
         return Response(
@@ -813,7 +814,7 @@ async def regenerate_schema(markup_id: int, request: RegenerateSchemaRequest):
         old_markup = query.scalar_one_or_none()
         
         if not old_markup:
-            raise HTTPException(status_code=404, detail="Schema markup not found")
+            raise_not_found("Schema markup")
         
         # Get audit and result
         audit_query = await db.execute(
@@ -827,7 +828,7 @@ async def regenerate_schema(markup_id: int, request: RegenerateSchemaRequest):
         result = result_query.scalar_one_or_none()
         
         if not audit or not result:
-            raise HTTPException(status_code=404, detail="Related audit or result not found")
+            raise_not_found("Related audit or result")
         
         # Determine parameters
         provider = request.provider or old_markup.provider or audit.provider
@@ -864,7 +865,7 @@ async def validate_schema_endpoint(markup_id: int):
         markup = query.scalar_one_or_none()
         
         if not markup:
-            raise HTTPException(status_code=404, detail="Schema markup not found")
+            raise_not_found("Schema markup")
         
         # Parse and validate
         try:

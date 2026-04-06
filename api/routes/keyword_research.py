@@ -29,6 +29,7 @@ from api.utils.task_runner import create_tracked_task
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy import delete as sql_delete
@@ -378,7 +379,7 @@ async def create_session(req: CreateSessionRequest):
 
     loc = LOCATION_PRESETS.get(req.location.upper())
     if not loc:
-        raise HTTPException(status_code=400, detail=f"Unknown location: {req.location}")
+        raise_bad_request(f"Unknown location: {req.location}")
 
     session_id = str(uuid.uuid4())
     async with AsyncSessionLocal() as db:
@@ -438,7 +439,7 @@ async def session_status(session_id: str):
     async with AsyncSessionLocal() as db:
         session = await db.get(KeywordSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise_not_found("Session")
     return {
         "status":           session.status,
         "progress":         session.progress,
@@ -707,11 +708,11 @@ async def _run_import_session(session_id: str, keywords_data: List[dict], provid
 async def import_session(req: ImportSessionRequest):
     """Create a keyword session from pasted CSV/TSV data and run LLM analysis."""
     if not req.raw_text.strip():
-        raise HTTPException(400, "Paste some keyword data first.")
+        raise_bad_request("Paste some keyword data first.")
 
     headers, rows = _parse_imported_text(req.raw_text)
     if not rows:
-        raise HTTPException(400, "Could not parse any rows from the pasted data.")
+        raise_bad_request("Could not parse any rows from the pasted data.")
 
     mapping = _map_columns(headers)
     kw_col   = mapping["keyword"]
@@ -740,7 +741,7 @@ async def import_session(req: ImportSessionRequest):
         })
 
     if not keywords_data:
-        raise HTTPException(400, "No valid keywords found after parsing.")
+        raise_bad_request("No valid keywords found after parsing.")
 
     session_id = str(uuid.uuid4())
     seeds = [d["keyword"] for d in keywords_data[:5]]

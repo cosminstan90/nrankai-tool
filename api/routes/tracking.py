@@ -12,6 +12,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,7 +94,7 @@ async def create_project(request: CreateProjectRequest, db: AsyncSession = Depen
     # Validate baseline audit exists
     score, pages, page_scores, audit_date = await _get_audit_score_data(db, request.baseline_audit_id)
     if score is None and pages is None:
-        raise HTTPException(404, f"Baseline audit {request.baseline_audit_id} not found")
+        raise_not_found("Baseline audit", request.baseline_audit_id)
     
     import uuid
     project_id = str(uuid.uuid4())
@@ -143,12 +144,12 @@ async def add_snapshot(project_id: str, request: AddSnapshotRequest, db: AsyncSe
     )).scalar_one_or_none()
     
     if not project:
-        raise HTTPException(404, "Tracking project not found")
+        raise_not_found("Tracking project")
     
     # Get score data from the audit
     score, pages, page_scores, audit_date = await _get_audit_score_data(db, request.audit_id)
     if score is None and pages is None:
-        raise HTTPException(404, f"Audit {request.audit_id} not found")
+        raise_not_found("Audit", request.audit_id)
     
     # Calculate deltas
     delta_from_baseline = round(score - project.baseline_score, 2) if score and project.baseline_score else None
@@ -223,7 +224,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     )).scalar_one_or_none()
     
     if not project:
-        raise HTTPException(404, "Tracking project not found")
+        raise_not_found("Tracking project")
     
     # Get snapshots
     snapshots = (await db.execute(
@@ -246,7 +247,7 @@ async def update_project(project_id: str, request: UpdateProjectRequest, db: Asy
     )).scalar_one_or_none()
     
     if not project:
-        raise HTTPException(404, "Tracking project not found")
+        raise_not_found("Tracking project")
     
     if request.name is not None:
         project.name = request.name
@@ -267,7 +268,7 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     )).scalar_one_or_none()
     
     if not project:
-        raise HTTPException(404, "Tracking project not found")
+        raise_not_found("Tracking project")
     
     await db.delete(project)
     await db.commit()
@@ -292,7 +293,7 @@ async def compare_snapshots(
     )).scalar_one_or_none()
     
     if not snap_a or not snap_b:
-        raise HTTPException(404, "Snapshot not found")
+        raise_not_found("Snapshot")
     
     # Build page-level comparison
     pages_a = {p["page_url"]: p for p in (json.loads(snap_a.page_scores_json) if snap_a.page_scores_json else [])}

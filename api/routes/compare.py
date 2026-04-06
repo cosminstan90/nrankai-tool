@@ -5,6 +5,7 @@ Compare and chart API routes for audit comparison and dashboard visualizations.
 import json
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy import select, func, desc, asc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -259,9 +260,9 @@ async def compare_audits(
     ids = [id.strip() for id in audit_ids.split(",") if id.strip()]
 
     if len(ids) < 2:
-        raise HTTPException(status_code=400, detail="Need at least 2 audit IDs to compare")
+        raise_bad_request("Need at least 2 audit IDs to compare")
     if len(ids) > 4:
-        raise HTTPException(status_code=400, detail="Maximum 4 audits can be compared at once")
+        raise_bad_request("Maximum 4 audits can be compared at once")
 
     warnings: List[str] = []
 
@@ -278,7 +279,7 @@ async def compare_audits(
 
     for audit_id in ids:
         if audit_id not in audit_map:
-            raise HTTPException(status_code=404, detail=f"Audit {audit_id} not found")
+            raise_not_found("Audit", audit_id)
 
     # Preserve the caller's order
     ordered_audits = [audit_map[aid] for aid in ids]
@@ -437,10 +438,10 @@ async def rerun_single_page(
     audit_result = await db.execute(select(Audit).where(Audit.id == audit_id))
     audit = audit_result.scalar_one_or_none()
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     if audit.status != "completed":
-        raise HTTPException(status_code=400, detail="Can only re-run pages from completed audits")
+        raise_bad_request("Can only re-run pages from completed audits")
     
     # Get the specific result
     result_query = await db.execute(
@@ -451,7 +452,7 @@ async def rerun_single_page(
     )
     page_result = result_query.scalar_one_or_none()
     if not page_result:
-        raise HTTPException(status_code=404, detail="Result not found")
+        raise_not_found("Result")
     
     # Find the corresponding text file
     input_dir = os.path.join(audit.website, "input_llm")
@@ -485,7 +486,7 @@ async def rerun_single_page(
                     detail=f"Source text file not found: {txt_name}. Available: {available[:5]}"
                 )
         else:
-            raise HTTPException(status_code=404, detail=f"Input directory not found: {input_dir}")
+            raise_not_found("Input directory", input_dir)
     
     # Read the text content
     with open(txt_path, 'r', encoding='utf-8') as f:

@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -588,7 +589,7 @@ async def get_tracker(tracker_id: str, db: AsyncSession = Depends(get_db)):
     tracker = result.scalar_one_or_none()
     
     if not tracker:
-        raise HTTPException(status_code=404, detail="Tracker not found")
+        raise_not_found("Tracker")
     
     tracker_dict = tracker.to_dict()
     
@@ -623,7 +624,7 @@ async def start_scan(
     tracker = result.scalar_one_or_none()
     
     if not tracker:
-        raise HTTPException(status_code=404, detail="Tracker not found")
+        raise_not_found("Tracker")
     
     # Check for running scan
     running_result = await db.execute(
@@ -634,7 +635,7 @@ async def start_scan(
     running_scan = running_result.scalar_one_or_none()
     
     if running_scan:
-        raise HTTPException(status_code=400, detail="Scan already in progress")
+        raise_bad_request("Scan already in progress")
     
     # Start scan in background
     background_tasks.add_task(_run_citation_scan, tracker_id)
@@ -656,7 +657,7 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     scan = result.scalar_one_or_none()
     
     if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise_not_found("Scan")
     
     return {
         "success": True,
@@ -674,7 +675,7 @@ async def get_tracker_trend(tracker_id: str, db: AsyncSession = Depends(get_db))
     tracker = result.scalar_one_or_none()
     
     if not tracker:
-        raise HTTPException(status_code=404, detail="Tracker not found")
+        raise_not_found("Tracker")
     
     # Get completed scans
     scans_result = await db.execute(
@@ -768,7 +769,7 @@ async def delete_tracker(tracker_id: str, db: AsyncSession = Depends(get_db)):
     tracker = result.scalar_one_or_none()
     
     if not tracker:
-        raise HTTPException(status_code=404, detail="Tracker not found")
+        raise_not_found("Tracker")
     
     await db.delete(tracker)
     await db.commit()
@@ -801,7 +802,7 @@ async def toggle_tracker(tracker_id: str, db: AsyncSession = Depends(get_db)):
     tracker = result.scalar_one_or_none()
     
     if not tracker:
-        raise HTTPException(status_code=404, detail="Tracker not found")
+        raise_not_found("Tracker")
     
     tracker.is_active = 1 if tracker.is_active == 0 else 0
     await db.commit()

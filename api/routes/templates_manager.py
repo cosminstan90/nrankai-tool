@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -114,7 +115,7 @@ async def get_template(
     template = result.scalar_one_or_none()
     
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise_not_found("Template")
     
     return AuditTemplateResponse.model_validate(template)
 
@@ -132,7 +133,7 @@ async def update_template(
     template = result.scalar_one_or_none()
     
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise_not_found("Template")
     
     # Update fields
     update_dict = update_data.model_dump(exclude_unset=True)
@@ -165,7 +166,7 @@ async def delete_template(
     template = result.scalar_one_or_none()
     
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise_not_found("Template")
     
     await db.delete(template)
     await db.commit()
@@ -195,7 +196,7 @@ async def launch_audit_from_template(
     template = result.scalar_one_or_none()
     
     if not template:
-        raise HTTPException(status_code=404, detail="Template not found")
+        raise_not_found("Template")
     
     # Validate required fields are in template
     if not template.audit_type:
@@ -277,7 +278,7 @@ async def save_template_from_audit(
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     # Create template from audit config
     template = AuditTemplate(

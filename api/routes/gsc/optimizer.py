@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete, update as sql_update
@@ -341,7 +342,7 @@ async def list_property_guides(property_id: str, limit: int = 100):
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
-            raise HTTPException(404, "Property not found")
+            raise_not_found("Property")
         rows = (await db.execute(
             select(UrlGuide)
             .where(
@@ -396,7 +397,7 @@ async def page_optimize(property_id: str, req: PageOptimizeRequest):
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
-            raise HTTPException(404, "GSC property not found")
+            raise_not_found("GSC property")
         guide = UrlGuide(
             url=req.url,
             status="pending",
@@ -442,13 +443,13 @@ async def detect_cannibalization(property_id: str, req: CannibalizationRequest):
 
     creds = await _get_gsc_credentials()
     if not creds:
-        raise HTTPException(status_code=400, detail="No GSC credentials. Please reconnect Google Search Console.")
+        raise_bad_request("No GSC credentials. Please reconnect Google Search Console.")
 
     async with AsyncSessionLocal() as db:
         from sqlalchemy import select as _sel
         prop = (await db.execute(_sel(GscProperty).where(GscProperty.id == property_id))).scalar_one_or_none()
         if not prop:
-            raise HTTPException(status_code=404, detail="Property not found")
+            raise_not_found("Property")
         site_url = prop.site_url
 
     end_date   = datetime.utcnow().date()

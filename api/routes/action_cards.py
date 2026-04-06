@@ -13,6 +13,7 @@ from typing import List, Optional
 import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Response
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from pydantic import BaseModel, Field
@@ -473,7 +474,7 @@ async def generate_action_cards(
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     if audit.status != "completed":
         raise HTTPException(
@@ -631,7 +632,7 @@ async def get_action_card(
     card = result.scalar_one_or_none()
     
     if not card:
-        raise HTTPException(status_code=404, detail="Action card not found")
+        raise_not_found("Action card")
     
     return card.to_dict()
 
@@ -651,7 +652,7 @@ async def toggle_action(
     card = result.scalar_one_or_none()
     
     if not card:
-        raise HTTPException(status_code=404, detail="Action card not found")
+        raise_not_found("Action card")
     
     # Parse actions
     actions = json.loads(card.actions_json)
@@ -665,7 +666,7 @@ async def toggle_action(
             break
     
     if not action_found:
-        raise HTTPException(status_code=404, detail="Action not found")
+        raise_not_found("Action")
     
     # Update card
     card.actions_json = json.dumps(actions, ensure_ascii=False)
@@ -695,7 +696,7 @@ async def update_card_status(
     """Update card status manually."""
     
     if request.status not in ["pending", "in_progress", "completed"]:
-        raise HTTPException(status_code=400, detail="Invalid status")
+        raise_bad_request("Invalid status")
     
     result = await db.execute(
         select(ActionCard).where(ActionCard.id == card_id)
@@ -703,7 +704,7 @@ async def update_card_status(
     card = result.scalar_one_or_none()
     
     if not card:
-        raise HTTPException(status_code=404, detail="Action card not found")
+        raise_not_found("Action card")
     
     card.status = request.status
     card.updated_at = datetime.utcnow()
@@ -750,7 +751,7 @@ async def export_action_cards(
     elif format == "trello":
         return await export_trello(cards, audit)
     else:
-        raise HTTPException(status_code=400, detail="Invalid format")
+        raise_bad_request("Invalid format")
 
 
 async def export_csv(cards: List[ActionCard], audit: Audit) -> Response:

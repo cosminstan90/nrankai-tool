@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Depends
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -513,7 +514,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
     project = result.scalar_one_or_none()
     
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise_not_found("Project")
     
     # Get scan history
     scan_result = await db.execute(
@@ -539,7 +540,7 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     project = result.scalar_one_or_none()
     
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise_not_found("Project")
     
     await db.delete(project)
     await db.commit()
@@ -563,7 +564,7 @@ async def start_scan(
     project = result.scalar_one_or_none()
     
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise_not_found("Project")
     
     # Create scan
     scan_id = str(uuid.uuid4())
@@ -601,7 +602,7 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     scan = result.scalar_one_or_none()
     
     if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+        raise_not_found("Scan")
     
     return {"scan": scan.to_dict()}
 

@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
 from fastapi.responses import StreamingResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,7 +63,7 @@ async def create_branding(
     logo_path = None
     if logo:
         if not logo.content_type in ["image/png", "image/jpeg", "image/jpg"]:
-            raise HTTPException(400, "Logo must be PNG or JPEG")
+            raise_bad_request("Logo must be PNG or JPEG")
         
         # Save logo
         ext = logo.filename.split(".")[-1]
@@ -121,7 +122,7 @@ async def get_branding(branding_id: int, db: AsyncSession = Depends(get_db)):
     branding = result.scalar_one_or_none()
     
     if not branding:
-        raise HTTPException(404, "Branding not found")
+        raise_not_found("Branding")
     
     return branding.to_dict()
 
@@ -135,7 +136,7 @@ async def delete_branding(branding_id: int, db: AsyncSession = Depends(get_db)):
     branding = result.scalar_one_or_none()
     
     if not branding:
-        raise HTTPException(404, "Branding not found")
+        raise_not_found("Branding")
     
     # Delete logo file if exists
     if branding.logo_path:
@@ -169,7 +170,7 @@ async def set_default_branding(branding_id: int, db: AsyncSession = Depends(get_
     await db.commit()
     
     if result.rowcount == 0:
-        raise HTTPException(404, "Branding not found")
+        raise_not_found("Branding")
     
     return {"success": True}
 
@@ -713,10 +714,10 @@ async def generate_pdf_report(
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(404, "Audit not found")
+        raise_not_found("Audit")
     
     if audit.status != "completed":
-        raise HTTPException(400, "Audit is not completed yet")
+        raise_bad_request("Audit is not completed yet")
     
     # Get results
     result = await db.execute(

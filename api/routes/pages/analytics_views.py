@@ -4,6 +4,7 @@ import os
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +31,7 @@ async def insights_detail_page(
     from api.models.database import InsightRun
     run = await db.get(InsightRun, run_id)
     if not run:
-        raise HTTPException(status_code=404, detail="Insights run not found")
+        raise_not_found("Insights run")
     return templates.TemplateResponse("insights.html", {
         "request": request,
         "run":     run,

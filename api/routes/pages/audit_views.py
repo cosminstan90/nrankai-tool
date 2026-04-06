@@ -4,6 +4,7 @@ import json
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
@@ -27,7 +28,7 @@ async def audit_detail(
     audit = result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     # Get results summary if completed
     results_summary = None
@@ -108,7 +109,7 @@ async def audit_results_page(
     audit = result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     # ── Score distribution (always unfiltered, for the summary chart) ─────────
     dist_q = (
@@ -193,10 +194,10 @@ async def audit_report_page(
     audit = result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     if audit.status != "completed":
-        raise HTTPException(status_code=400, detail="Audit is not completed yet")
+        raise_bad_request("Audit is not completed yet")
 
     # Get all results
     results_result = await db.execute(

@@ -21,6 +21,7 @@ from typing import Optional
 from api.utils.task_runner import create_tracked_task
 
 from fastapi import APIRouter, HTTPException
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, desc
 
@@ -378,7 +379,7 @@ async def get_guide(guide_id: int):
     async with AsyncSessionLocal() as db:
         guide = await db.get(UrlGuide, guide_id)
         if not guide:
-            raise HTTPException(404, "Guide not found")
+            raise_not_found("Guide")
 
         result = {
             "id": guide.id,
@@ -420,7 +421,7 @@ async def mark_guide_reviewed(guide_id: int, reviewed: bool = True):
     async with AsyncSessionLocal() as db:
         guide = await db.get(UrlGuide, guide_id)
         if not guide:
-            raise HTTPException(404, "Guide not found")
+            raise_not_found("Guide")
         guide.reviewed = reviewed
         guide.updated_at = datetime.utcnow()
         await db.commit()
@@ -433,7 +434,7 @@ async def delete_guide(guide_id: int):
     async with AsyncSessionLocal() as db:
         guide = await db.get(UrlGuide, guide_id)
         if not guide:
-            raise HTTPException(404, "Guide not found")
+            raise_not_found("Guide")
         await db.delete(guide)
         await db.commit()
     return {"ok": True}

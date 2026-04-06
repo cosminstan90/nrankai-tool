@@ -15,6 +15,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -526,7 +527,7 @@ async def generate_briefs(
         audit = audit_result.scalar_one_or_none()
         
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         
         if audit.status != "completed":
             raise HTTPException(
@@ -579,7 +580,7 @@ async def generate_page_brief(request: SinglePageBriefRequest):
     async with AsyncSessionLocal() as db:
         audit = await db.get(Audit, request.audit_id)
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         if audit.status != "completed":
             raise HTTPException(
                 status_code=400,
@@ -665,7 +666,7 @@ async def get_brief(brief_id: int):
         brief = result.scalar_one_or_none()
         
         if not brief:
-            raise HTTPException(status_code=404, detail="Brief not found")
+            raise_not_found("Brief")
         
         return brief.to_dict()
 
@@ -682,7 +683,7 @@ async def update_brief_status(
         brief = result.scalar_one_or_none()
         
         if not brief:
-            raise HTTPException(status_code=404, detail="Brief not found")
+            raise_not_found("Brief")
         
         brief.status = request.status
         await db.commit()
@@ -705,7 +706,7 @@ async def regenerate_brief(
         brief = result.scalar_one_or_none()
         
         if not brief:
-            raise HTTPException(status_code=404, detail="Brief not found")
+            raise_not_found("Brief")
         
         # Get audit and result
         audit_query = select(Audit).where(Audit.id == brief.audit_id)
@@ -717,7 +718,7 @@ async def regenerate_brief(
         page_result = result_result.scalar_one_or_none()
         
         if not audit or not page_result:
-            raise HTTPException(status_code=404, detail="Audit or result not found")
+            raise_not_found("Audit or result")
         
         # Determine parameters
         provider = request.provider or brief.provider
@@ -762,7 +763,7 @@ async def generate_faq(brief_id: int, request: GenerateFAQRequest):
         brief_q = await db.execute(select(ContentBrief).where(ContentBrief.id == brief_id))
         brief = brief_q.scalar_one_or_none()
         if not brief:
-            raise HTTPException(status_code=404, detail="Brief not found")
+            raise_not_found("Brief")
 
         brief_data = json.loads(brief.brief_json)
         page_url = brief.page_url
@@ -879,7 +880,7 @@ async def export_briefs(audit_id: str):
         audit = audit_result.scalar_one_or_none()
         
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         
         # Get all briefs
         query = select(ContentBrief).where(

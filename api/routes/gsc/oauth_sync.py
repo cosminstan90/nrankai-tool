@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete, update as sql_update
@@ -68,7 +69,7 @@ _pkce_store: dict = {}
 async def oauth_authorize():
     """Redirect the browser to the Google OAuth consent screen."""
     if not _oauth_available():
-        raise HTTPException(400, "Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env")
+        raise_bad_request("Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env")
     try:
         from google_auth_oauthlib.flow import Flow
     except ImportError:
@@ -210,7 +211,7 @@ async def sync_property(property_id: str, days: int = 90):
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
-            raise HTTPException(404, "Property not found")
+            raise_not_found("Property")
         site_url = prop.site_url
 
     end_date   = datetime.utcnow().date()
@@ -327,7 +328,7 @@ async def get_page_queries(property_id: str, url: str, days: int = 90):
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
-            raise HTTPException(404, "Property not found")
+            raise_not_found("Property")
         site_url = prop.site_url
 
     creds = await _get_gsc_credentials()
