@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -148,7 +149,7 @@ async def job_status(job_id: str, db: AsyncSession = Depends(get_db)):
     """Check status of a running/completed cross-reference job."""
     job = await db.get(CrossReferenceJob, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise_not_found("Job")
     return job.to_dict()
 
 

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +31,7 @@ async def gsc_page_optimize_view(
     from api.models.database import GscProperty as GscProp, GscPageRow, UrlGuide as _UrlGuide
     prop = await db.get(GscProp, property_id)
     if not prop:
-        raise HTTPException(status_code=404, detail="GSC property not found")
+        raise_not_found("GSC property")
     decoded_url = unquote(url)
     page_row = (await db.execute(
         select(GscPageRow)
@@ -80,7 +81,7 @@ async def gsc_detail_page(
     from api.models.database import GscProperty as GscProp
     prop = await db.get(GscProp, property_id)
     if not prop:
-        raise HTTPException(status_code=404, detail="GSC property not found")
+        raise_not_found("GSC property")
     return templates.TemplateResponse("gsc_detail.html", {
         "request":  request,
         "property": prop,
@@ -103,7 +104,7 @@ async def ga4_detail_page(
     from api.models.database import Ga4Property as Ga4Prop
     prop = await db.get(Ga4Prop, property_id)
     if not prop:
-        raise HTTPException(status_code=404, detail="GA4 property not found")
+        raise_not_found("GA4 property")
     return templates.TemplateResponse("ga4_detail.html", {
         "request":  request,
         "property": prop,
@@ -126,7 +127,7 @@ async def ads_detail_page(
     from api.models.database import AdsAccount as AdsAcc
     acc = await db.get(AdsAcc, account_id)
     if not acc:
-        raise HTTPException(status_code=404, detail="Ads account not found")
+        raise_not_found("Ads account")
     return templates.TemplateResponse("ads_detail.html", {
         "request": request,
         "account": acc,

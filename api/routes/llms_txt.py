@@ -28,6 +28,7 @@ from api.utils.task_runner import create_tracked_task
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy import delete as sql_delete
@@ -289,7 +290,7 @@ async def _generate_llms_txt(job_id: str) -> None:
 async def create_job(req: CreateJobRequest):
     """Create a new llms.txt generation job and start the background task."""
     if not req.site_url.strip():
-        raise HTTPException(status_code=400, detail="site_url is required.")
+        raise_bad_request("site_url is required.")
 
     job_id = str(uuid.uuid4())
     site_url = _normalise_url(req.site_url.strip())
@@ -346,7 +347,7 @@ async def get_job(job_id: str):
     async with AsyncSessionLocal() as db:
         job = await db.get(LlmsTxtJob, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise_not_found("Job")
 
     return {
         "id":                job.id,
@@ -374,9 +375,9 @@ async def download_job(job_id: str):
     async with AsyncSessionLocal() as db:
         job = await db.get(LlmsTxtJob, job_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
+        raise_not_found("Job")
     if not job.generated_content:
-        raise HTTPException(status_code=400, detail="Content not yet generated")
+        raise_bad_request("Content not yet generated")
 
     from fastapi.responses import Response
     return Response(

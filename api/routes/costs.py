@@ -12,6 +12,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, desc, and_, extract
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -523,7 +524,7 @@ async def delete_billing_config(
         billing = result.scalar_one_or_none()
         
         if not billing:
-            raise HTTPException(status_code=404, detail="Billing config not found")
+            raise_not_found("Billing config")
         
         await db.delete(billing)
         await db.commit()

@@ -5,6 +5,7 @@ import json as _json
 
 from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -59,7 +60,7 @@ async def keyword_research_detail_page(
     from api.models.database import KeywordResult as KWResult
     session = await db.get(KeywordSession, session_id)
     if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+        raise_not_found("Session")
 
     # Load all keyword results for this session
     kw_rows = (await db.execute(

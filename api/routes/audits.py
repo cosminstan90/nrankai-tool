@@ -16,6 +16,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.responses import FileResponse
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -147,7 +148,7 @@ async def single_page_audit(
         text_content = soup.get_text(separator=' ', strip=True)
 
         if not text_content:
-            raise HTTPException(status_code=400, detail="Could not extract text from the provided URL.")
+            raise_bad_request("Could not extract text from the provided URL.")
             
         # Truncate to reasonable limits to avoid massive token costs
         max_chars = 30000
@@ -283,7 +284,7 @@ async def single_page_audit(
         return final_response
 
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=400, detail=f"Error fetching URL: {str(e)}")
+        raise_bad_request(f"Error fetching URL: {str(e)}")
     except Exception:
         logger.exception("Unexpected error in single_page_audit")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -396,7 +397,7 @@ async def get_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     return AuditResponse(**audit.to_dict())
 
@@ -466,7 +467,7 @@ async def cancel_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
     audit = result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     if audit.status in ["completed", "failed"]:
         raise HTTPException(
@@ -504,7 +505,7 @@ async def retry_audit(
     audit = result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     if audit.status in ["pending", "scraping", "converting", "analyzing"]:
         raise HTTPException(
@@ -583,7 +584,7 @@ async def delete_audit(audit_id: str, force: bool = False, db: AsyncSession = De
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     # Don't allow deletion of running audits (unless forced or stuck > 30 min)
     if audit.status in ["scraping", "converting", "analyzing"] and not force:
@@ -633,10 +634,10 @@ async def export_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
     audit = result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     if audit.status != "completed":
-        raise HTTPException(status_code=400, detail="Audit is not completed yet")
+        raise_bad_request("Audit is not completed yet")
     
     # Generate Excel file
     import pandas as pd

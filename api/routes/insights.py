@@ -23,6 +23,7 @@ from typing import Optional
 from api.utils.task_runner import create_tracked_task
 
 from fastapi import APIRouter, HTTPException
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete
@@ -380,7 +381,7 @@ async def get_run(run_id: str):
     async with AsyncSessionLocal() as db:
         run = await db.get(InsightRun, run_id)
     if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
+        raise_not_found("Run")
     return {
         "id":               run.id,
         "name":             run.name,

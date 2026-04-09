@@ -8,6 +8,7 @@ import json
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -39,7 +40,7 @@ async def get_audit_results(
     audit = audit_result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     # Build query
     query = select(AuditResult).where(AuditResult.audit_id == audit_id)
@@ -130,7 +131,7 @@ async def export_audit_results_csv(
     audit = audit_result.scalar_one_or_none()
 
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
 
     query = (
         select(AuditResult)
@@ -183,7 +184,7 @@ async def get_single_result(
     audit_result = result.scalar_one_or_none()
 
     if not audit_result:
-        raise HTTPException(status_code=404, detail="Result not found")
+        raise_not_found("Result")
 
     return AuditResultResponse(
         id=audit_result.id,
@@ -211,7 +212,7 @@ async def get_audit_logs(
     audit = audit_result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     # Get logs
     query = select(AuditLog).where(
@@ -237,7 +238,7 @@ async def stream_audit_status(
     audit = audit_result.scalar_one_or_none()
     
     if not audit:
-        raise HTTPException(status_code=404, detail="Audit not found")
+        raise_not_found("Audit")
     
     async def event_generator():
         """Generate SSE events for audit status updates."""

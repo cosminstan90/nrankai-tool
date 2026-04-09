@@ -8,6 +8,7 @@ DELETE /api/notes/{result_id} → delete note
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ async def upsert_note(result_id: int, payload: NotePayload, db: AsyncSession = D
     # Verify result exists
     res = await db.execute(select(AuditResult.id).where(AuditResult.id == result_id))
     if not res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Result not found")
+        raise_not_found("Result")
 
     row = await db.execute(
         select(ResultNote).where(ResultNote.result_id == result_id)

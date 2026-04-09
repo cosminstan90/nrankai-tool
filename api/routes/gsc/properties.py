@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete, update as sql_update
@@ -127,7 +128,7 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
-            raise HTTPException(status_code=404, detail="Property not found")
+            raise_not_found("Property")
 
         content = await file.read()
         try:

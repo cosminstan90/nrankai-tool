@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Any
 from api.utils.task_runner import create_tracked_task
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from api.utils.errors import raise_not_found
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, field_validator
@@ -474,7 +475,7 @@ async def get_schedule_detail(
     schedule = result.scalar_one_or_none()
     
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise_not_found("Schedule")
     
     # Get audit history (completed audits only)
     history_result = await db.execute(
@@ -545,7 +546,7 @@ async def get_schedule_history_chart(
     schedule = result.scalar_one_or_none()
     
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise_not_found("Schedule")
     
     # Get completed audits
     history_result = await db.execute(
@@ -592,7 +593,7 @@ async def update_schedule(
     schedule = result.scalar_one_or_none()
     
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise_not_found("Schedule")
     
     # Update fields
     if request.name is not None:
@@ -629,7 +630,7 @@ async def delete_schedule(
     schedule = result.scalar_one_or_none()
     
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise_not_found("Schedule")
     
     await db.delete(schedule)
     await db.commit()
@@ -649,7 +650,7 @@ async def trigger_schedule_run(
     schedule = result.scalar_one_or_none()
     
     if not schedule:
-        raise HTTPException(status_code=404, detail="Schedule not found")
+        raise_not_found("Schedule")
     
     # Create new audit
     audit_id = str(uuid.uuid4())

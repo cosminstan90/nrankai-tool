@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -384,7 +385,7 @@ async def create_benchmark(
     async with AsyncSessionLocal() as db:
         # Runtime guards (Pydantic's max_length=4 can be bypassed via direct API calls)
         if len(request.competitor_audit_ids) > 4:
-            raise HTTPException(status_code=400, detail="Maximum 4 competitors allowed")
+            raise_bad_request("Maximum 4 competitors allowed")
 
         if request.target_audit_id in request.competitor_audit_ids:
             raise HTTPException(
@@ -396,9 +397,9 @@ async def create_benchmark(
         tgt_result = await db.execute(select(Audit).where(Audit.id == request.target_audit_id))
         target_audit = tgt_result.scalar_one_or_none()
         if not target_audit:
-            raise HTTPException(status_code=404, detail=f"Target audit not found: {request.target_audit_id}")
+            raise_not_found("Target audit", request.target_audit_id)
         if target_audit.status != "completed":
-            raise HTTPException(status_code=400, detail=f"Target audit must be completed (status: {target_audit.status})")
+            raise_bad_request(f"Target audit must be completed (status: {target_audit.status})")
         if target_audit.audit_type != request.audit_type:
             raise HTTPException(
                 status_code=400,
@@ -415,7 +416,7 @@ async def create_benchmark(
         for comp_id in comp_ids:
             comp = comp_map.get(comp_id)
             if not comp:
-                raise HTTPException(status_code=404, detail=f"Competitor audit not found: {comp_id}")
+                raise_not_found("Competitor audit", comp_id)
             if comp.status != "completed":
                 raise HTTPException(
                     status_code=400,
@@ -529,7 +530,7 @@ async def get_benchmark_detail(benchmark_id: str):
         )
         benchmark = bm_result.scalar_one_or_none()
         if not benchmark:
-            raise HTTPException(status_code=404, detail="Benchmark project not found")
+            raise_not_found("Benchmark project")
 
         comp_ids = json.loads(benchmark.competitor_audit_ids) if benchmark.competitor_audit_ids else []
         all_ids  = [benchmark.target_audit_id] + comp_ids
@@ -599,7 +600,7 @@ async def delete_benchmark(benchmark_id: str):
         )
         benchmark = bm_result.scalar_one_or_none()
         if not benchmark:
-            raise HTTPException(status_code=404, detail="Benchmark project not found")
+            raise_not_found("Benchmark project")
         await db.delete(benchmark)
         await db.commit()
         return {"message": "Benchmark deleted"}
@@ -624,12 +625,12 @@ async def regenerate_benchmark_analysis(
         )
         benchmark = bm_result.scalar_one_or_none()
         if not benchmark:
-            raise HTTPException(status_code=404, detail="Benchmark project not found")
+            raise_not_found("Benchmark project")
 
         if provider:
             provider = provider.lower()
             if provider not in ("anthropic", "openai", "mistral"):
-                raise HTTPException(status_code=400, detail="Invalid provider. Use: anthropic, openai, or mistral")
+                raise_bad_request("Invalid provider. Use: anthropic, openai, or mistral")
 
         # Update status synchronously so the frontend sees it immediately
         benchmark.analysis_status = "generating"

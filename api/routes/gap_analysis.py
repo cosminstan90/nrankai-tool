@@ -14,6 +14,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -892,7 +893,7 @@ async def generate_gap_analysis(
         target_audit = target_result.scalar_one_or_none()
         
         if not target_audit:
-            raise HTTPException(status_code=404, detail="Target audit not found")
+            raise_not_found("Target audit")
         
         if target_audit.status != "completed":
             raise HTTPException(
@@ -908,7 +909,7 @@ async def generate_gap_analysis(
             comp_audit = comp_result.scalar_one_or_none()
             
             if not comp_audit:
-                raise HTTPException(status_code=404, detail=f"Competitor audit {comp_id} not found")
+                raise_not_found("Competitor audit", comp_id)
             
             if comp_audit.status != "completed":
                 raise HTTPException(
@@ -990,7 +991,7 @@ async def get_gap_analysis(gap_id: str):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Gap analysis not found")
+            raise_not_found("Gap analysis")
         
         return gap.to_dict()
 
@@ -1010,7 +1011,7 @@ async def export_gap_analysis(gap_id: str):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Gap analysis not found")
+            raise_not_found("Gap analysis")
         
         if gap.status != "completed":
             raise HTTPException(
@@ -1042,7 +1043,7 @@ async def delete_gap_analysis(gap_id: str):
         gap = result.scalar_one_or_none()
         
         if not gap:
-            raise HTTPException(status_code=404, detail="Gap analysis not found")
+            raise_not_found("Gap analysis")
         
         await db.delete(gap)
         await db.commit()

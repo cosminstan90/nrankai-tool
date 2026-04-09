@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from api.utils.errors import raise_not_found, raise_bad_request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -428,7 +429,7 @@ async def generate_audit_summary(
         audit = audit_result.scalar_one_or_none()
         
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         
         if audit.status != "completed":
             raise HTTPException(
@@ -440,7 +441,7 @@ async def generate_audit_summary(
     if provider:
         provider = provider.lower()
         if provider not in ["anthropic", "openai", "mistral"]:
-            raise HTTPException(status_code=400, detail="Invalid provider. Use: anthropic, openai, or mistral")
+            raise_bad_request("Invalid provider. Use: anthropic, openai, or mistral")
     
     # Schedule background task
     background_tasks.add_task(
@@ -475,7 +476,7 @@ async def get_audit_summary(audit_id: str):
         audit = audit_result.scalar_one_or_none()
         
         if not audit:
-            raise HTTPException(status_code=404, detail="Audit not found")
+            raise_not_found("Audit")
         
         # Get summary
         summary_result = await db.execute(

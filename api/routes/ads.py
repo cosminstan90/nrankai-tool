@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete
@@ -239,7 +240,7 @@ async def upload_csv(account_id: str, file: UploadFile = File(...)):
     async with AsyncSessionLocal() as db:
         acct = await db.get(AdsAccount, account_id)
         if not acct:
-            raise HTTPException(status_code=404, detail="Account not found")
+            raise_not_found("Account")
 
         content = await file.read()
         try:
