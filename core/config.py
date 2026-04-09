@@ -357,6 +357,15 @@ def setup_output_directory() -> str:
 
 
 # ============================================================================
+# NRANKAI CLOUD INTEGRATION
+# ============================================================================
+
+NRANKAI_CLOUD_URL = os.getenv("NRANKAI_CLOUD_URL", "")
+WORKER_API_KEY = os.getenv("WORKER_API_KEY", "")
+PROSPECT_ID = os.getenv("PROSPECT_ID", "")
+CAMPAIGN_ID = os.getenv("CAMPAIGN_ID", "")
+
+# ============================================================================
 # MODULE EXPORTS
 # ============================================================================
 

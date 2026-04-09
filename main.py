@@ -8,6 +8,7 @@ Created: 2026-02-10
 """
 
 import argparse
+import asyncio
 import sys
 import os
 from typing import List, Optional
@@ -434,6 +435,18 @@ def main():
         print("="*80)
         print(f"Completed steps: {' → '.join(steps_to_run)}")
         print("="*80 + "\n")
+
+        # Notify nrankai-cloud if configured
+        if os.getenv("NRANKAI_CLOUD_URL"):
+            from cloud_notifier import notify_audit_complete
+            print("[pipeline] Notifying nrankai-cloud...")
+            asyncio.run(notify_audit_complete(
+                website=getattr(config, "WEBSITE", "") or os.getenv("WEBSITE", ""),
+                audit_type=getattr(config, "QUESTION", "") or os.getenv("QUESTION", ""),
+                prospect_id=os.getenv("PROSPECT_ID") or None,
+                campaign_id=os.getenv("CAMPAIGN_ID") or None,
+                scores_file=f"{args.website or os.getenv('WEBSITE', '')}/audit_scores.json",
+            ))
         
     except KeyboardInterrupt:
         print("\n\nPipeline interrupted by user")
