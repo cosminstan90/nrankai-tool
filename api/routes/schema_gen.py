@@ -11,9 +11,10 @@ import re as re_module
 from datetime import datetime
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
 from api.utils.errors import raise_not_found, raise_bad_request
+from api.limiter import limiter
 from pydantic import BaseModel, Field
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession

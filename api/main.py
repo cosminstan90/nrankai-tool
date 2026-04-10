@@ -53,8 +53,8 @@ from sqlalchemy import select, func, desc, case
 from sqlalchemy.ext.asyncio import AsyncSession
 import asyncio
 
-# Rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiter — defined in api/limiter.py to avoid circular imports with route files
+from api.limiter import limiter
 
 # Scheduler task reference (global)
 scheduler_task = None
@@ -200,9 +200,8 @@ from fastapi.responses import JSONResponse
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     tb = traceback.format_exc()
+    # Always log full traceback server-side; NEVER expose it in HTTP responses.
     print(f"\n{'='*60}\n[ERROR] UNHANDLED EXCEPTION on {request.url}\n{'='*60}\n{tb}\n{'='*60}")
-    if os.getenv('DEBUG', 'false').lower() == 'true':
-        return PlainTextResponse(f"Internal Server Error:\n\n{tb}", status_code=500)
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 # Add security headers middleware
@@ -234,6 +233,27 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Request body size limit — protects against memory-exhaustion via huge payloads.
+# 5 MB is enough for any legitimate audit request; file uploads go through
+# multipart which bypasses this check but are validated per-endpoint.
+class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
+    _MAX_BYTES = 5 * 1024 * 1024  # 5 MB
+
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl:
+            try:
+                if int(cl) > self._MAX_BYTES:
+                    return JSONResponse(
+                        {"detail": "Request body too large (max 5 MB)."},
+                        status_code=413,
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
+
+app.add_middleware(ContentSizeLimitMiddleware)
 
 # Add CORS middleware — single-user tool, no cross-origin credentials needed.
 # Origins read from env so localhost works in dev without changing code.

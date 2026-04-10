@@ -28,9 +28,10 @@ from typing import List, Optional
 from api.utils.task_runner import create_tracked_task
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, field_validator
+from api.limiter import limiter
 from sqlalchemy import select
 from sqlalchemy import delete as sql_delete
 
@@ -368,7 +369,8 @@ async def _run_session(session_id: str) -> None:
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
 @router.post("/sessions", status_code=201)
-async def create_session(req: CreateSessionRequest):
+@limiter.limit("10/hour")  # each session hits DataForSEO API — costs money
+async def create_session(request: Request, req: CreateSessionRequest):
     """Create a new keyword research session and start background processing."""
     if not _dfs_configured():
         raise HTTPException(
