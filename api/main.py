@@ -205,13 +205,50 @@ async def global_exception_handler(request, exc):
         return PlainTextResponse(f"Internal Server Error:\n\n{tb}", status_code=500)
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
-# Add CORS middleware
+# Add security headers middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        # CSP: allow CDNs used by templates; unsafe-inline required for Alpine.js / Tailwind CDN
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' https://cdn.tailwindcss.com https://unpkg.com https://cdn.jsdelivr.net 'unsafe-inline'; "
+            "style-src 'self' https://fonts.googleapis.com https://cdn.tailwindcss.com 'unsafe-inline'; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self';"
+        )
+        if "server" in response.headers:
+            del response.headers["server"]
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Add CORS middleware — single-user tool, no cross-origin credentials needed.
+# Origins read from env so localhost works in dev without changing code.
+_CORS_ORIGINS = [
+    o.strip() for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://app.nrankai.com",
+    ).split(",") if o.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 # Add authentication middleware (optional, only if AUTH_USERNAME/AUTH_PASSWORD set in .env)
