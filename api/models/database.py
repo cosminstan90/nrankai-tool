@@ -31,6 +31,7 @@ from api.models.content import (
     ContentBrief, SchemaMarkup, CitationTracker, CitationScan,
     CompetitorGapAnalysis, ContentGap, ActionCard, CrossReferenceJob,
     UrlGuide, LlmsTxtJob,
+    FanoutSession, FanoutQuery, FanoutSource,
 )
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
