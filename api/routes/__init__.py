@@ -30,5 +30,6 @@ from .ads import router as ads_router
 from .insights import router as insights_router
 from .llms_txt import router as llms_txt_router
 from .guide import router as guide_router
+from .fanout import router as fanout_router
 
 __all__ = [name for name in globals() if name.endswith('_router')]

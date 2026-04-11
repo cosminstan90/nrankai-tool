@@ -38,6 +38,19 @@ async def insights_detail_page(
     })
 
 
+@router.get("/fanout", response_class=HTMLResponse)
+async def fanout_page(request: Request):
+    """WLA Fan-Out Analyzer page."""
+    providers = {
+        "openai":    bool(os.getenv("OPENAI_API_KEY")),
+        "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
+    }
+    return templates.TemplateResponse("fanout.html", {
+        "request":   request,
+        "providers": providers,
+    })
+
+
 @router.get("/geo-monitor", response_class=HTMLResponse)
 async def geo_monitor_page(request: Request):
     """GEO Visibility Monitor page - track AI visibility of websites."""
