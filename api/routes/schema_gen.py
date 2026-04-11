@@ -290,15 +290,22 @@ async def call_llm_for_schema(
             raise ValueError("OPENAI_API_KEY not configured")
 
         client = AsyncOpenAI(api_key=api_key)
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-            response_format={"type": "json_object"}
-        )
+        for _attempt in range(3):
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                break
+            except Exception as e:
+                if _attempt == 2 or "rate" not in str(e).lower():
+                    raise
+                await asyncio.sleep(5 * (_attempt + 1))
         return response.choices[0].message.content, response.usage.prompt_tokens, response.usage.completion_tokens
 
     elif provider == "MISTRAL":
@@ -307,15 +314,22 @@ async def call_llm_for_schema(
             raise ValueError("MISTRAL_API_KEY not configured")
 
         client = Mistral(api_key=api_key)
-        response = await client.chat.complete_async(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content}
-            ],
-            response_format={"type": "json_object"}
-        )
+        for _attempt in range(3):
+            try:
+                response = await client.chat.complete_async(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content}
+                    ],
+                    response_format={"type": "json_object"}
+                )
+                break
+            except Exception as e:
+                if _attempt == 2 or "rate" not in str(e).lower():
+                    raise
+                await asyncio.sleep(5 * (_attempt + 1))
         return response.choices[0].message.content, response.usage.prompt_tokens, response.usage.completion_tokens
 
     elif provider == "GOOGLE":
@@ -343,7 +357,14 @@ async def call_llm_for_schema(
             out_tok = (resp.usage_metadata.candidates_token_count  if resp.usage_metadata else 0)
             return text, in_tok, out_tok
 
-        return await asyncio.to_thread(_google_sync)
+        for _attempt in range(3):
+            try:
+                result = await asyncio.to_thread(_google_sync)
+                return result
+            except Exception as e:
+                if _attempt == 2 or "quota" not in str(e).lower():
+                    raise
+                await asyncio.sleep(5 * (_attempt + 1))
 
     elif provider == "PERPLEXITY":
         api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -351,14 +372,21 @@ async def call_llm_for_schema(
             raise ValueError("PERPLEXITY_API_KEY not configured")
 
         client = AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
-        response = await client.chat.completions.create(
-            model=model,
-            max_tokens=max_tokens,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-        )
+        for _attempt in range(3):
+            try:
+                response = await client.chat.completions.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                )
+                break
+            except Exception as e:
+                if _attempt == 2 or "rate" not in str(e).lower():
+                    raise
+                await asyncio.sleep(5 * (_attempt + 1))
         return (
             response.choices[0].message.content,
             response.usage.prompt_tokens,
@@ -489,7 +517,8 @@ Generate appropriate JSON-LD schema markup for this page."""
 # ============================================================================
 
 @router.post("/generate")
-async def generate_schemas(request: GenerateSchemaRequest):
+@limiter.limit("20/hour")  # each call makes N LLM requests (one per page) — costs credits
+async def generate_schemas(http_request: Request, request: GenerateSchemaRequest):
     """
     Generate schema markup for pages in an audit.
     
