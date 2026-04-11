@@ -14,9 +14,10 @@ from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
 from fastapi.responses import FileResponse
 from api.utils.errors import raise_not_found, raise_bad_request
+from api.limiter import limiter
 from sqlalchemy import select, func, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,7 +41,9 @@ router = APIRouter(prefix="/api/audits", tags=["audits"])
 # ============================================================================
 
 @router.post("", response_model=AuditResponse, status_code=201)
+@limiter.limit("30/hour")  # generous for single-user; blocks runaway loops
 async def create_audit(
+    request: Request,
     audit_data: AuditCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)

@@ -30,6 +30,18 @@ class AuditCreate(BaseModel):
     use_perplexity: Optional[bool] = False
     prompt_version: Optional[str] = "v3"  # "v3" = prompts/, "v2" = prompts_backup/
 
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_webhook_url(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        v = v.strip()
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("webhook_url must use http:// or https:// scheme")
+        if len(v) > 2048:
+            raise ValueError("webhook_url too long (max 2048 chars)")
+        return v
+
 
 class SingleAuditRequest(BaseModel):
     """Schema for single page audit request."""
