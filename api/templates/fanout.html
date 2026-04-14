@@ -44,19 +44,9 @@
                 <!-- Model -->
                 <div>
                     <label class="block text-xs font-medium text-gray-600 mb-1">Model</label>
-                    <select x-model="form.model"
+                    <select @change="form.model = $event.target.value"
+                        x-html="modelOptionsHtml()"
                         class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                        <option value="">Default</option>
-                        <template x-if="form.provider === 'openai'">
-                            <template x-for="m in models.openai" :key="m.id">
-                                <option :value="m.id" x-text="m.label"></option>
-                            </template>
-                        </template>
-                        <template x-if="form.provider === 'anthropic'">
-                            <template x-for="m in models.anthropic" :key="m.id">
-                                <option :value="m.id" x-text="m.label"></option>
-                            </template>
-                        </template>
                     </select>
                 </div>
 
@@ -449,6 +439,17 @@ function fanoutApp() {
                 { id: 'claude-sonnet-4-20250514',   label: 'Claude Sonnet' },
                 { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku (cheapest)' },
             ],
+        },
+
+        modelOptionsHtml() {
+            const provider = this.form.provider;
+            const opts     = this.models[provider] || [];
+            const cur      = this.form.model;
+            const defaultLabel = provider === 'anthropic' ? 'Default (Sonnet)' : 'Default (GPT-4o)';
+            const hasCur   = opts.some(m => m.id === cur);
+            const defSel   = (!cur || !hasCur) ? ' selected' : '';
+            return `<option value=""${defSel}>${defaultLabel}</option>` +
+                opts.map(m => `<option value="${m.id}"${m.id === cur ? ' selected' : ''}>${m.label}</option>`).join('');
         },
 
         loading:            false,
