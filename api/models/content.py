@@ -433,5 +433,105 @@ class LlmsTxtJob(Base):
     completed_at     = Column(DateTime,    nullable=True)
 
 
+# ============================================================================
+# Fan-Out Analyzer models
+# ============================================================================
+
+class FanoutSession(Base):
+    """
+    One fan-out analysis run for a single prompt.
+
+    Records the prompt, provider/model used, aggregate stats, and an optional
+    target URL so callers can track whether their site appears in AI sources.
+    """
+    __tablename__ = "fanout_sessions"
+
+    id              = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    prompt          = Column(Text,        nullable=False)
+    provider        = Column(String(20),  nullable=False)           # openai | anthropic
+    model           = Column(String(100), nullable=False)
+    user_location   = Column(String(200), nullable=True)
+    total_fanout_queries  = Column(Integer, default=0)
+    total_sources         = Column(Integer, default=0)
+    total_search_calls    = Column(Integer, default=0)
+    target_url            = Column(String(500), nullable=True, index=True)
+    target_found          = Column(Boolean, default=False)
+    target_position       = Column(Integer, nullable=True)          # 1-based index in sources list
+    # Optional linkage to other geo_tool entities
+    audit_id        = Column(String(36),  ForeignKey("audits.id",  ondelete="SET NULL"), nullable=True, index=True)
+    created_at      = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    # Relationships
+    queries = relationship("FanoutQuery",  back_populates="session", cascade="all, delete-orphan")
+    sources = relationship("FanoutSource", back_populates="session", cascade="all, delete-orphan")
+
+    def to_dict(self, include_children: bool = False) -> dict:
+        data = {
+            "id":                   self.id,
+            "prompt":               self.prompt,
+            "provider":             self.provider,
+            "model":                self.model,
+            "user_location":        self.user_location,
+            "total_fanout_queries": self.total_fanout_queries,
+            "total_sources":        self.total_sources,
+            "total_search_calls":   self.total_search_calls,
+            "target_url":           self.target_url,
+            "target_found":         self.target_found,
+            "target_position":      self.target_position,
+            "audit_id":             self.audit_id,
+            "created_at":           self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_children:
+            data["fanout_queries"] = [q.to_dict() for q in (self.queries or [])]
+            data["sources"]        = [s.to_dict() for s in (self.sources or [])]
+        return data
+
+
+class FanoutQuery(Base):
+    """A single predicted/actual search query extracted from a fan-out session."""
+    __tablename__ = "fanout_queries"
+
+    id            = Column(Integer,     primary_key=True, autoincrement=True)
+    session_id    = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    query_text    = Column(Text,        nullable=False)
+    query_position = Column(Integer,   nullable=True)   # 1-based order of appearance
+
+    session = relationship("FanoutSession", back_populates="queries")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "session_id":     self.session_id,
+            "query_text":     self.query_text,
+            "query_position": self.query_position,
+        }
+
+
+class FanoutSource(Base):
+    """A cited source URL extracted from an AI response during fan-out analysis."""
+    __tablename__ = "fanout_sources"
+
+    id             = Column(Integer,     primary_key=True, autoincrement=True)
+    session_id     = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    url            = Column(String(2000), nullable=False)
+    title          = Column(String(500),  nullable=True)
+    domain         = Column(String(500),  nullable=True, index=True)
+    is_target      = Column(Boolean,      default=False)   # True if domain matches target_url
+    source_position = Column(Integer,    nullable=True)   # 1-based order in sources list
+
+    session = relationship("FanoutSession", back_populates="sources")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":              self.id,
+            "session_id":      self.session_id,
+            "url":             self.url,
+            "title":           self.title,
+            "domain":          self.domain,
+            "is_target":       self.is_target,
+            "source_position": self.source_position,
+        }
+
+
 # Default templates to seed on first run
 

@@ -163,11 +163,9 @@
                     <!-- Model -->
                     <div>
                         <label class="block text-xs font-medium text-slate-600 mb-1">Model</label>
-                        <select x-model="form.model"
+                        <select @change="form.model = $event.target.value"
+                                x-html="modelOptionsHtml()"
                                 class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
-                            <template x-for="m in modelOptions()" :key="m.value">
-                                <option :value="m.value" x-text="m.label"></option>
-                            </template>
                         </select>
                     </div>
                     <!-- Audit Types -->
@@ -596,6 +594,15 @@ function standaloneOptimize() {
 
         init() {
             if (this.pastGuides.length > 0) this.loadGuideByIdx(0);
+        },
+
+        modelOptionsHtml() {
+            const opts = this.modelOptions();
+            const cur  = this.form.model;
+            const hasCur = opts.some(m => m.value === cur);
+            return opts.map((m, i) =>
+                `<option value="${m.value}"${(hasCur ? m.value === cur : i === 0) ? ' selected' : ''}>${m.label}</option>`
+            ).join('');
         },
 
         parseQueries() {

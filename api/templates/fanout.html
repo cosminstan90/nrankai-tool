@@ -1,0 +1,642 @@
+{% extends "base.html" %}
+{% block title %}Fan-Out Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="fanoutApp()" x-init="init()">
+
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-900">⚡ Fan-Out Analyzer</h1>
+        <p class="text-gray-500 text-sm mt-1">
+            Reverse-engineer which search queries AI engines fire when answering a prompt —
+            your <strong>retrieval surface</strong> for GEO visibility.
+        </p>
+    </div>
+
+    <!-- ── Analyze Form ─────────────────────────────────────────────────── -->
+    <div class="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm">
+        <div class="grid grid-cols-1 gap-4">
+
+            <!-- Prompt -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Prompt to analyze</label>
+                <textarea
+                    x-model="form.prompt"
+                    rows="2"
+                    placeholder='e.g. "best SEO agency Romania" or "top accounting software for small business"'
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                ></textarea>
+            </div>
+
+            <!-- Row: provider + model + target + location -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+                <!-- Provider -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Provider</label>
+                    <select x-model="form.provider" @change="form.model = ''"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                        {% if providers.openai %}<option value="openai">OpenAI</option>{% endif %}
+                        {% if providers.anthropic %}<option value="anthropic">Anthropic</option>{% endif %}
+                    </select>
+                </div>
+
+                <!-- Model -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Model</label>
+                    <select @change="form.model = $event.target.value"
+                        x-html="modelOptionsHtml()"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                    </select>
+                </div>
+
+                <!-- Target URL -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Your site <span class="text-gray-400">(optional)</span></label>
+                    <input type="text" x-model="form.target_url"
+                        placeholder="example.com"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <!-- Location -->
+                <div>
+                    <label class="block text-xs font-medium text-gray-600 mb-1">Location <span class="text-gray-400">(optional)</span></label>
+                    <input type="text" x-model="form.location"
+                        placeholder="Bucharest, Romania"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+
+            <!-- Analyze button -->
+            <div class="flex items-center gap-3">
+                <button
+                    @click="analyze()"
+                    :disabled="loading || !form.prompt.trim()"
+                    class="px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-2"
+                >
+                    <template x-if="loading">
+                        <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                        </svg>
+                    </template>
+                    <span x-text="loading ? 'Analyzing… (10–40s)' : '⚡ Analyze Fan-Out'"></span>
+                </button>
+                <p x-show="loading" class="text-xs text-gray-400">AI is searching the web — please wait</p>
+                <p x-show="error" x-text="error" class="text-xs text-red-500"></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Results ──────────────────────────────────────────────────────── -->
+    <div x-show="result" x-cloak class="mb-8 fade-in">
+
+        <!-- Stats bar -->
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+            <span class="text-sm font-semibold text-gray-700"
+                x-text="`${result?.stats?.total_queries ?? 0} fan-out queries`"></span>
+            <span class="text-gray-300">•</span>
+            <span class="text-sm text-gray-500"
+                x-text="`${result?.stats?.total_sources ?? 0} sources`"></span>
+            <span class="text-gray-300">•</span>
+            <span class="text-sm text-gray-500"
+                x-text="`${result?.provider} / ${result?.model}`"></span>
+
+            <!-- Coverage badge (only if target_url was set) -->
+            <template x-if="form.target_url && result?.stats">
+                <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold"
+                    :class="result.stats.target_found
+                        ? 'bg-green-100 text-green-700'
+                        : 'bg-red-100 text-red-600'"
+                    x-text="result.stats.target_found
+                        ? `✓ Your site found (position ${result.stats.target_position})`
+                        : '✗ Your site not found in sources'">
+                </span>
+            </template>
+        </div>
+
+        <!-- Tabs -->
+        <div class="border-b border-gray-200 mb-4">
+            <nav class="flex gap-1">
+                <button @click="activeTab = 'queries'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'queries'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Fan-Out Queries
+                    <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600"
+                        x-text="result?.fanout_queries?.length ?? 0"></span>
+                </button>
+                <button @click="activeTab = 'sources'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'sources'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Sources
+                    <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600"
+                        x-text="result?.sources?.length ?? 0"></span>
+                </button>
+                <button @click="activeTab = 'domains'; $nextTick(() => renderChart())"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'domains'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Domain Analysis
+                </button>
+                <button @click="activeTab = 'actions'; loadActionCards()"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition flex items-center gap-1.5"
+                    :class="activeTab === 'actions'
+                        ? 'border-blue-500 text-blue-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Action Cards
+                    <template x-if="actionCards.length > 0">
+                        <span class="px-1.5 py-0.5 text-xs rounded-full bg-red-100 text-red-600 font-semibold"
+                            x-text="actionCards.length"></span>
+                    </template>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Tab: Fan-Out Queries -->
+        <div x-show="activeTab === 'queries'">
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 w-12">#</th>
+                            <th class="px-4 py-2.5 text-left font-medium text-gray-500">Query</th>
+                            <th class="px-4 py-2.5 w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <template x-for="(q, i) in result?.fanout_queries ?? []" :key="i">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2.5 text-gray-400 font-mono text-xs"
+                                    x-text="`Q${String(i+1).padStart(2,'0')}`"></td>
+                                <td class="px-4 py-2.5 text-gray-800" x-text="q"></td>
+                                <td class="px-4 py-2.5">
+                                    <button @click="copyText(q, $el)"
+                                        class="text-xs text-gray-400 hover:text-blue-600 transition px-2 py-1 rounded hover:bg-blue-50"
+                                        title="Copy">
+                                        📋
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!result?.fanout_queries?.length">
+                            <td colspan="3" class="px-4 py-6 text-center text-gray-400 text-sm">No queries extracted</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <!-- Copy all -->
+            <div class="mt-2 flex justify-end">
+                <button @click="copyAllQueries()"
+                    class="text-xs text-gray-500 hover:text-blue-600 transition px-3 py-1.5 rounded border border-gray-200 hover:border-blue-300">
+                    Copy all queries
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab: Sources -->
+        <div x-show="activeTab === 'sources'">
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table class="w-full text-sm">
+                    <thead class="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th class="px-4 py-2.5 text-left font-medium text-gray-500 w-10">#</th>
+                            <th class="px-4 py-2.5 text-left font-medium text-gray-500">Domain</th>
+                            <th class="px-4 py-2.5 text-left font-medium text-gray-500">Title / URL</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <template x-for="(s, i) in result?.sources ?? []" :key="i">
+                            <tr class="hover:bg-gray-50" :class="s.is_target ? 'bg-green-50' : ''">
+                                <td class="px-4 py-2.5 text-gray-400 text-xs" x-text="i+1"></td>
+                                <td class="px-4 py-2.5">
+                                    <span class="font-medium text-gray-700" x-text="s.domain"></span>
+                                    <template x-if="s.is_target">
+                                        <span class="ml-1.5 px-1.5 py-0.5 text-[10px] font-semibold bg-green-100 text-green-700 rounded-full">Your site</span>
+                                    </template>
+                                </td>
+                                <td class="px-4 py-2.5">
+                                    <a :href="s.url" target="_blank"
+                                        class="text-blue-600 hover:underline text-xs line-clamp-1"
+                                        x-text="s.title || s.url"></a>
+                                </td>
+                            </tr>
+                        </template>
+                        <tr x-show="!result?.sources?.length">
+                            <td colspan="3" class="px-4 py-6 text-center text-gray-400 text-sm">No sources found</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Domain Analysis -->
+        <div x-show="activeTab === 'domains'">
+            <div class="bg-white border border-gray-200 rounded-xl p-5">
+                <canvas id="domainChart" height="120"></canvas>
+                <div class="mt-4 overflow-hidden rounded-lg border border-gray-100">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500">Domain</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">Appearances</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">% of sources</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="d in domainStats()" :key="d.domain">
+                                <tr class="hover:bg-gray-50" :class="d.isTarget ? 'bg-green-50 font-medium' : ''">
+                                    <td class="px-4 py-2 text-gray-700">
+                                        <span x-text="d.domain"></span>
+                                        <template x-if="d.isTarget">
+                                            <span class="ml-1.5 text-[10px] text-green-600">★ Your site</span>
+                                        </template>
+                                    </td>
+                                    <td class="px-4 py-2 text-right text-gray-600" x-text="d.count"></td>
+                                    <td class="px-4 py-2 text-right text-gray-500" x-text="`${d.pct}%`"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Action Cards -->
+        <div x-show="activeTab === 'actions'">
+            <!-- Loading state -->
+            <div x-show="actionCardsLoading" class="flex items-center justify-center py-12 text-gray-400 text-sm gap-2">
+                <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                </svg>
+                Generating action cards…
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!actionCardsLoading && actionCards.length === 0"
+                class="py-10 text-center text-gray-400 text-sm">
+                No action cards generated. Make sure a target site is set.
+            </div>
+
+            <!-- Cards list -->
+            <div x-show="!actionCardsLoading && actionCards.length > 0" class="space-y-3">
+                <template x-for="card in actionCards" :key="card.id">
+                    <div class="bg-white border rounded-xl p-5 shadow-sm"
+                        :class="{
+                            'border-red-300 bg-red-50':    card.priority === 'critical',
+                            'border-orange-300 bg-orange-50': card.priority === 'high',
+                            'border-yellow-300 bg-yellow-50': card.priority === 'medium',
+                            'border-gray-200':             card.priority === 'low',
+                        }">
+                        <!-- Card header -->
+                        <div class="flex items-start justify-between gap-3 mb-3">
+                            <div class="flex items-center gap-2.5">
+                                <!-- Priority icon -->
+                                <span x-text="{
+                                    critical: '🚨',
+                                    high:     '⚠️',
+                                    medium:   '💡',
+                                    low:      'ℹ️',
+                                }[card.priority] || '📋'"></span>
+                                <h3 class="font-semibold text-gray-900 text-sm" x-text="card.title"></h3>
+                            </div>
+                            <!-- Priority badge -->
+                            <span class="flex-shrink-0 px-2.5 py-0.5 text-xs font-semibold rounded-full capitalize"
+                                :class="{
+                                    'bg-red-100 text-red-700':    card.priority === 'critical',
+                                    'bg-orange-100 text-orange-700': card.priority === 'high',
+                                    'bg-yellow-100 text-yellow-700': card.priority === 'medium',
+                                    'bg-gray-100 text-gray-600':  card.priority === 'low',
+                                }"
+                                x-text="card.priority"></span>
+                        </div>
+
+                        <!-- Description -->
+                        <p class="text-sm text-gray-600 mb-3" x-text="card.description"></p>
+
+                        <!-- Action items -->
+                        <ul class="space-y-1.5">
+                            <template x-for="(item, i) in card.action_items" :key="i">
+                                <li class="flex items-start gap-2 text-sm text-gray-700">
+                                    <span class="text-gray-400 mt-0.5 flex-shrink-0">→</span>
+                                    <span x-text="item"></span>
+                                </li>
+                            </template>
+                        </ul>
+
+                        <!-- Data details (collapsible) -->
+                        <template x-if="card.type === 'content_gap' && card.data.top_gaps">
+                            <div class="mt-3 pt-3 border-t border-gray-200">
+                                <p class="text-xs font-medium text-gray-500 mb-1.5">Top gaps to address:</p>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-for="g in card.data.top_gaps.slice(0,5)" :key="g.fanout_query">
+                                        <span class="px-2 py-0.5 text-xs bg-white border border-gray-200 rounded-full text-gray-600"
+                                            x-text="g.fanout_query"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+
+                        <template x-if="card.type === 'competitor_dominance' && card.data.all_competitors">
+                            <div class="mt-3 pt-3 border-t border-orange-200">
+                                <p class="text-xs font-medium text-gray-500 mb-1.5">Top competing domains:</p>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <template x-for="c in card.data.all_competitors.slice(0,5)" :key="c.domain">
+                                        <span class="px-2 py-0.5 text-xs bg-white border border-orange-200 rounded-full text-gray-700"
+                                            x-text="`${c.domain} (${c.coverage_pct}%)`"></span>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── History ──────────────────────────────────────────────────────── -->
+    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-gray-700">Recent Sessions</h2>
+            <button @click="loadHistory()" class="text-xs text-gray-400 hover:text-blue-600 transition">↻ Refresh</button>
+        </div>
+
+        <template x-if="history.length === 0">
+            <p class="px-5 py-8 text-center text-gray-400 text-sm">No sessions yet — run your first analysis above.</p>
+        </template>
+
+        <template x-if="history.length > 0">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                        <th class="px-4 py-2.5 text-left font-medium text-gray-500">Prompt</th>
+                        <th class="px-4 py-2.5 text-left font-medium text-gray-500 hidden md:table-cell">Provider</th>
+                        <th class="px-4 py-2.5 text-right font-medium text-gray-500">Queries</th>
+                        <th class="px-4 py-2.5 text-right font-medium text-gray-500">Sources</th>
+                        <th class="px-4 py-2.5 text-right font-medium text-gray-500 hidden lg:table-cell">Target</th>
+                        <th class="px-4 py-2.5 text-right font-medium text-gray-500 hidden lg:table-cell">Date</th>
+                        <th class="px-4 py-2.5 w-10"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    <template x-for="s in history" :key="s.id">
+                        <tr class="hover:bg-gray-50 cursor-pointer" @click="loadSession(s.id)">
+                            <td class="px-4 py-2.5 text-gray-700 max-w-xs">
+                                <span class="line-clamp-1" x-text="s.prompt"></span>
+                            </td>
+                            <td class="px-4 py-2.5 text-gray-500 hidden md:table-cell">
+                                <span class="capitalize" x-text="s.provider"></span>
+                            </td>
+                            <td class="px-4 py-2.5 text-right font-mono text-gray-600" x-text="s.total_fanout_queries"></td>
+                            <td class="px-4 py-2.5 text-right font-mono text-gray-600" x-text="s.total_sources"></td>
+                            <td class="px-4 py-2.5 text-right hidden lg:table-cell">
+                                <template x-if="s.target_url">
+                                    <span :class="s.target_found ? 'text-green-600' : 'text-gray-400'"
+                                        x-text="s.target_found ? '✓' : '✗'"></span>
+                                </template>
+                                <template x-if="!s.target_url">
+                                    <span class="text-gray-300">—</span>
+                                </template>
+                            </td>
+                            <td class="px-4 py-2.5 text-right text-gray-400 text-xs hidden lg:table-cell"
+                                x-text="formatDate(s.created_at)"></td>
+                            <td class="px-4 py-2.5 text-right">
+                                <button @click.stop="deleteSession(s.id)"
+                                    class="text-gray-300 hover:text-red-500 transition text-xs px-1">✕</button>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </template>
+    </div>
+
+</div>
+
+<script>
+function fanoutApp() {
+    return {
+        form: {
+            prompt:     '',
+            provider:   '{{ "openai" if providers.openai else "anthropic" }}',
+            model:      '',
+            target_url: '',
+            location:   '',
+        },
+        models: {
+            openai: [
+                { id: 'gpt-4o',      label: 'GPT-4o' },
+                { id: 'gpt-4o-mini', label: 'GPT-4o mini (cheaper)' },
+            ],
+            anthropic: [
+                { id: 'claude-opus-4-5-20251101',  label: 'Claude Opus (best)' },
+                { id: 'claude-sonnet-4-20250514',   label: 'Claude Sonnet' },
+                { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku (cheapest)' },
+            ],
+        },
+
+        modelOptionsHtml() {
+            const provider = this.form.provider;
+            const opts     = this.models[provider] || [];
+            const cur      = this.form.model;
+            const defaultLabel = provider === 'anthropic' ? 'Default (Sonnet)' : 'Default (GPT-4o)';
+            const hasCur   = opts.some(m => m.id === cur);
+            const defSel   = (!cur || !hasCur) ? ' selected' : '';
+            return `<option value=""${defSel}>${defaultLabel}</option>` +
+                opts.map(m => `<option value="${m.id}"${m.id === cur ? ' selected' : ''}>${m.label}</option>`).join('');
+        },
+
+        loading:            false,
+        error:              '',
+        result:             null,
+        activeTab:          'queries',
+        history:            [],
+        _chart:             null,
+        actionCards:        [],
+        actionCardsLoading: false,
+        _actionCardsSessionId: null,
+
+        async init() {
+            await this.loadHistory();
+        },
+
+        async analyze() {
+            if (!this.form.prompt.trim()) return;
+            this.loading = true;
+            this.error   = '';
+            this.result  = null;
+
+            try {
+                const body = {
+                    prompt:        this.form.prompt.trim(),
+                    provider:      this.form.provider,
+                    model:         this.form.model || undefined,
+                    target_url:    this.form.target_url.trim() || undefined,
+                    user_location: this.form.location.trim()   || undefined,
+                };
+                const res = await fetch('/api/fanout/analyze', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(body),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                this.result    = await res.json();
+                this.activeTab = 'queries';
+                this.actionCards = [];
+                this._actionCardsSessionId = null;
+                await this.loadHistory();
+            } catch (e) {
+                this.error = e.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadHistory() {
+            try {
+                const res = await fetch('/api/fanout/sessions?limit=20');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.history = data.sessions || [];
+                }
+            } catch (_) {}
+        },
+
+        async loadSession(id) {
+            try {
+                const res = await fetch(`/api/fanout/sessions/${id}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                // Re-shape to match /analyze response format
+                this.result = {
+                    session_id:    data.id,
+                    prompt:        data.prompt,
+                    provider:      data.provider,
+                    model:         data.model,
+                    fanout_queries: (data.fanout_queries || []).map(q => q.query_text),
+                    sources:       data.sources || [],
+                    stats:         data.stats,
+                };
+                this.activeTab = 'queries';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch (_) {}
+        },
+
+        async deleteSession(id) {
+            if (!confirm('Delete this session?')) return;
+            await fetch(`/api/fanout/sessions/${id}`, { method: 'DELETE' });
+            if (this.result?.session_id === id) this.result = null;
+            await this.loadHistory();
+        },
+
+        domainStats() {
+            const sources = this.result?.sources ?? [];
+            if (!sources.length) return [];
+            const counts = {};
+            for (const s of sources) {
+                const d = s.domain || 'unknown';
+                counts[d] = (counts[d] || 0) + 1;
+            }
+            const total  = sources.length;
+            const tgtDom = this.form.target_url
+                ? this.form.target_url.replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0]
+                : '';
+            return Object.entries(counts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 15)
+                .map(([domain, count]) => ({
+                    domain,
+                    count,
+                    pct:      Math.round(count / total * 100),
+                    isTarget: tgtDom && domain.includes(tgtDom),
+                }));
+        },
+
+        renderChart() {
+            const stats = this.domainStats().slice(0, 10);
+            if (!stats.length) return;
+
+            const ctx = document.getElementById('domainChart');
+            if (!ctx) return;
+
+            if (this._chart) { this._chart.destroy(); this._chart = null; }
+
+            const tgtDom = this.form.target_url
+                ? this.form.target_url.replace(/^https?:\/\//,'').replace(/^www\./,'').split('/')[0]
+                : '';
+
+            this._chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels:   stats.map(d => d.domain),
+                    datasets: [{
+                        label:           'Source appearances',
+                        data:            stats.map(d => d.count),
+                        backgroundColor: stats.map(d =>
+                            tgtDom && d.domain.includes(tgtDom)
+                                ? 'rgba(34,197,94,0.7)'
+                                : 'rgba(59,130,246,0.6)'
+                        ),
+                        borderRadius: 4,
+                    }]
+                },
+                options: {
+                    responsive:  true,
+                    plugins:     { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { font: { size: 11 } } },
+                        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+                    }
+                }
+            });
+        },
+
+        async loadActionCards() {
+            const sid = this.result?.session_id;
+            if (!sid) return;
+            // Don't reload if already loaded for this session
+            if (this._actionCardsSessionId === sid) return;
+            this.actionCardsLoading = true;
+            this.actionCards = [];
+            try {
+                const res = await fetch(`/api/fanout/sessions/${sid}/action-cards`);
+                if (res.ok) {
+                    const data = await res.json();
+                    this.actionCards = data.action_cards || [];
+                    this._actionCardsSessionId = sid;
+                }
+            } catch (_) {}
+            finally { this.actionCardsLoading = false; }
+        },
+
+        copyText(text, el) {
+            navigator.clipboard.writeText(text).then(() => {
+                const orig = el.textContent;
+                el.textContent = '✓';
+                setTimeout(() => el.textContent = orig, 1200);
+            });
+        },
+
+        copyAllQueries() {
+            const qs = (this.result?.fanout_queries ?? []).join('\n');
+            navigator.clipboard.writeText(qs);
+        },
+
+        formatDate(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+        },
+    };
+}
+</script>
+{% endblock %}
