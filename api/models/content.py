@@ -664,5 +664,27 @@ class FanoutTrackingDetail(Base):
         }
 
 
+class FanoutCompetitiveReport(Base):
+    """Stored result of a competitive fan-out comparison run."""
+    __tablename__ = "fanout_competitive_reports"
+
+    id            = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    target_domain = Column(String(500), nullable=True, index=True)
+    project_id    = Column(String(36),  nullable=True)
+    competitors   = Column(JSON,        nullable=True)   # List[str]
+    report        = Column(JSON,        nullable=True)   # full CompetitiveReport dict
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "target_domain": self.target_domain,
+            "project_id":    self.project_id,
+            "competitors":   self.competitors,
+            "report":        self.report,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 # Default templates to seed on first run
 

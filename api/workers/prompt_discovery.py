@@ -10,14 +10,26 @@ Usage (standalone):
         --category seo_agency --location "Bucharest, Romania" --engines openai,gemini
     python -m api.workers.prompt_discovery --domain example.com --brand "Example" \
         --category beauty_clinic --location "Miami, FL" --quick
+    python -m api.workers.prompt_discovery --domain example.com --brand "Example" \
+        --category seo_agency --smart --count 30
 """
 
 import asyncio
+import json as _json
 import logging
+import re as _re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
+
+import httpx
+
+try:
+    from bs4 import BeautifulSoup
+    _BS4_AVAILABLE = True
+except ImportError:
+    _BS4_AVAILABLE = False
 
 from api.workers.fanout_analyzer import (
     analyze_prompt, analyze_multi_engine,
@@ -539,6 +551,238 @@ def discovery_result_to_dict(result: DiscoveryResult) -> dict:
 
 
 # ============================================================================
+# SMART PROMPT GENERATION (LLM-powered)
+# ============================================================================
+
+CATEGORY_KEYWORDS: Dict[str, List[str]] = {
+    "beauty_clinic":  ["beauty", "salon", "spa", "botox", "aesthetic", "laser", "skin"],
+    "dental_clinic":  ["dental", "dentist", "teeth", "orthodont", "implant"],
+    "seo_agency":     ["seo", "marketing", "agency", "digital", "ppc", "ads"],
+    "restaurant":     ["restaurant", "food", "menu", "dining", "cuisine", "cafe"],
+    "law_firm":       ["law", "attorney", "legal", "lawyer", "litigation"],
+    "real_estate":    ["real estate", "property", "realtor", "apartment", "house for sale"],
+    "saas":           ["software", "saas", "platform", "subscription", "dashboard", "api"],
+}
+
+EXCLUDED_DOMAINS = {
+    "wikipedia.org", "youtube.com", "reddit.com", "yelp.com", "google.com",
+    "facebook.com", "linkedin.com", "twitter.com", "instagram.com",
+    "amazon.com", "tripadvisor.com", "x.com",
+}
+
+
+async def generate_smart_prompts(
+    target_domain: str,
+    target_brand: str,
+    category: str,
+    location: str = "",
+    count: int = 30,
+) -> List[str]:
+    """
+    Generate LLM-powered prompts by scraping the homepage and calling Claude Haiku.
+
+    Falls back to template-only prompts if scraping or Claude call fails.
+    Merges with generate_candidate_prompts() output and deduplicates.
+    """
+    import anthropic as _anthropic
+
+    # --- 1. Scrape homepage ---
+    title = ""
+    meta_description = ""
+    h1 = ""
+    extracted_services = ""
+    usps = ""
+
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(f"https://{target_domain}")
+            resp.raise_for_status()
+
+        if _BS4_AVAILABLE:
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            title_tag = soup.find("title")
+            title = title_tag.get_text(strip=True) if title_tag else ""
+
+            meta_tag = soup.find("meta", attrs={"name": "description"})
+            if meta_tag:
+                meta_description = (meta_tag.get("content") or "")[:150]
+            usps = meta_description
+
+            h1_tag = soup.find("h1")
+            h1 = h1_tag.get_text(strip=True) if h1_tag else ""
+
+            h2_tags = soup.find_all("h2")[:5]
+            h2_texts = [h.get_text(strip=True) for h in h2_tags]
+
+            paragraphs = soup.find_all("p")[:3]
+            para_text = " ".join(p.get_text(strip=True) for p in paragraphs)
+
+            service_text = " ".join(h2_texts) + " " + para_text
+            extracted_services = service_text[:200]
+        else:
+            logger.warning("BeautifulSoup not available — skipping homepage parse")
+
+    except Exception as exc:
+        logger.warning("Homepage scrape failed for %s: %s", target_domain, exc)
+
+    # --- 2. Template-based fallback prompts ---
+    discovery = PromptDiscovery(
+        target_domain=target_domain,
+        target_brand=target_brand,
+        category=category,
+        location=location,
+    )
+    template_prompts = discovery.generate_candidate_prompts(count)
+
+    # --- 3. Claude API call ---
+    llm_prompts: List[str] = []
+    try:
+        aclient = _anthropic.Anthropic()
+
+        system = (
+            f"Generate {count} realistic prompts real users would type into ChatGPT/Perplexity/Google AI "
+            f"about this business.\n"
+            f"Mix: informational + commercial + navigational intents.\n"
+            f"Include: branded, non-branded, comparison, local, pricing, review, problem-solution.\n"
+            f"Include negative prompts ('complaints', 'is X worth it').\n"
+            f"Short (3-5 words) AND conversational (full sentences).\n"
+            f"Return ONLY a JSON array of strings, no markdown, no explanation."
+        )
+
+        user = (
+            f"Brand: {target_brand} | Domain: {target_domain} | Category: {category}\n"
+            f"Location: {location} | Services: {extracted_services}\n"
+            f"Title: {title} | USPs: {usps}\n"
+            f"Generate {count} prompts."
+        )
+
+        message = aclient.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2048,
+            messages=[{"role": "user", "content": user}],
+            system=system,
+        )
+
+        raw = message.content[0].text.strip()
+
+        # Strip markdown fences if present
+        raw = _re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = _re.sub(r"\s*```$", "", raw)
+
+        parsed = _json.loads(raw)
+        if isinstance(parsed, list):
+            llm_prompts = [str(p) for p in parsed if isinstance(p, str) and p.strip()]
+
+    except Exception as exc:
+        logger.warning("Claude smart prompt generation failed: %s", exc)
+
+    # --- 4. Merge + deduplicate ---
+    seen: set = set()
+    merged: List[str] = []
+    for p in llm_prompts + template_prompts:
+        key = p.lower().strip()
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(p)
+
+    return merged
+
+
+async def auto_discover_category(url: str) -> str:
+    """
+    Scrape the given URL and detect the business category via keyword matching.
+
+    Returns the best-matching category key from CATEGORY_KEYWORDS, or "generic"
+    if scraping fails or no keywords match.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+
+        if _BS4_AVAILABLE:
+            soup = BeautifulSoup(resp.text, "html.parser")
+            text = soup.get_text(separator=" ", strip=True).lower()
+        else:
+            text = resp.text.lower()
+
+        scores: Dict[str, int] = {}
+        for cat, keywords in CATEGORY_KEYWORDS.items():
+            score = sum(text.count(kw) for kw in keywords)
+            scores[cat] = score
+
+        best_cat = max(scores, key=lambda c: scores[c])
+        if scores[best_cat] == 0:
+            return "generic"
+        return best_cat
+
+    except Exception as exc:
+        logger.warning("auto_discover_category failed for %s: %s", url, exc)
+        return "generic"
+
+
+def extract_competitors_from_fanout(
+    fanout_results: list,
+    target_domain: str,
+) -> List[str]:
+    """
+    Extract top competitor domains from a list of FanoutResult objects or dicts.
+
+    Args:
+        fanout_results: List of FanoutResult objects or dicts with a "sources" key.
+        target_domain:  The target domain to exclude from competitors.
+
+    Returns:
+        Top 10 competitor domains by frequency, excluding generic/social domains
+        and the target domain itself.
+    """
+    target = target_domain.lower().lstrip("www.")
+    domain_counts: Dict[str, int] = {}
+
+    for result in fanout_results:
+        # Support both FanoutResult objects and plain dicts
+        if hasattr(result, "sources"):
+            sources = result.sources
+        elif isinstance(result, dict):
+            sources = result.get("sources", [])
+        else:
+            continue
+
+        for src in sources:
+            if hasattr(src, "url"):
+                url = src.url
+            elif isinstance(src, dict):
+                url = src.get("url", "")
+            else:
+                url = str(src)
+
+            try:
+                domain = urlparse(url).netloc.lower().lstrip("www.")
+            except Exception:
+                continue
+
+            if not domain:
+                continue
+            if domain == target:
+                continue
+
+            # Check against excluded domains (exact match or suffix)
+            excluded = False
+            for ex in EXCLUDED_DOMAINS:
+                if domain == ex or domain.endswith("." + ex):
+                    excluded = True
+                    break
+            if excluded:
+                continue
+
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+    sorted_domains = sorted(domain_counts, key=lambda d: -domain_counts[d])
+    return sorted_domains[:10]
+
+
+# ============================================================================
 # CLI
 # ============================================================================
 
@@ -555,6 +799,8 @@ if __name__ == "__main__":
     parser.add_argument("--engines",  default="openai", help="Comma-separated engines, e.g. openai,gemini")
     parser.add_argument("--max",      type=int, default=20, help="Max prompts to test")
     parser.add_argument("--quick",    action="store_true", help="Quick mode: test only top 5 priority prompts")
+    parser.add_argument("--smart",    action="store_true", help="Use LLM-powered smart prompt generation")
+    parser.add_argument("--count",    type=int, default=20, help="Number of prompts (for --smart)")
     args = parser.parse_args()
 
     engines = [e.strip() for e in args.engines.split(",")]
@@ -574,6 +820,15 @@ if __name__ == "__main__":
         exit(0)
 
     async def main():
+        if args.smart:
+            prompts = await generate_smart_prompts(
+                args.domain, args.brand, args.category, args.location, count=args.count
+            )
+            print(f"Generated {len(prompts)} smart prompts")
+            for p in prompts[:10]:
+                print(f"  {p}")
+            return
+
         if args.quick:
             result = await discovery.quick_discover(engines=engines, count=5)
         else:

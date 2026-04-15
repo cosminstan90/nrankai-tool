@@ -33,6 +33,7 @@ from api.models.content import (
     UrlGuide, LlmsTxtJob,
     FanoutSession, FanoutQuery, FanoutSource,
     FanoutTrackingConfig, FanoutTrackingRun, FanoutTrackingDetail,
+    FanoutCompetitiveReport,
 )
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,

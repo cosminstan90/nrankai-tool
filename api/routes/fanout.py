@@ -27,6 +27,7 @@ from api.models.database import (
     AsyncSessionLocal, get_db,
     FanoutSession, FanoutQuery, FanoutSource,
     FanoutTrackingConfig, FanoutTrackingRun, FanoutTrackingDetail,
+    FanoutCompetitiveReport,
 )
 from api.routes.costs import track_cost
 from api.utils.errors import raise_not_found, raise_bad_request
@@ -896,3 +897,158 @@ async def dismiss_dead_letter(
     run.failure_reason = "dismissed"
     await db.commit()
     return {"status": "dismissed", "run_id": run_id}
+
+
+# ============================================================================
+# COMPETITIVE COMPARISON ENDPOINTS
+# ============================================================================
+
+class CompetitiveRequest(BaseModel):
+    prompts: List[str]
+    competitors: List[str]
+    engines: List[str] = ["openai"]
+    target_domain: str
+    project_id: Optional[str] = None
+
+    @field_validator("prompts")
+    @classmethod
+    def prompts_not_empty(cls, v: List[str]) -> List[str]:
+        v = [p.strip() for p in v if p.strip()]
+        if not v:
+            raise ValueError("At least one prompt is required")
+        if len(v) > 50:
+            raise ValueError("Maximum 50 prompts per competitive run")
+        return v
+
+    @field_validator("competitors")
+    @classmethod
+    def competitors_valid(cls, v: List[str]) -> List[str]:
+        v = [c.strip() for c in v if c.strip()]
+        if not v:
+            raise ValueError("At least one competitor domain is required")
+        if len(v) > 5:
+            raise ValueError("Maximum 5 competitors per run")
+        return v
+
+    @field_validator("engines")
+    @classmethod
+    def engines_valid(cls, v: List[str]) -> List[str]:
+        v = [e.lower() for e in v]
+        invalid = [e for e in v if e not in SUPPORTED_PROVIDERS]
+        if invalid:
+            raise ValueError(f"Unknown engines: {invalid}. Valid: {list(SUPPORTED_PROVIDERS)}")
+        return v
+
+    @field_validator("target_domain")
+    @classmethod
+    def target_not_empty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("target_domain cannot be empty")
+        return v
+
+
+async def _run_competitive(
+    report_id: str,
+    prompts: List[str],
+    competitors: List[str],
+    engines: List[str],
+    target_domain: str,
+    project_id: Optional[str],
+) -> None:
+    """Background task: run competitive analysis and persist result."""
+    from api.workers.fanout_competitive import compare_competitors
+
+    try:
+        report = await compare_competitors(
+            prompts=prompts,
+            competitors=competitors,
+            engines=engines,
+            target_domain=target_domain,
+        )
+    except Exception as exc:
+        logger.error("Competitive analysis failed for report %s: %s", report_id, exc)
+        return
+
+    async with AsyncSessionLocal() as db:
+        try:
+            record = await db.get(FanoutCompetitiveReport, report_id)
+            if record is None:
+                logger.error("Competitive report record %s not found in DB", report_id)
+                return
+            record.report = report.to_dict()
+            await db.commit()
+            logger.info("Competitive report %s saved", report_id)
+        except Exception as exc:
+            logger.error("Failed to save competitive report %s: %s", report_id, exc)
+
+
+@router.post("/competitive")
+async def create_competitive_report(
+    req: CompetitiveRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Start a competitive fan-out comparison.
+
+    Analyzes each prompt × engine combination and measures the presence of
+    the target domain vs. up to 5 competitors in AI-generated answers.
+
+    The analysis runs in the background; this endpoint returns immediately
+    with a cost estimate and the report_id for polling.
+    """
+    report_id = str(uuid.uuid4())
+    cost_estimate = len(req.prompts) * len(req.engines) * 0.005
+
+    record = FanoutCompetitiveReport(
+        id=report_id,
+        target_domain=req.target_domain,
+        project_id=req.project_id,
+        competitors=req.competitors,
+        report=None,
+    )
+    db.add(record)
+    await db.commit()
+
+    background_tasks.add_task(
+        _run_competitive,
+        report_id=report_id,
+        prompts=req.prompts,
+        competitors=req.competitors,
+        engines=req.engines,
+        target_domain=req.target_domain,
+        project_id=req.project_id,
+    )
+
+    return {
+        "report_id":      report_id,
+        "status":         "running",
+        "cost_estimate":  round(cost_estimate, 4),
+        "prompts_count":  len(req.prompts),
+        "engines":        req.engines,
+        "competitors":    req.competitors,
+        "target_domain":  req.target_domain,
+    }
+
+
+@router.get("/competitive/{report_id}")
+async def get_competitive_report(
+    report_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve a saved competitive fan-out comparison report."""
+    record = await db.get(FanoutCompetitiveReport, report_id)
+    if not record:
+        raise_not_found("Competitive report")
+
+    status = "completed" if record.report is not None else "running"
+    return {
+        "report_id":     record.id,
+        "target_domain": record.target_domain,
+        "project_id":    record.project_id,
+        "competitors":   record.competitors,
+        "status":        status,
+        "report":        record.report,
+        "created_at":    record.created_at.isoformat() if record.created_at else None,
+    }
