@@ -533,5 +533,136 @@ class FanoutSource(Base):
         }
 
 
+# ============================================================================
+# FAN-OUT HISTORICAL TRACKING
+# ============================================================================
+
+class FanoutTrackingConfig(Base):
+    """
+    A recurring tracking job: watch how a set of prompts mention a domain
+    across one or more AI engines on a schedule (daily/weekly/monthly).
+    """
+    __tablename__ = "fanout_tracking_configs"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    name          = Column(String(200), nullable=False)
+    target_domain = Column(String(500), nullable=True, index=True)
+    target_brand  = Column(String(200), nullable=True)
+    prompts       = Column(JSON,        nullable=False)          # List[str]
+    engines       = Column(JSON,        default=lambda: ["openai"])
+    schedule      = Column(String(20),  default="weekly")        # daily | weekly | monthly
+    is_active     = Column(Boolean,     default=True,  index=True)
+    last_run_at   = Column(DateTime,    nullable=True)
+    next_run_at   = Column(DateTime,    nullable=True, index=True)
+    project_id    = Column(String(36),  nullable=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+
+    runs = relationship("FanoutTrackingRun", back_populates="config", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "name":          self.name,
+            "target_domain": self.target_domain,
+            "target_brand":  self.target_brand,
+            "prompts":       self.prompts or [],
+            "engines":       self.engines or ["openai"],
+            "schedule":      self.schedule,
+            "is_active":     self.is_active,
+            "last_run_at":   self.last_run_at.isoformat() if self.last_run_at else None,
+            "next_run_at":   self.next_run_at.isoformat() if self.next_run_at else None,
+            "project_id":    self.project_id,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FanoutTrackingRun(Base):
+    """
+    One execution of a FanoutTrackingConfig — aggregate stats for a single date.
+    Includes retry/dead-letter fields (from Prompt 29).
+    """
+    __tablename__ = "fanout_tracking_runs"
+
+    id                   = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_id            = Column(String(36),  ForeignKey("fanout_tracking_configs.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_date             = Column(String(10),  nullable=False)         # ISO date "YYYY-MM-DD"
+    total_prompts        = Column(Integer,     nullable=True)
+    mention_rate         = Column(Float,       nullable=True)
+    avg_source_position  = Column(Float,       nullable=True)
+    total_unique_sources = Column(Integer,     nullable=True)
+    composite_score      = Column(Float,       nullable=True)
+    score_breakdown      = Column(JSON,        nullable=True)
+    sentiment_breakdown  = Column(JSON,        nullable=True)
+    top_competitors      = Column(JSON,        nullable=True)          # [{domain, appearances}]
+    model_version        = Column(String(50),  nullable=True)
+    baseline_mention_rate = Column(Float,      nullable=True)
+    cost_usd             = Column(Float,       default=0.0)
+    # Retry / dead-letter (Prompt 29)
+    retry_count          = Column(Integer,     default=0)
+    max_retries          = Column(Integer,     default=3)
+    next_retry_at        = Column(DateTime,    nullable=True)
+    failure_reason       = Column(String(500), nullable=True)
+    is_dead_letter       = Column(Boolean,     default=False, index=True)
+    status               = Column(String(20),  default="pending", index=True)  # pending|running|completed|failed
+    error_message        = Column(Text,        nullable=True)
+    created_at           = Column(DateTime,    default=datetime.utcnow)
+
+    config  = relationship("FanoutTrackingConfig", back_populates="runs")
+    details = relationship("FanoutTrackingDetail",  back_populates="run", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                   self.id,
+            "config_id":            self.config_id,
+            "run_date":             self.run_date,
+            "total_prompts":        self.total_prompts,
+            "mention_rate":         self.mention_rate,
+            "avg_source_position":  self.avg_source_position,
+            "total_unique_sources": self.total_unique_sources,
+            "composite_score":      self.composite_score,
+            "score_breakdown":      self.score_breakdown,
+            "top_competitors":      self.top_competitors,
+            "model_version":        self.model_version,
+            "cost_usd":             self.cost_usd,
+            "status":               self.status,
+            "retry_count":          self.retry_count,
+            "is_dead_letter":       self.is_dead_letter,
+            "failure_reason":       self.failure_reason,
+            "created_at":           self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FanoutTrackingDetail(Base):
+    """Per-prompt, per-engine detail row for a tracking run."""
+    __tablename__ = "fanout_tracking_details"
+
+    id                = Column(Integer,    primary_key=True, autoincrement=True)
+    run_id            = Column(String(36), ForeignKey("fanout_tracking_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    prompt            = Column(Text,       nullable=False)
+    prompt_cluster    = Column(String(50), nullable=True)
+    engine            = Column(String(50), nullable=True)
+    query_origin      = Column(String(20), default="actual")
+    target_found      = Column(Boolean,    default=False)
+    source_position   = Column(Integer,    nullable=True)   # 1-based, None if not found
+    fanout_query_count = Column(Integer,   nullable=True)
+    source_count      = Column(Integer,    nullable=True)
+    session_id        = Column(String(36), nullable=True)   # FK to fanout_sessions if saved
+
+    run = relationship("FanoutTrackingRun", back_populates="details")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                 self.id,
+            "run_id":             self.run_id,
+            "prompt":             self.prompt,
+            "prompt_cluster":     self.prompt_cluster,
+            "engine":             self.engine,
+            "target_found":       self.target_found,
+            "source_position":    self.source_position,
+            "fanout_query_count": self.fanout_query_count,
+            "source_count":       self.source_count,
+        }
+
+
 # Default templates to seed on first run
 

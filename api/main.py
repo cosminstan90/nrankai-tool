@@ -136,8 +136,12 @@ async def lifespan(app: FastAPI):
     
     # Start scheduler loop
     from api.routes.schedules import check_and_run_schedules
+    from api.workers.fanout_tracker_worker import check_and_run_due_trackings
+    _tracking_tick = 0  # count scheduler ticks to run tracking every 15 min
+
     async def scheduler_loop():
         """Background scheduler that checks schedules every minute."""
+        nonlocal _tracking_tick
         while True:
             try:
                 # Hard timeout: if check_and_run_schedules hangs (DB lock, network
@@ -147,6 +151,18 @@ async def lifespan(app: FastAPI):
                 print("[WARNING] Scheduler: check_and_run_schedules timed out after 45 s -- skipping tick")
             except Exception as e:
                 print(f"[ERROR] Scheduler error: {e}")
+
+            # Fan-out tracking: check every 15 minutes (every 15th tick)
+            _tracking_tick += 1
+            if _tracking_tick >= 15:
+                _tracking_tick = 0
+                try:
+                    await asyncio.wait_for(check_and_run_due_trackings(), timeout=300)
+                except asyncio.TimeoutError:
+                    print("[WARNING] Fanout tracker: timed out after 300 s -- skipping tick")
+                except Exception as e:
+                    print(f"[ERROR] Fanout tracker error: {e}")
+
             await asyncio.sleep(60)  # Check every minute
     
     scheduler_task = asyncio.create_task(scheduler_loop())

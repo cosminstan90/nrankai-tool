@@ -308,20 +308,303 @@ async def _analyze_anthropic(
 
 
 # ============================================================================
+# PERPLEXITY PROVIDER
+# ============================================================================
+
+def _infer_queries_from_text(text: str) -> List[str]:
+    """
+    Heuristically infer what search queries Perplexity fired internally.
+
+    Perplexity doesn't expose internal queries, so we extract implied topics
+    from noun phrases and entity mentions in the response text.
+    """
+    import re
+    queries: List[str] = []
+    seen: set = set()
+
+    # Split into sentences
+    sentences = re.split(r"[.!?]+", text)
+    for sent in sentences:
+        sent = sent.strip()
+        if len(sent) < 10 or len(sent) > 300:
+            continue
+        # Capture: "According to X", "Based on X", proper-noun runs (2-4 capitalized words)
+        patterns = [
+            r"(?:According to|Based on|As per)\s+([^,]{5,60})",
+            r"\b([A-Z][a-z]{2,}\s+(?:[A-Z][a-z]{2,}\s+){0,2}[A-Z][a-z]{2,})\b",
+        ]
+        for pattern in patterns:
+            for m in re.findall(pattern, sent):
+                m = m.strip()
+                if 8 < len(m) < 60 and m.lower() not in seen:
+                    seen.add(m.lower())
+                    queries.append(m)
+        if len(queries) >= 10:
+            break
+
+    return queries[:10]
+
+
+async def _analyze_perplexity(
+    prompt: str,
+    model: str,
+    user_location: Optional[str],
+) -> FanoutResult:
+    from openai import AsyncOpenAI
+
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    if not api_key:
+        raise ValueError("PERPLEXITY_API_KEY not set")
+
+    client = AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
+    full_prompt = f"{prompt} (location: {user_location})" if user_location else prompt
+
+    last_exc = None
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a research assistant. Provide comprehensive, factual answers. "
+                            "Include specific names, brands, websites and sources when relevant."
+                        ),
+                    },
+                    {"role": "user", "content": full_prompt},
+                ],
+                max_tokens=2000,
+                temperature=0.1,
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            if "rate_limit" in str(exc).lower() or "429" in str(exc):
+                wait = 2 ** attempt * 5
+                logger.warning("Perplexity rate limit, retrying in %ss", wait)
+                await asyncio.sleep(wait)
+            else:
+                raise
+    else:
+        raise last_exc
+
+    response_text = response.choices[0].message.content or ""
+
+    # Citations: Perplexity returns them as a list of URLs on the response object
+    sources: List[FanoutSource] = []
+    seen_urls: set = set()
+    raw_citations = getattr(response, "citations", None) or []
+    for citation in raw_citations:
+        url = citation if isinstance(citation, str) else getattr(citation, "url", str(citation))
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            sources.append(FanoutSource(url=url, title=""))
+
+    inferred_queries = _infer_queries_from_text(response_text)
+
+    result = FanoutResult(
+        prompt=prompt,
+        provider="perplexity",
+        model=model,
+        fanout_queries=inferred_queries,
+        sources=sources,
+        search_call_count=1,
+        raw_output=[{"response_text": response_text[:500], "citation_count": len(sources)}],
+    )
+    return result.finalize()
+
+
+# ============================================================================
+# GEMINI PROVIDER
+# ============================================================================
+
+async def _analyze_gemini(
+    prompt: str,
+    model: str,
+    user_location: Optional[str],
+) -> FanoutResult:
+    from google import genai
+    from google.genai import types as genai_types
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not set")
+
+    client = genai.Client(api_key=api_key)
+    full_prompt = f"{prompt} (location: {user_location})" if user_location else prompt
+
+    last_exc = None
+    for attempt in range(3):
+        try:
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=full_prompt,
+                config=genai_types.GenerateContentConfig(
+                    tools=[genai_types.Tool(google_search=genai_types.GoogleSearch())],
+                ),
+            )
+            break
+        except Exception as exc:
+            last_exc = exc
+            if any(kw in str(exc).lower() for kw in ("rate_limit", "429", "quota")):
+                wait = 2 ** attempt * 5
+                logger.warning("Gemini rate limit, retrying in %ss", wait)
+                await asyncio.sleep(wait)
+            else:
+                raise
+    else:
+        raise last_exc
+
+    fanout_queries: List[str] = []
+    sources: List[FanoutSource] = []
+    seen_urls: set = set()
+    search_call_count = 0
+
+    try:
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate:
+            gm = getattr(candidate, "grounding_metadata", None)
+            if gm:
+                web_queries = getattr(gm, "web_search_queries", None) or []
+                fanout_queries = list(web_queries)
+
+                chunks = getattr(gm, "grounding_chunks", None) or []
+                for chunk in chunks:
+                    web = getattr(chunk, "web", None)
+                    if web:
+                        url = getattr(web, "uri", None) or ""
+                        title = getattr(web, "title", None) or ""
+                        if url and url not in seen_urls:
+                            seen_urls.add(url)
+                            sources.append(FanoutSource(url=url, title=title))
+
+                if getattr(gm, "search_entry_point", None) or fanout_queries:
+                    search_call_count = max(1, len(fanout_queries))
+    except Exception as exc:
+        logger.warning("Gemini grounding metadata extraction failed: %s", exc)
+
+    result = FanoutResult(
+        prompt=prompt,
+        provider="gemini",
+        model=model,
+        fanout_queries=fanout_queries,
+        sources=sources,
+        search_call_count=search_call_count,
+        raw_output=[],
+    )
+    return result.finalize()
+
+
+# ============================================================================
+# MULTI-ENGINE
+# ============================================================================
+
+@dataclass
+class MultiEngineResult:
+    prompt: str
+    engines: dict                        # provider -> FanoutResult
+    combined_sources: List[FanoutSource] # deduped by URL across all engines
+    combined_queries: List[str]          # deduped across all engines
+    source_overlap: dict                 # {"all_engines": [...], "unique_per_engine": {...}}
+    engine_agreement_score: float        # 0-100: % sources shared by all engines
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+async def analyze_multi_engine(
+    prompt: str,
+    providers: List[str],
+    models: Optional[dict] = None,
+    user_location: Optional[str] = None,
+) -> MultiEngineResult:
+    """
+    Run fan-out analysis on multiple AI engines in parallel.
+
+    Args:
+        prompt: The user-facing question to analyze.
+        providers: List of provider names, e.g. ["openai", "gemini"].
+        models: Optional dict of provider -> model override.
+        user_location: Optional location context.
+
+    Returns:
+        MultiEngineResult with per-engine results and cross-engine overlap.
+    """
+    models = models or {}
+
+    async def _run_one(provider: str) -> tuple[str, Optional[FanoutResult]]:
+        model = models.get(provider)
+        try:
+            result = await analyze_prompt(prompt, provider=provider, model=model, user_location=user_location)
+            return provider, result
+        except Exception as exc:
+            logger.warning("Engine %s failed: %s", provider, exc)
+            return provider, None
+
+    pairs = await asyncio.gather(*[_run_one(p) for p in providers])
+    engines = {p: r for p, r in pairs if r is not None}
+
+    # Combine sources (dedup by URL)
+    seen_urls: set = set()
+    combined_sources: List[FanoutSource] = []
+    url_to_engines: dict = {}  # url -> set of providers
+    for provider, result in engines.items():
+        for src in result.sources:
+            url_to_engines.setdefault(src.url, set()).add(provider)
+            if src.url not in seen_urls:
+                seen_urls.add(src.url)
+                combined_sources.append(src)
+
+    # Combine queries (dedup)
+    seen_q: set = set()
+    combined_queries: List[str] = []
+    for result in engines.values():
+        for q in result.fanout_queries:
+            if q.lower() not in seen_q:
+                seen_q.add(q.lower())
+                combined_queries.append(q)
+
+    # Source overlap
+    active_engines = set(engines.keys())
+    shared_urls = [url for url, eng_set in url_to_engines.items() if eng_set == active_engines]
+    unique_per_engine = {
+        p: [url for url, eng_set in url_to_engines.items() if eng_set == {p}]
+        for p in active_engines
+    }
+
+    # Agreement score: % of combined sources shared by ALL engines
+    agreement = (len(shared_urls) / len(combined_sources) * 100) if combined_sources else 0.0
+
+    return MultiEngineResult(
+        prompt=prompt,
+        engines=engines,
+        combined_sources=combined_sources,
+        combined_queries=combined_queries,
+        source_overlap={"all_engines": shared_urls, "unique_per_engine": unique_per_engine},
+        engine_agreement_score=round(agreement, 1),
+    )
+
+
+# ============================================================================
 # PUBLIC API
 # ============================================================================
 
 # Default models per provider
 PROVIDER_DEFAULTS = {
-    "openai": "gpt-4o",
-    "anthropic": "claude-sonnet-4-20250514",   # best balance quality/cost for fan-out
+    "openai":      "gpt-4o",
+    "anthropic":   "claude-sonnet-4-20250514",
+    "gemini":      "gemini-2.5-flash",
+    "perplexity":  "sonar-pro",
 }
 
 # Cheap models for bulk/batch use
 PROVIDER_CHEAP = {
-    "openai": "gpt-4o-mini",
-    "anthropic": "claude-haiku-4-5-20251001",
+    "openai":      "gpt-4o-mini",
+    "anthropic":   "claude-haiku-4-5-20251001",
+    "gemini":      "gemini-2.5-flash",   # already fast/cheap
+    "perplexity":  "sonar",
 }
+
+SUPPORTED_PROVIDERS = tuple(PROVIDER_DEFAULTS.keys())
 
 
 async def analyze_prompt(
@@ -335,7 +618,7 @@ async def analyze_prompt(
 
     Args:
         prompt: The user-facing question to analyze.
-        provider: "openai" or "anthropic".
+        provider: "openai", "anthropic", "gemini", or "perplexity".
         model: Model ID. Defaults to PROVIDER_DEFAULTS[provider].
         user_location: Optional location context appended to the prompt.
 
@@ -343,17 +626,20 @@ async def analyze_prompt(
         FanoutResult with fanout_queries, sources, and stats.
     """
     provider = provider.lower()
-    if provider not in ("openai", "anthropic"):
-        raise ValueError(f"Unsupported provider: {provider!r}. Use 'openai' or 'anthropic'.")
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"Unsupported provider: {provider!r}. Use one of: {', '.join(SUPPORTED_PROVIDERS)}")
 
     resolved_model = model or PROVIDER_DEFAULTS[provider]
-
     logger.info("Analyzing fan-out | provider=%s model=%s prompt=%.60r", provider, resolved_model, prompt)
 
     if provider == "openai":
         return await _analyze_openai(prompt, resolved_model, user_location)
-    else:
+    elif provider == "anthropic":
         return await _analyze_anthropic(prompt, resolved_model, user_location)
+    elif provider == "gemini":
+        return await _analyze_gemini(prompt, resolved_model, user_location)
+    else:
+        return await _analyze_perplexity(prompt, resolved_model, user_location)
 
 
 async def analyze_batch(
@@ -401,30 +687,44 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="WLA Fan-Out Analyzer — quick test")
     parser.add_argument("prompt", help='Prompt to analyze, e.g. "best seo agency romania"')
-    parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"])
-    parser.add_argument("--model", default=None, help="Override model ID")
+    parser.add_argument("--provider", default="openai", choices=list(SUPPORTED_PROVIDERS))
+    parser.add_argument("--engines", default=None, help="Comma-separated engines for multi-engine mode, e.g. openai,gemini")
+    parser.add_argument("--model", default=None, help="Override model ID (single-engine only)")
     parser.add_argument("--location", default=None, help="User location context")
     args = parser.parse_args()
 
     async def main():
-        result = await analyze_prompt(
-            args.prompt,
-            provider=args.provider,
-            model=args.model,
-            user_location=args.location,
-        )
-        print(f"\n=== Fan-Out Analysis ===")
-        print(f"Provider : {result.provider}")
-        print(f"Model    : {result.model}")
-        print(f"Prompt   : {result.prompt}")
-        print(f"Queries  : {result.total_fanout_queries}")
-        print(f"Sources  : {result.total_sources}")
-        print(f"Searches : {result.search_call_count}")
-        print(f"\nFan-out queries:")
-        for i, q in enumerate(result.fanout_queries, 1):
-            print(f"  Q{i:02d}: {q}")
-        print(f"\nTop sources:")
-        for s in result.sources[:10]:
-            print(f"  [{s.domain}] {s.title or s.url}")
+        if args.engines:
+            providers = [p.strip() for p in args.engines.split(",")]
+            result = await analyze_multi_engine(args.prompt, providers=providers, user_location=args.location)
+            print(f"\n=== Multi-Engine Fan-Out Analysis ===")
+            print(f"Prompt   : {result.prompt}")
+            print(f"Engines  : {', '.join(result.engines.keys())}")
+            print(f"Agreement: {result.engine_agreement_score:.1f}%")
+            print(f"Combined queries : {len(result.combined_queries)}")
+            print(f"Combined sources : {len(result.combined_sources)}")
+            print(f"Shared sources   : {len(result.source_overlap['all_engines'])}")
+            for provider, r in result.engines.items():
+                print(f"\n  [{provider}] queries={r.total_fanout_queries} sources={r.total_sources}")
+        else:
+            result = await analyze_prompt(
+                args.prompt,
+                provider=args.provider,
+                model=args.model,
+                user_location=args.location,
+            )
+            print(f"\n=== Fan-Out Analysis ===")
+            print(f"Provider : {result.provider}")
+            print(f"Model    : {result.model}")
+            print(f"Prompt   : {result.prompt}")
+            print(f"Queries  : {result.total_fanout_queries}")
+            print(f"Sources  : {result.total_sources}")
+            print(f"Searches : {result.search_call_count}")
+            print(f"\nFan-out queries:")
+            for i, q in enumerate(result.fanout_queries, 1):
+                print(f"  Q{i:02d}: {q}")
+            print(f"\nTop sources:")
+            for s in result.sources[:10]:
+                print(f"  [{s.domain}] {s.title or s.url}")
 
     asyncio.run(main())
