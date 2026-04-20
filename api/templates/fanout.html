@@ -113,9 +113,47 @@
                         : '✗ Your site not found in sources'">
                 </span>
             </template>
+            <!-- Sentiment pill (Prompt 23) -->
+            <template x-if="sentiment">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                    :class="{
+                        'bg-green-100 text-green-700':  sentiment.overall === 'positive',
+                        'bg-yellow-100 text-yellow-700': sentiment.overall === 'neutral',
+                        'bg-red-100 text-red-600':      sentiment.overall === 'negative',
+                        'bg-gray-100 text-gray-500':    sentiment.overall === 'not_mentioned',
+                    }"
+                    x-text="{ positive: '😊 Positive', neutral: '😐 Neutral', negative: '😟 Negative', not_mentioned: '👻 Not Mentioned' }[sentiment.overall] || sentiment.overall">
+                </span>
+            </template>
+
+            <!-- Composite score gauge (Prompt 22) -->
+            <template x-if="compositeScore">
+                <div class="flex items-center gap-2 ml-2">
+                    <svg width="36" height="20" viewBox="0 0 36 20">
+                        <path d="M4 18 A14 14 0 0 1 32 18" fill="none" stroke="#e5e7eb" stroke-width="4" stroke-linecap="round"/>
+                        <path d="M4 18 A14 14 0 0 1 32 18" fill="none"
+                            :stroke="compositeScore.score >= 70 ? '#22c55e' : compositeScore.score >= 50 ? '#eab308' : '#ef4444'"
+                            stroke-width="4" stroke-linecap="round"
+                            :stroke-dasharray="`${compositeScore.score * 0.44} 44`"/>
+                    </svg>
+                    <span class="text-sm font-bold"
+                        :class="compositeScore.score >= 70 ? 'text-green-600' : compositeScore.score >= 50 ? 'text-yellow-600' : 'text-red-500'"
+                        x-text="`GEO ${compositeScore.score}`"></span>
+                    <span class="text-xs text-gray-400" x-text="compositeScore.grade"></span>
+                </div>
+            </template>
+
             <!-- Export buttons (Prompt 17) -->
             <template x-if="result?.session_id">
                 <div class="ml-auto flex items-center gap-2">
+                    <button @click="runSentimentAnalysis()" :disabled="sentimentLoading"
+                        class="text-xs px-2 py-1 rounded border border-purple-200 text-purple-600 hover:bg-purple-50 disabled:opacity-50">
+                        <span x-text="sentimentLoading ? '…' : '💬 Sentiment'"></span>
+                    </button>
+                    <button @click="runCompositeScore()" :disabled="compositeLoading"
+                        class="text-xs px-2 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-50">
+                        <span x-text="compositeLoading ? '…' : '📊 GEO Score'"></span>
+                    </button>
                     <a :href="`/api/fanout/sessions/${result.session_id}/export?format=json`"
                         class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition">↓ JSON</a>
                     <a :href="`/api/fanout/sessions/${result.session_id}/export?format=csv`"
@@ -1171,6 +1209,13 @@ function fanoutApp() {
         actionCardsLoading: false,
         _actionCardsSessionId: null,
 
+        // Prompt 22 — composite score
+        compositeScore:   null,
+        compositeLoading: false,
+        // Prompt 23 — sentiment
+        sentiment:        null,
+        sentimentLoading: false,
+
         async init() {
             await this.loadHistory();
         },
@@ -1700,6 +1745,42 @@ function fanoutApp() {
             this.form.prompt = p.prompt_text;
             this.activeTab   = 'queries';
             window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        // ── Prompt 22: GEO Composite Score ───────────────────────────────────
+        async runCompositeScore() {
+            if (!this.result?.session_id) return;
+            this.compositeLoading = true;
+            try {
+                const res = await fetch(`/api/fanout/sessions/${this.result.session_id}/composite-score`);
+                if (res.ok) {
+                    this.compositeScore = await res.json();
+                }
+            } catch (_) {}
+            finally { this.compositeLoading = false; }
+        },
+
+        // ── Prompt 23: Sentiment Analysis ────────────────────────────────────
+        async runSentimentAnalysis() {
+            if (!this.result?.session_id) return;
+            this.sentimentLoading = true;
+            try {
+                const res = await fetch(`/api/fanout/sessions/${this.result.session_id}/analyze-sentiment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.sentiment = {
+                        overall:          data.overall_sentiment,
+                        confidence:       data.confidence_score,
+                        positive_mentions: data.positive_mentions,
+                        negative_mentions: data.negative_mentions,
+                    };
+                }
+            } catch (_) {}
+            finally { this.sentimentLoading = false; }
         },
     };
 }

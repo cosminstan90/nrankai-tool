@@ -27,23 +27,24 @@ from api.workers.prompt_discovery import classify_prompt_cluster
 
 logger = logging.getLogger("fanout_tracker_worker")
 
-# ── Retry policy ─────────────────────────────────────────────────────────────
+# ── Retry policy (delegates to api/utils/retry_policy.py) ───────────────────
 
-_RETRYABLE_ERRORS = ("rate_limit", "timeout", "connection", "502", "503", "504")
-_NON_RETRYABLE_ERRORS = ("invalid_api_key", "insufficient_quota", "400", "model_not_found")
-# Delays in minutes: retry 1 = 30min, retry 2 = 2h, retry 3 = 8h
-_RETRY_DELAYS = [30, 120, 480]
-
-
-def _is_retryable(error_msg: str) -> bool:
-    low = error_msg.lower()
-    return any(k in low for k in _RETRYABLE_ERRORS)
-
-
-def _next_retry_delay(retry_count: int) -> int:
-    """Return delay in minutes with ±5min jitter."""
-    base = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]
-    return base + random.randint(-5, 5)
+try:
+    from api.utils.retry_policy import is_retryable as _is_retryable_fn, next_retry_delay as _next_retry_delay_fn
+    def _is_retryable(error_msg: str) -> bool:
+        return _is_retryable_fn(error_msg)
+    def _next_retry_delay(retry_count: int) -> int:
+        return _next_retry_delay_fn(retry_count)
+except ImportError:
+    # Fallback inline implementation if retry_policy not available
+    _RETRYABLE_ERRORS = ("rate_limit", "timeout", "connection", "502", "503", "504")
+    _RETRY_DELAYS = [30, 120, 480]
+    def _is_retryable(error_msg: str) -> bool:
+        low = error_msg.lower()
+        return any(k in low for k in _RETRYABLE_ERRORS)
+    def _next_retry_delay(retry_count: int) -> int:
+        base = _RETRY_DELAYS[min(retry_count, len(_RETRY_DELAYS) - 1)]
+        return base + random.randint(-5, 5)
 
 
 def _next_run_at(schedule: str, from_dt: Optional[datetime] = None) -> datetime:

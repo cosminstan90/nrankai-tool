@@ -34,5 +34,10 @@ from .fanout import router as fanout_router
 from .projects import router as projects_router
 from .entity import router as entity_router
 from .gsc_fanout import router as gsc_fanout_router
+from .mention_seeding import router as mention_seeding_router
+from .bot_access import router as bot_access_router
+from .cocitation import router as cocitation_router
+from .answer_calibration import router as answer_calibration_router
+from .multilingual import router as multilingual_router
 
 __all__ = [name for name in globals() if name.endswith('_router')]

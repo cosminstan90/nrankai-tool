@@ -1760,3 +1760,49 @@ async def create_all_cms_drafts(
         results.append(dr.to_dict())
 
     return {"created": len(results), "drafts": results}
+
+
+# ── Dead Letter Queue (Prompt 29) ─────────────────────────────────────────────
+
+@router.get("/tracking/dead-letters")
+async def list_dead_letters(db: AsyncSession = Depends(get_db)):
+    """Return all permanently-failed tracking runs."""
+    from api.models.database import FanoutTrackingRun
+    from sqlalchemy import select as _sel
+    runs = (await db.execute(
+        _sel(FanoutTrackingRun)
+        .where(FanoutTrackingRun.is_dead_letter == True)  # noqa: E712
+        .order_by(FanoutTrackingRun.created_at.desc())
+        .limit(100)
+    )).scalars().all()
+    return [r.to_dict() for r in runs]
+
+
+@router.post("/tracking/dead-letters/{run_id}/retry")
+async def retry_dead_letter(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Reset a dead-letter run for manual retry."""
+    from api.models.database import FanoutTrackingRun
+    from datetime import datetime, timezone
+    run = await db.get(FanoutTrackingRun, run_id)
+    if not run:
+        raise_not_found("Tracking run")
+    run.is_dead_letter = False
+    run.status         = "pending"
+    run.retry_count    = 0
+    run.next_retry_at  = None
+    run.failure_reason = None
+    run.error_message  = None
+    await db.commit()
+    return {"ok": True, "run_id": run_id}
+
+
+@router.post("/tracking/dead-letters/{run_id}/dismiss")
+async def dismiss_dead_letter(run_id: str, db: AsyncSession = Depends(get_db)):
+    """Mark a dead-letter run as dismissed (keep as failed, don't retry)."""
+    from api.models.database import FanoutTrackingRun
+    run = await db.get(FanoutTrackingRun, run_id)
+    if not run:
+        raise_not_found("Tracking run")
+    run.failure_reason = (run.failure_reason or "") + " [dismissed]"
+    await db.commit()
+    return {"ok": True, "run_id": run_id}

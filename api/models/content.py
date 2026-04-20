@@ -1168,5 +1168,101 @@ class MentionSeedingResult(Base):
         }
 
 
-# Default templates to seed on first run
 
+
+# ── Phase 5 models ────────────────────────────────────────────────────────────
+
+class BotAccessAudit(Base):
+    """AI crawler accessibility audit result (Prompt 33)."""
+    __tablename__ = "bot_access_audits"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id    = Column(String(36),  nullable=True, index=True)
+    target_domain = Column(String(500), nullable=False)
+    report_json   = Column(JSON,        nullable=True)
+    access_score  = Column(Float,       nullable=True)
+    audited_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "project_id":    self.project_id,
+            "target_domain": self.target_domain,
+            "report_json":   self.report_json,
+            "access_score":  self.access_score,
+            "audited_at":    self.audited_at.isoformat() if self.audited_at else None,
+        }
+
+
+class CocitationMap(Base):
+    """Co-citation analysis result (Prompt 34)."""
+    __tablename__ = "cocitation_maps"
+
+    id                 = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id         = Column(String(36),  nullable=True, index=True)
+    target_domain      = Column(String(500), nullable=False)
+    sessions_analyzed  = Column(JSON,        nullable=True)   # list of session_ids
+    map_json           = Column(JSON,        nullable=True)
+    generated_at       = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                self.id,
+            "project_id":        self.project_id,
+            "target_domain":     self.target_domain,
+            "sessions_analyzed": self.sessions_analyzed,
+            "map_json":          self.map_json,
+            "generated_at":      self.generated_at.isoformat() if self.generated_at else None,
+        }
+
+
+class AnswerCalibration(Base):
+    """Ideal AI answer calibration for a fan-out session (Prompt 35)."""
+    __tablename__ = "answer_calibrations"
+
+    id                = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id        = Column(String(36),  nullable=True, index=True)
+    project_id        = Column(String(36),  nullable=True, index=True)
+    prompt            = Column(Text,        nullable=False)
+    target_brand      = Column(String(200), nullable=False)
+    calibration_json  = Column(JSON,        nullable=True)
+    brand_position    = Column(Integer,     nullable=True)
+    estimated_effort  = Column(String(20),  nullable=True)   # low|medium|high
+    cost_usd          = Column(Float,       default=0.015)
+    created_at        = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":               self.id,
+            "session_id":       self.session_id,
+            "project_id":       self.project_id,
+            "prompt":           self.prompt,
+            "target_brand":     self.target_brand,
+            "calibration_json": self.calibration_json,
+            "brand_position":   self.brand_position,
+            "estimated_effort": self.estimated_effort,
+            "cost_usd":         self.cost_usd,
+            "created_at":       self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class MultilingualGapReport(Base):
+    """Multilingual content gap detection report (Prompt 36)."""
+    __tablename__ = "multilingual_gap_reports"
+
+    id              = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id      = Column(String(36),  nullable=True, index=True)
+    target_domain   = Column(String(500), nullable=False)
+    report_json     = Column(JSON,        nullable=True)
+    coverage_score  = Column(Float,       nullable=True)
+    analyzed_at     = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "project_id":     self.project_id,
+            "target_domain":  self.target_domain,
+            "report_json":    self.report_json,
+            "coverage_score": self.coverage_score,
+            "analyzed_at":    self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }

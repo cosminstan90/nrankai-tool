@@ -46,6 +46,11 @@ from api.models.content import (
     EntityCheck,
     GscFanoutConnection,
     MentionSeedingConfig, MentionSeedingResult,
+    # Phase 5
+    BotAccessAudit,
+    CocitationMap,
+    AnswerCalibration,
+    MultilingualGapReport,
 )
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
