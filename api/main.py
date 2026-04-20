@@ -168,6 +168,30 @@ async def lifespan(app: FastAPI):
     scheduler_task = asyncio.create_task(scheduler_loop())
     print("[OK] Scheduler started (checks every 60 seconds)")
 
+    # Auto-register n8n webhook if N8N_WEBHOOK_URL is set (Prompt 20)
+    _n8n_url = os.getenv("N8N_WEBHOOK_URL")
+    if _n8n_url:
+        from api.models.database import FanoutWebhook, AsyncSessionLocal
+        from api.workers.webhook_sender import ALL_EVENTS
+        from sqlalchemy import select as _sel
+        async with AsyncSessionLocal() as _wdb:
+            _existing = (await _wdb.execute(_sel(FanoutWebhook).where(FanoutWebhook.webhook_url == _n8n_url))).scalar_one_or_none()
+            if not _existing:
+                _wdb.add(FanoutWebhook(name="n8n (auto)", webhook_url=_n8n_url, events=ALL_EVENTS))
+                await _wdb.commit()
+                print(f"[OK] Registered default n8n webhook: {_n8n_url}")
+
+    # Seed prompt library (Prompt 21) — no-op if already populated
+    try:
+        from api.workers.prompt_library import PromptLibrary
+        from api.models._base import AsyncSessionLocal as _ASL
+        async with _ASL() as _pldb:
+            _seeded = await PromptLibrary.seed(_pldb)
+            if _seeded:
+                print(f"[OK] Seeded {_seeded} prompts into prompt library")
+    except Exception as _ple:
+        print(f"[WARN] Prompt library seed failed: {_ple}")
+
     # Start lead audit worker (polls nrankai.com for public free-audit jobs)
     from api.workers.lead_audit_worker import lead_audit_worker_loop
     lead_worker_task = asyncio.create_task(lead_audit_worker_loop())

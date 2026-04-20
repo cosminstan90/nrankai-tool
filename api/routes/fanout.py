@@ -28,15 +28,22 @@ from api.models.database import (
     FanoutSession, FanoutQuery, FanoutSource,
     FanoutTrackingConfig, FanoutTrackingRun, FanoutTrackingDetail,
     FanoutCompetitiveReport,
+    FanoutCacheEntry,
+    FanoutSerpValidation,
+    FanoutWebhook, FanoutWebhookLog,
+    FanoutCrossRefResult,
+    FanoutPromptLibrary,
 )
 from api.routes.costs import track_cost
 from api.utils.errors import raise_not_found, raise_bad_request
 from api.workers.fanout_analyzer import (
     analyze_prompt, analyze_batch, analyze_multi_engine,
     FanoutResult, MultiEngineResult, PROVIDER_DEFAULTS, SUPPORTED_PROVIDERS,
+    estimate_run_cost,
 )
 from api.workers.prompt_discovery import (
     PromptDiscovery, discovery_result_to_dict, TEMPLATES as DISCOVERY_TEMPLATES,
+    classify_prompt_cluster,
 )
 
 logger = logging.getLogger("fanout.routes")
@@ -169,6 +176,10 @@ async def _save_fanout_result(
             target_position = pos
             break
 
+    # Prompt 15: classify cluster + estimate cost
+    _cluster = classify_prompt_cluster(result.prompt)
+    _cost    = estimate_run_cost(result.model)
+
     session = FanoutSession(
         id=session_id,
         prompt=result.prompt,
@@ -183,6 +194,12 @@ async def _save_fanout_result(
         target_position=target_position,
         audit_id=audit_id,
         created_at=datetime.now(timezone.utc),
+        # Enrichment (Prompt 15)
+        prompt_cluster=_cluster,
+        run_cost_usd=_cost,
+        engine=result.provider,
+        model_version=result.model,
+        from_cache=getattr(result, "from_cache", False),
     )
     db.add(session)
 
@@ -482,14 +499,18 @@ async def estimate_discovery_cost(req: DiscoveryRequest):
 
 @router.get("/sessions")
 async def list_sessions(
-    target_url: Optional[str] = None,
-    provider: Optional[str] = None,
-    audit_id: Optional[str] = None,
+    target_url: Optional[str]   = None,
+    provider: Optional[str]     = None,
+    audit_id: Optional[str]     = None,
+    cluster: Optional[str]      = None,
+    engine: Optional[str]       = None,
+    locale: Optional[str]       = None,
+    query_origin: Optional[str] = None,
     limit: int = 20,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
 ):
-    """Paginated list of fan-out sessions, newest first."""
+    """Paginated list of fan-out sessions, newest first. Supports Prompt 15 filters."""
     limit = min(limit, 100)
 
     stmt = select(FanoutSession).order_by(desc(FanoutSession.created_at))
@@ -499,17 +520,43 @@ async def list_sessions(
         stmt = stmt.where(FanoutSession.provider == provider)
     if audit_id:
         stmt = stmt.where(FanoutSession.audit_id == audit_id)
+    if cluster:
+        stmt = stmt.where(FanoutSession.prompt_cluster == cluster)
+    if engine:
+        stmt = stmt.where(FanoutSession.engine == engine)
+    if locale:
+        stmt = stmt.where(FanoutSession.locale == locale)
+    if query_origin:
+        stmt = stmt.where(FanoutSession.query_origin == query_origin)
 
     total_stmt = select(func.count()).select_from(stmt.subquery())
     total = (await db.execute(total_stmt)).scalar_one()
 
     rows = (await db.execute(stmt.offset(offset).limit(limit))).scalars().all()
 
+    # Prompt 15 aggregation on filtered set
+    all_stmt  = select(FanoutSession)
+    all_rows  = (await db.execute(all_stmt)).scalars().all()
+    by_cluster: dict = {}
+    by_engine:  dict = {}
+    total_cost = 0.0
+    for s in all_rows:
+        c = s.prompt_cluster or "unknown"
+        by_cluster[c] = by_cluster.get(c, 0) + 1
+        e = s.engine or s.provider or "unknown"
+        by_engine[e]  = by_engine.get(e, 0) + 1
+        total_cost    += s.run_cost_usd or 0.0
+
     return {
-        "total":   total,
-        "offset":  offset,
-        "limit":   limit,
-        "sessions": [_session_to_response(s) for s in rows],
+        "total":          total,
+        "offset":         offset,
+        "limit":          limit,
+        "sessions":       [_session_to_response(s) for s in rows],
+        "aggregation": {
+            "by_cluster":     by_cluster,
+            "by_engine":      by_engine,
+            "total_cost_usd": round(total_cost, 4),
+        },
     }
 
 
@@ -1052,3 +1099,469 @@ async def get_competitive_report(
         "report":        record.report,
         "created_at":    record.created_at.isoformat() if record.created_at else None,
     }
+
+
+# ============================================================================
+# CACHE ENDPOINTS  (Prompt 16)
+# ============================================================================
+
+@router.get("/cache/stats")
+async def cache_stats(db: AsyncSession = Depends(get_db)):
+    """Return fanout cache statistics."""
+    from api.workers.fanout_cache import FanoutCache
+    return await FanoutCache.get_stats(db)
+
+
+@router.delete("/cache")
+async def clear_cache(
+    engine: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Clear cache entries.
+    - engine=<name>  → clear only that engine
+    - no params      → cleanup expired entries only
+    """
+    from api.workers.fanout_cache import FanoutCache
+    if engine:
+        count = await FanoutCache.clear_by_engine(db, engine)
+        return {"deleted": count, "engine": engine}
+    else:
+        count = await FanoutCache.cleanup_expired(db)
+        return {"deleted": count, "action": "cleanup_expired"}
+
+
+# ============================================================================
+# EXPORT ENDPOINTS  (Prompt 17)
+# ============================================================================
+
+@router.get("/sessions/{session_id}/export")
+async def export_session(
+    session_id: str,
+    format: str = "json",
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a session as JSON or CSV (StreamingResponse with attachment header)."""
+    from fastapi.responses import StreamingResponse
+    from api.workers.fanout_export import FanoutExporter
+
+    stmt = (
+        select(FanoutSession)
+        .where(FanoutSession.id == session_id)
+        .options(selectinload(FanoutSession.queries), selectinload(FanoutSession.sources))
+    )
+    session = (await db.execute(stmt)).scalar_one_or_none()
+    if not session:
+        raise_not_found("Session")
+
+    exporter = FanoutExporter()
+    date_str = (session.created_at or datetime.now(timezone.utc)).strftime("%Y%m%d")
+
+    if format == "csv":
+        content  = exporter.session_to_csv(session)
+        media    = "text/csv; charset=utf-8-sig"
+        filename = f"fanout_{session_id[:8]}_{date_str}.csv"
+        return StreamingResponse(
+            iter([content]),
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    else:
+        import json as _json
+        data     = exporter.session_to_json(session)
+        content  = _json.dumps(data, ensure_ascii=False, indent=2)
+        filename = f"fanout_{session_id[:8]}_{date_str}.json"
+        return StreamingResponse(
+            iter([content]),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+
+@router.get("/tracking/{config_id}/export")
+async def export_timeline(
+    config_id: str,
+    format: str = "csv",
+    period: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a tracking timeline as CSV."""
+    from fastapi.responses import StreamingResponse
+    from api.workers.fanout_export import FanoutExporter
+
+    config = await db.get(FanoutTrackingConfig, config_id)
+    if not config:
+        raise_not_found("Tracking config")
+
+    stmt = select(FanoutTrackingRun).where(
+        FanoutTrackingRun.config_id == config_id,
+        FanoutTrackingRun.status == "completed",
+    ).order_by(FanoutTrackingRun.created_at)
+    runs = (await db.execute(stmt)).scalars().all()
+
+    exporter  = FanoutExporter()
+    content   = exporter.tracking_timeline_to_csv(config, list(runs))
+    date_str  = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename  = f"timeline_{config_id[:8]}_{date_str}.csv"
+
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/competitive/{report_id}/export")
+async def export_competitive(
+    report_id: str,
+    format: str = "csv",
+    db: AsyncSession = Depends(get_db),
+):
+    """Export a competitive report as CSV."""
+    from fastapi.responses import StreamingResponse
+    from api.workers.fanout_export import FanoutExporter
+
+    record = await db.get(FanoutCompetitiveReport, report_id)
+    if not record:
+        raise_not_found("Competitive report")
+
+    exporter = FanoutExporter()
+    content  = exporter.competitive_report_to_csv(record.report or {})
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"competitive_{report_id[:8]}_{date_str}.csv"
+
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv; charset=utf-8-sig",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+class ClientReportRequest(BaseModel):
+    brand: str
+    domain: str
+    discovery_id: Optional[str] = None
+    tracking_config_id: Optional[str] = None
+    competitive_report_id: Optional[str] = None
+
+
+@router.post("/export/client-report")
+async def export_client_report(
+    req: ClientReportRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a plain-text client report combining discovery + timeline + competitive data."""
+    from fastapi.responses import StreamingResponse
+    from api.workers.fanout_export import FanoutExporter
+
+    discovery   = None
+    timeline    = None
+    competitive = None
+
+    if req.tracking_config_id:
+        cfg = await db.get(FanoutTrackingConfig, req.tracking_config_id)
+        if cfg:
+            stmt = select(FanoutTrackingRun).where(
+                FanoutTrackingRun.config_id == req.tracking_config_id,
+                FanoutTrackingRun.status == "completed",
+            ).order_by(FanoutTrackingRun.created_at)
+            runs = (await db.execute(stmt)).scalars().all()
+            timeline = {"config": cfg.to_dict(), "runs": [r.to_dict() for r in runs]}
+
+    if req.competitive_report_id:
+        rec = await db.get(FanoutCompetitiveReport, req.competitive_report_id)
+        if rec:
+            competitive = rec.report
+
+    exporter = FanoutExporter()
+    text     = exporter.generate_client_report_text(req.brand, req.domain, discovery, timeline, competitive)
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    filename = f"client_report_{req.domain.replace('.','_')}_{date_str}.txt"
+
+    return StreamingResponse(
+        iter([text]),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ============================================================================
+# SERP VALIDATION ENDPOINTS  (Prompt 19)
+# ============================================================================
+
+class SerpValidateRequest(BaseModel):
+    target_domain: str
+    gl: str = "us"
+    hl: str = "en"
+    max_queries: int = 20
+
+
+@router.post("/sessions/{session_id}/validate-serp")
+async def validate_serp(
+    session_id: str,
+    req: SerpValidateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Validate fan-out queries against real SERP results via Serper.dev.
+    Requires SERPER_API_KEY in .env.
+    """
+    import os
+    from api.workers.serp_validator import SERPValidator, SERP_COST_PER_QUERY
+
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        raise_bad_request("SERPER_API_KEY not configured")
+
+    stmt = (
+        select(FanoutSession)
+        .where(FanoutSession.id == session_id)
+        .options(selectinload(FanoutSession.queries))
+    )
+    session = (await db.execute(stmt)).scalar_one_or_none()
+    if not session:
+        raise_not_found("Session")
+
+    queries = [q.query_text for q in (session.queries or [])]
+    if not queries:
+        raise_bad_request("Session has no fan-out queries to validate")
+
+    queries_to_check = queries[: req.max_queries]
+    total_cost = len(queries_to_check) * SERP_COST_PER_QUERY
+
+    validator = SERPValidator(api_key=api_key)
+    results   = await validator.validate_batch(queries_to_check, req.target_domain, req.gl, req.hl)
+
+    # Categorise
+    synced = []; ai_gap = []; ai_only = []; double_gap = []
+    paa_all: list = []
+    saved   = []
+
+    for q_text, sr in zip(queries_to_check, results):
+        # Did the AI include this query? (all session queries = AI found)
+        ai_found   = True   # by definition — these are fan-out queries
+        serp_found = sr.target_found
+
+        row = FanoutSerpValidation(
+            session_id             = session_id,
+            query_text             = q_text,
+            target_domain          = req.target_domain,
+            target_found           = serp_found,
+            target_position        = sr.target_position,
+            has_featured_snippet   = sr.featured_snippet_domain is not None,
+            featured_snippet_domain= sr.featured_snippet_domain,
+            top_10_domains         = sr.top_10_domains,
+            people_also_ask        = sr.people_also_ask,
+            gl                     = req.gl,
+            hl                     = req.hl,
+        )
+        db.add(row)
+        paa_all.extend(sr.people_also_ask or [])
+
+        entry = {"query": q_text, "target_position": sr.target_position, "top_10": sr.top_10_domains}
+        if ai_found and serp_found:
+            synced.append(entry)
+        elif not ai_found and serp_found:
+            ai_gap.append(entry)
+        elif ai_found and not serp_found:
+            ai_only.append(entry)
+        else:
+            double_gap.append(entry)
+
+    await db.commit()
+
+    return {
+        "session_id":     session_id,
+        "target_domain":  req.target_domain,
+        "total_queries":  len(queries_to_check),
+        "total_cost_usd": round(total_cost, 4),
+        "synced":         synced,
+        "ai_gap":         ai_gap,
+        "ai_only":        ai_only,
+        "double_gap":     double_gap,
+        "people_also_ask": list(dict.fromkeys(paa_all))[:20],
+        "traffic_at_risk": len(ai_gap),
+    }
+
+
+# ============================================================================
+# CROSS-REFERENCE ENDPOINTS  (Prompt 18)
+# ============================================================================
+
+class CrossRefRequest(BaseModel):
+    session_id: str
+    audit_id: str
+    target_domain: Optional[str] = None
+    project_id: Optional[str] = None
+
+
+@router.post("/crossref")
+async def create_crossref(
+    req: CrossRefRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Cross-reference a fan-out session against a WLA audit."""
+    from api.workers.fanout_wla_crossref import analyze as crossref_analyze
+    import json as _json
+
+    stmt = (
+        select(FanoutSession)
+        .where(FanoutSession.id == req.session_id)
+        .options(selectinload(FanoutSession.queries))
+    )
+    session = (await db.execute(stmt)).scalar_one_or_none()
+    if not session:
+        raise_not_found("Fan-out session")
+
+    result = await crossref_analyze(
+        fanout_session_id=req.session_id,
+        wla_audit_id=req.audit_id,
+        target_domain=req.target_domain or session.target_url or "",
+        db=db,
+    )
+
+    record = FanoutCrossRefResult(
+        session_id    = req.session_id,
+        audit_id      = req.audit_id,
+        project_id    = req.project_id,
+        target_domain = req.target_domain or session.target_url,
+        result_json   = _json.dumps(result),
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+
+    return record.to_dict()
+
+
+@router.get("/crossref/{crossref_id}")
+async def get_crossref(
+    crossref_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Retrieve a saved cross-reference result."""
+    record = await db.get(FanoutCrossRefResult, crossref_id)
+    if not record:
+        raise_not_found("Cross-reference result")
+    return record.to_dict()
+
+
+# ============================================================================
+# WEBHOOK ENDPOINTS  (Prompt 20)
+# ============================================================================
+
+class WebhookCreate(BaseModel):
+    name: str
+    webhook_url: str
+    events: List[str]
+    secret_key: Optional[str] = None
+
+
+@router.post("/webhooks")
+async def create_webhook(req: WebhookCreate, db: AsyncSession = Depends(get_db)):
+    """Register a new webhook endpoint."""
+    wh = FanoutWebhook(
+        name        = req.name,
+        webhook_url = req.webhook_url,
+        events      = req.events,
+        secret_key  = req.secret_key,
+    )
+    db.add(wh)
+    await db.commit()
+    await db.refresh(wh)
+    return wh.to_dict()
+
+
+@router.get("/webhooks")
+async def list_webhooks(db: AsyncSession = Depends(get_db)):
+    """List all registered webhooks."""
+    rows = (await db.execute(select(FanoutWebhook).order_by(FanoutWebhook.id))).scalars().all()
+    return [r.to_dict() for r in rows]
+
+
+@router.delete("/webhooks/{webhook_id}")
+async def delete_webhook(webhook_id: int, db: AsyncSession = Depends(get_db)):
+    """Soft-delete (deactivate) a webhook."""
+    wh = await db.get(FanoutWebhook, webhook_id)
+    if not wh:
+        raise_not_found("Webhook")
+    wh.is_active = False
+    await db.commit()
+    return {"ok": True, "id": webhook_id}
+
+
+@router.post("/webhooks/{webhook_id}/test")
+async def test_webhook(webhook_id: int, db: AsyncSession = Depends(get_db)):
+    """Send a test payload to a webhook."""
+    from api.workers.webhook_sender import send as wh_send
+
+    wh = await db.get(FanoutWebhook, webhook_id)
+    if not wh:
+        raise_not_found("Webhook")
+
+    ok = await wh_send(
+        wh.webhook_url,
+        "test_event",
+        {"message": "nrankai fan-out webhook test", "webhook_id": webhook_id},
+        secret_key=wh.secret_key,
+    )
+    return {"ok": ok, "webhook_id": webhook_id}
+
+
+# ============================================================================
+# PROMPT LIBRARY ENDPOINTS  (Prompt 21)
+# ============================================================================
+
+class PromptLibraryCreate(BaseModel):
+    prompt_text: str
+    vertical: str = "generic"
+    cluster: Optional[str] = None
+    language: str = "en"
+    locale: str = "en-US"
+    tags: Optional[List[str]] = None
+    is_template: bool = False
+    template_vars: Optional[List[str]] = None
+
+
+@router.get("/prompt-library")
+async def list_prompt_library(
+    vertical: Optional[str]     = None,
+    cluster: Optional[str]      = None,
+    performance: Optional[str]  = None,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+):
+    """List prompts from the library with optional filters."""
+    from api.workers.prompt_library import PromptLibrary
+    results = await PromptLibrary.get_for_display(db, vertical=vertical, cluster=cluster, performance=performance, limit=limit)
+    return results
+
+
+@router.get("/prompt-library/stats")
+async def prompt_library_stats(db: AsyncSession = Depends(get_db)):
+    """Aggregate stats for the prompt library."""
+    from api.workers.prompt_library import PromptLibrary
+    return await PromptLibrary.get_stats(db)
+
+
+@router.get("/prompt-library/suggest")
+async def suggest_prompts(
+    vertical: str,
+    existing: Optional[str] = None,   # comma-separated prompt texts
+    db: AsyncSession = Depends(get_db),
+):
+    """Suggest prompts from the library not yet in existing_prompts."""
+    from api.workers.prompt_library import PromptLibrary
+    existing_list = [e.strip() for e in (existing or "").split(",") if e.strip()]
+    suggestions = await PromptLibrary.suggest_gaps(db, vertical, existing_list)
+    return {"suggestions": suggestions}
+
+
+@router.post("/prompt-library")
+async def add_prompt(req: PromptLibraryCreate, db: AsyncSession = Depends(get_db)):
+    """Add a custom prompt to the library."""
+    from api.workers.prompt_library import PromptLibrary
+    result = await PromptLibrary.add_prompt(db, req.prompt_text, req.vertical, req.cluster,
+                                             req.language, req.locale, req.tags,
+                                             req.is_template, req.template_vars)
+    return result

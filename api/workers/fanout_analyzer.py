@@ -606,6 +606,47 @@ PROVIDER_CHEAP = {
 
 SUPPORTED_PROVIDERS = tuple(PROVIDER_DEFAULTS.keys())
 
+# Cost per 1 K tokens (input / output) in USD — used for run_cost_usd calculation
+COST_PER_1K_TOKENS: dict = {
+    "gpt-4o":              {"input": 0.005,    "output": 0.015},
+    "gpt-4o-mini":         {"input": 0.00015,  "output": 0.0006},
+    "gpt-4.1":             {"input": 0.002,    "output": 0.008},
+    "gpt-4.1-mini":        {"input": 0.0001,   "output": 0.0004},
+    "claude-sonnet-4-20250514":  {"input": 0.003,  "output": 0.015},
+    "claude-haiku-4-5-20251001": {"input": 0.00025, "output": 0.00125},
+    "claude-opus-4-5-20251101":  {"input": 0.015,  "output": 0.075},
+    "gemini-2.5-flash":    {"input": 0.000075, "output": 0.0003},
+    "gemini-2.5-pro":      {"input": 0.00125,  "output": 0.005},
+    "sonar-pro":           {"input": 0.003,    "output": 0.015},
+    "sonar":               {"input": 0.001,    "output": 0.001},
+}
+
+# Approximate token usage per fan-out call (conservative estimates)
+_EST_INPUT_TOKENS  = 800
+_EST_OUTPUT_TOKENS = 600
+
+
+def estimate_run_cost(model: str, input_tokens: int = _EST_INPUT_TOKENS, output_tokens: int = _EST_OUTPUT_TOKENS) -> float:
+    """Return estimated cost in USD for one analyze_prompt call with *model*."""
+    rates = COST_PER_1K_TOKENS.get(model)
+    if not rates:
+        # Fallback: use provider default cost
+        for prefix, r in [("gpt-4o-mini", COST_PER_1K_TOKENS["gpt-4o-mini"]),
+                           ("gpt-4o",      COST_PER_1K_TOKENS["gpt-4o"]),
+                           ("claude-haiku", COST_PER_1K_TOKENS["claude-haiku-4-5-20251001"]),
+                           ("claude-sonnet", COST_PER_1K_TOKENS["claude-sonnet-4-20250514"]),
+                           ("gemini",       COST_PER_1K_TOKENS["gemini-2.5-flash"]),
+                           ("sonar",        COST_PER_1K_TOKENS["sonar"])]:
+            if model.startswith(prefix):
+                rates = r
+                break
+        if not rates:
+            rates = {"input": 0.001, "output": 0.003}
+    return round(
+        (input_tokens / 1000) * rates["input"] + (output_tokens / 1000) * rates["output"],
+        6,
+    )
+
 
 async def analyze_prompt(
     prompt: str,
