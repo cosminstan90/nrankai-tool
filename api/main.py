@@ -46,7 +46,7 @@ for _k, _v in dotenv_values(_env_path).items():
 
 # Import database and models
 from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
-from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router
+from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
 from sqlalchemy import select, func, desc, case
@@ -58,6 +58,7 @@ from api.limiter import limiter
 
 # Scheduler task reference (global)
 scheduler_task = None
+_benchmark_tick = 0  # recalculate geo benchmarks every 24 h (1440 ticks at 60s intervals)
 
 
 @asynccontextmanager
@@ -138,10 +139,11 @@ async def lifespan(app: FastAPI):
     from api.routes.schedules import check_and_run_schedules
     from api.workers.fanout_tracker_worker import check_and_run_due_trackings
     _tracking_tick = 0  # count scheduler ticks to run tracking every 15 min
+    _bm_tick = 0        # geo benchmark recalc every 1440 ticks (~24 h)
 
     async def scheduler_loop():
         """Background scheduler that checks schedules every minute."""
-        nonlocal _tracking_tick
+        nonlocal _tracking_tick, _bm_tick
         while True:
             try:
                 # Hard timeout: if check_and_run_schedules hangs (DB lock, network
@@ -162,6 +164,18 @@ async def lifespan(app: FastAPI):
                     print("[WARNING] Fanout tracker: timed out after 300 s -- skipping tick")
                 except Exception as e:
                     print(f"[ERROR] Fanout tracker error: {e}")
+
+            # Geo benchmark recalc: every 1440 ticks (~24 h)
+            _bm_tick += 1
+            if _bm_tick >= 1440:
+                _bm_tick = 0
+                try:
+                    from api.workers.benchmark_calculator import calculate_geo_benchmarks
+                    async with AsyncSessionLocal() as _bmdb:
+                        await calculate_geo_benchmarks(_bmdb)
+                    print("[OK] Geo benchmarks recalculated")
+                except Exception as e:
+                    print(f"[ERROR] Benchmark recalc error: {e}")
 
             await asyncio.sleep(60)  # Check every minute
     
@@ -351,4 +365,7 @@ app.include_router(insights_router)
 app.include_router(llms_txt_router)
 app.include_router(guide_router)
 app.include_router(fanout_router)
+app.include_router(projects_router)
+app.include_router(entity_router)
+app.include_router(gsc_fanout_router)
 app.include_router(pages_router)

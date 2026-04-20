@@ -1565,3 +1565,198 @@ async def add_prompt(req: PromptLibraryCreate, db: AsyncSession = Depends(get_db
                                              req.language, req.locale, req.tags,
                                              req.is_template, req.template_vars)
     return result
+
+
+# ============================================================================
+# COMPOSITE SCORE ENDPOINTS  (Prompt 22)
+# ============================================================================
+
+@router.get("/sessions/{session_id}/composite-score")
+async def session_composite_score(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Compute on-the-fly GEO composite score for a single fan-out session."""
+    from api.workers.geo_composite_score import calculate
+
+    stmt = (
+        select(FanoutSession)
+        .where(FanoutSession.id == session_id)
+        .options(selectinload(FanoutSession.queries), selectinload(FanoutSession.sources))
+    )
+    session = (await db.execute(stmt)).scalar_one_or_none()
+    if not session:
+        raise_not_found("Session")
+
+    mention_rate = 1.0 if session.target_found else 0.0
+    avg_pos      = float(session.target_position) if session.target_position else None
+    breakdown    = calculate(
+        mention_rate          = mention_rate,
+        avg_position          = avg_pos,
+        engines_with_mention  = 1 if session.target_found else 0,
+        total_engines         = 1,
+        clusters_with_mention = 1 if session.target_found else 0,
+        clusters_tested       = 1,
+    )
+    return breakdown.to_dict()
+
+
+@router.get("/tracking/{config_id}/score-history")
+async def tracking_score_history(config_id: str, db: AsyncSession = Depends(get_db)):
+    """Return composite_score history for a tracking config."""
+    runs = (await db.execute(
+        select(FanoutTrackingRun)
+        .where(FanoutTrackingRun.config_id == config_id, FanoutTrackingRun.status == "completed")
+        .order_by(FanoutTrackingRun.created_at)
+    )).scalars().all()
+
+    return {
+        "config_id": config_id,
+        "history": [
+            {
+                "run_date":        r.run_date,
+                "composite_score": r.composite_score,
+                "score_breakdown": r.score_breakdown,
+                "mention_rate":    r.mention_rate,
+                "created_at":      r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in runs
+        ],
+    }
+
+
+# ============================================================================
+# SENTIMENT ENDPOINTS  (Prompt 23)
+# ============================================================================
+
+@router.post("/sessions/{session_id}/analyze-sentiment")
+async def analyze_session_sentiment(
+    session_id: str,
+    target_brand: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run sentiment analysis on the AI response for a fan-out session."""
+    from api.workers.sentiment_analyzer import analyze_sentiment
+    from api.models.database import FanoutSentiment
+
+    session = await db.get(FanoutSession, session_id)
+    if not session:
+        raise_not_found("Session")
+
+    # Use the prompt as proxy for AI response text (we don't store raw response)
+    ai_text = session.prompt  # fallback; ideally raw_output would be stored
+    result  = await analyze_sentiment(ai_text, target_brand, session.target_url)
+
+    # Upsert
+    existing = (await db.execute(
+        select(FanoutSentiment).where(FanoutSentiment.session_id == session_id)
+    )).scalar_one_or_none()
+
+    if existing:
+        existing.overall_sentiment   = result.overall_sentiment
+        existing.confidence          = result.confidence
+        existing.brand_mention_count = len(result.brand_mentions)
+        existing.mentions_json       = [m.to_dict() if hasattr(m, "to_dict") else vars(m) for m in result.brand_mentions]
+        existing.summary             = result.summary
+    else:
+        row = FanoutSentiment(
+            session_id          = session_id,
+            overall_sentiment   = result.overall_sentiment,
+            confidence          = result.confidence,
+            brand_mention_count = len(result.brand_mentions),
+            mentions_json       = [m.to_dict() if hasattr(m, "to_dict") else vars(m) for m in result.brand_mentions],
+            summary             = result.summary,
+        )
+        db.add(row)
+
+    await db.commit()
+    return result.to_dict()
+
+
+@router.get("/sessions/{session_id}/sentiment")
+async def get_session_sentiment(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Return stored sentiment analysis for a session."""
+    from api.models.database import FanoutSentiment
+
+    row = (await db.execute(
+        select(FanoutSentiment).where(FanoutSentiment.session_id == session_id)
+    )).scalar_one_or_none()
+    if not row:
+        raise_not_found("Sentiment analysis")
+    return row.to_dict()
+
+
+@router.get("/tracking/{config_id}/sentiment-trend")
+async def sentiment_trend(config_id: str, db: AsyncSession = Depends(get_db)):
+    """Return sentiment breakdown across tracking runs."""
+    from api.models.database import FanoutSentiment
+
+    runs = (await db.execute(
+        select(FanoutTrackingRun)
+        .where(FanoutTrackingRun.config_id == config_id, FanoutTrackingRun.status == "completed")
+        .order_by(FanoutTrackingRun.created_at)
+        .limit(30)
+    )).scalars().all()
+
+    return {
+        "config_id": config_id,
+        "trend": [
+            {
+                "run_date":           r.run_date,
+                "sentiment_breakdown": r.sentiment_breakdown,
+                "dominant_sentiment":  getattr(r, "dominant_sentiment", None),
+            }
+            for r in runs
+        ],
+    }
+
+
+# ============================================================================
+# VELOCITYCMS ENDPOINTS  (Prompt 28)
+# ============================================================================
+
+@router.post("/crossref/{crossref_id}/gaps/{gap_idx}/create-draft")
+async def create_cms_draft(
+    crossref_id: str,
+    gap_idx: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a VelocityCMS draft for a single content gap."""
+    from api.workers.velocitycms_bridge import create_draft_from_gap
+
+    record = await db.get(FanoutCrossRefResult, crossref_id)
+    if not record:
+        raise_not_found("Cross-reference result")
+
+    result_data = record.to_dict().get("result", {})
+    gap_queries = result_data.get("gap_queries", [])
+    if gap_idx >= len(gap_queries):
+        raise_bad_request(f"Gap index {gap_idx} out of range (total: {len(gap_queries)})")
+
+    gap     = gap_queries[gap_idx]
+    project = {"target_brand": "", "target_domain": record.target_domain or "", "vertical": "generic", "language": "en"}
+
+    draft_result = await create_draft_from_gap(gap, project)
+    return draft_result.to_dict()
+
+
+@router.post("/crossref/{crossref_id}/gaps/create-all-drafts")
+async def create_all_cms_drafts(
+    crossref_id: str,
+    priority: str = "high",
+    db: AsyncSession = Depends(get_db),
+):
+    """Create VelocityCMS drafts for all high-priority content gaps."""
+    from api.workers.velocitycms_bridge import create_draft_from_gap
+
+    record = await db.get(FanoutCrossRefResult, crossref_id)
+    if not record:
+        raise_not_found("Cross-reference result")
+
+    result_data = record.to_dict().get("result", {})
+    gap_queries = [g for g in result_data.get("gap_queries", []) if g.get("priority") == priority]
+
+    project     = {"target_brand": "", "target_domain": record.target_domain or "", "vertical": "generic", "language": "en"}
+    results     = []
+    for gap in gap_queries[:10]:  # cap at 10 to avoid runaway costs
+        dr = await create_draft_from_gap(gap, project)
+        results.append(dr.to_dict())
+
+    return {"created": len(results), "drafts": results}

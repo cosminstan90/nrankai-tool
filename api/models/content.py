@@ -923,5 +923,250 @@ class FanoutPromptLibrary(Base):
         }
 
 
+# ============================================================================
+# PROJECTS  (Prompt 25)
+# ============================================================================
+
+class FanoutProject(Base):
+    """
+    Client/project container — groups fan-out sessions, tracking configs,
+    competitive reports and cross-references for one brand/domain.
+    """
+    __tablename__ = "fanout_projects"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    name          = Column(String(200), nullable=False)
+    client_name   = Column(String(200), nullable=True)
+    target_domain = Column(String(500), nullable=False)
+    target_brand  = Column(String(200), nullable=False)
+    vertical      = Column(String(100), default="generic", index=True)
+    locale        = Column(String(20),  default="en-US")
+    language      = Column(String(10),  default="en")
+    gl            = Column(String(5),   default="us")
+    color         = Column(String(7),   default="#6366f1")
+    notes         = Column(Text,        nullable=True)
+    is_active     = Column(Boolean,     default=True, index=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "name":          self.name,
+            "client_name":   self.client_name,
+            "target_domain": self.target_domain,
+            "target_brand":  self.target_brand,
+            "vertical":      self.vertical,
+            "locale":        self.locale,
+            "language":      self.language,
+            "gl":            self.gl,
+            "color":         self.color,
+            "notes":         self.notes,
+            "is_active":     self.is_active,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+            "updated_at":    self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============================================================================
+# SENTIMENT  (Prompt 23)
+# ============================================================================
+
+class FanoutSentiment(Base):
+    """Sentiment analysis result for a fan-out session (Claude Haiku)."""
+    __tablename__ = "fanout_sentiment"
+
+    id                  = Column(Integer,     primary_key=True, autoincrement=True)
+    session_id          = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="CASCADE"),
+                                 nullable=False, unique=True, index=True)
+    overall_sentiment   = Column(String(20),  nullable=False)   # positive|neutral|negative|mixed|not_mentioned
+    confidence          = Column(Float,       nullable=True)
+    brand_mention_count = Column(Integer,     default=0)
+    mentions_json       = Column(JSON,        nullable=True)     # [{text, sentiment, context_type}]
+    summary             = Column(Text,        nullable=True)
+    analyzed_at         = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                  self.id,
+            "session_id":          self.session_id,
+            "overall_sentiment":   self.overall_sentiment,
+            "confidence":          self.confidence,
+            "brand_mention_count": self.brand_mention_count,
+            "mentions":            self.mentions_json,
+            "summary":             self.summary,
+            "analyzed_at":         self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }
+
+
+# ============================================================================
+# GEO BENCHMARKS  (Prompt 24)
+# ============================================================================
+
+class GeoBenchmark(Base):
+    """Aggregated GEO benchmarks per vertical + locale for a calendar month."""
+    __tablename__ = "geo_benchmarks"
+
+    id                   = Column(Integer,    primary_key=True, autoincrement=True)
+    vertical             = Column(String(100), nullable=False, index=True)
+    locale               = Column(String(20),  nullable=False, index=True)
+    period_month         = Column(String(7),   nullable=False)   # "2026-04"
+    sample_size          = Column(Integer,     default=0)
+    avg_mention_rate     = Column(Float,       nullable=True)
+    median_mention_rate  = Column(Float,       nullable=True)
+    p25_mention_rate     = Column(Float,       nullable=True)
+    p75_mention_rate     = Column(Float,       nullable=True)
+    avg_composite_score  = Column(Float,       nullable=True)
+    calculated_at        = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                  self.id,
+            "vertical":            self.vertical,
+            "locale":              self.locale,
+            "period_month":        self.period_month,
+            "sample_size":         self.sample_size,
+            "avg_mention_rate":    self.avg_mention_rate,
+            "median_mention_rate": self.median_mention_rate,
+            "p25_mention_rate":    self.p25_mention_rate,
+            "p75_mention_rate":    self.p75_mention_rate,
+            "avg_composite_score": self.avg_composite_score,
+            "calculated_at":       self.calculated_at.isoformat() if self.calculated_at else None,
+        }
+
+
+# ============================================================================
+# ENTITY CHECKS  (Prompt 31)
+# ============================================================================
+
+class EntityCheck(Base):
+    """Entity authority audit result for a brand/domain."""
+    __tablename__ = "entity_checks"
+
+    id                    = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id            = Column(String(36), nullable=True, index=True)
+    target_domain         = Column(String(500), nullable=False)
+    target_brand          = Column(String(200), nullable=False)
+    report_json           = Column(Text,        nullable=False)   # JSON EntityReport
+    entity_authority_score = Column(Float,      nullable=True)
+    analyzed_at           = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        import json as _json
+        try:
+            report = _json.loads(self.report_json)
+        except Exception:
+            report = {}
+        return {
+            "id":                     self.id,
+            "project_id":             self.project_id,
+            "target_domain":          self.target_domain,
+            "target_brand":           self.target_brand,
+            "report":                 report,
+            "entity_authority_score": self.entity_authority_score,
+            "analyzed_at":            self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }
+
+
+# ============================================================================
+# GSC FANOUT CONNECTION  (Prompt 27)
+# ============================================================================
+
+class GscFanoutConnection(Base):
+    """Stores GSC OAuth tokens for fanout-specific GSC cross-reference."""
+    __tablename__ = "gsc_fanout_connections"
+
+    id            = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id    = Column(String(36), nullable=False, unique=True, index=True)
+    gsc_property  = Column(String(500), nullable=False)
+    access_token  = Column(Text,        nullable=True)
+    refresh_token = Column(Text,        nullable=True)
+    token_expiry  = Column(DateTime,    nullable=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":           self.id,
+            "project_id":   self.project_id,
+            "gsc_property": self.gsc_property,
+            "has_token":    bool(self.access_token),
+            "token_expiry": self.token_expiry.isoformat() if self.token_expiry else None,
+            "created_at":   self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# MENTION SEEDING  (Prompt 32 — Phase 5 model added early)
+# ============================================================================
+
+class MentionSeedingConfig(Base):
+    """Configuration for monitoring brand presence on authoritative platforms."""
+    __tablename__ = "mention_seeding_configs"
+
+    id                   = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id           = Column(String(36), nullable=True, index=True)
+    target_brand         = Column(String(200), nullable=False)
+    target_domain        = Column(String(500), nullable=False)
+    vertical             = Column(String(100), default="generic")
+    monitor_reddit       = Column(Boolean,     default=True)
+    monitor_quora        = Column(Boolean,     default=True)
+    monitor_review_sites = Column(Boolean,     default=True)
+    monitor_press        = Column(Boolean,     default=True)
+    keywords             = Column(JSON,        nullable=True)
+    schedule             = Column(String(20),  default="weekly")
+    is_active            = Column(Boolean,     default=True, index=True)
+    last_run_at          = Column(DateTime,    nullable=True)
+    created_at           = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                   self.id,
+            "project_id":           self.project_id,
+            "target_brand":         self.target_brand,
+            "target_domain":        self.target_domain,
+            "vertical":             self.vertical,
+            "monitor_reddit":       self.monitor_reddit,
+            "monitor_quora":        self.monitor_quora,
+            "monitor_review_sites": self.monitor_review_sites,
+            "monitor_press":        self.monitor_press,
+            "keywords":             self.keywords,
+            "schedule":             self.schedule,
+            "is_active":            self.is_active,
+            "last_run_at":          self.last_run_at.isoformat() if self.last_run_at else None,
+        }
+
+
+class MentionSeedingResult(Base):
+    """Individual mention found during a seeding scan."""
+    __tablename__ = "mention_seeding_results"
+
+    id               = Column(Integer,    primary_key=True, autoincrement=True)
+    config_id        = Column(Integer,    ForeignKey("mention_seeding_configs.id", ondelete="CASCADE"),
+                               nullable=False, index=True)
+    run_date         = Column(String(10), nullable=False)   # ISO date
+    platform         = Column(String(50), nullable=False)
+    mention_url      = Column(String(2000), nullable=True)
+    mention_title    = Column(Text,        nullable=True)
+    mention_context  = Column(Text,        nullable=True)
+    sentiment        = Column(String(20),  nullable=True)
+    is_new           = Column(Boolean,     default=True)
+    discovered_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "config_id":      self.config_id,
+            "run_date":       self.run_date,
+            "platform":       self.platform,
+            "mention_url":    self.mention_url,
+            "mention_title":  self.mention_title,
+            "mention_context": self.mention_context,
+            "sentiment":      self.sentiment,
+            "is_new":         self.is_new,
+            "discovered_at":  self.discovered_at.isoformat() if self.discovered_at else None,
+        }
+
+
 # Default templates to seed on first run
 

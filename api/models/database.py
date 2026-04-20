@@ -39,6 +39,13 @@ from api.models.content import (
     FanoutWebhook, FanoutWebhookLog,
     FanoutCrossRefResult,
     FanoutPromptLibrary,
+    # Phase 4
+    FanoutProject,
+    FanoutSentiment,
+    GeoBenchmark,
+    EntityCheck,
+    GscFanoutConnection,
+    MentionSeedingConfig, MentionSeedingResult,
 )
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,

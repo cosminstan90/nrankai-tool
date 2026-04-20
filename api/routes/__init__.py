@@ -31,5 +31,8 @@ from .insights import router as insights_router
 from .llms_txt import router as llms_txt_router
 from .guide import router as guide_router
 from .fanout import router as fanout_router
+from .projects import router as projects_router
+from .entity import router as entity_router
+from .gsc_fanout import router as gsc_fanout_router
 
 __all__ = [name for name in globals() if name.endswith('_router')]
