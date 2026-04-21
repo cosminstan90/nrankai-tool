@@ -9,6 +9,8 @@ from .audit_views import router as _audit_router
 from .tool_views import router as _tool_router
 from .integration_views import router as _integration_router
 from .analytics_views import router as _analytics_router
+from .projects_views import router as _projects_router
+from .contentiq_views import router as _contentiq_router
 
 router = APIRouter()
 router.include_router(_dashboard_router)
@@ -17,3 +19,5 @@ router.include_router(_audit_router)
 router.include_router(_tool_router)
 router.include_router(_integration_router)
 router.include_router(_analytics_router)
+router.include_router(_projects_router)
+router.include_router(_contentiq_router)

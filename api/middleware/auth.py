@@ -34,7 +34,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     - If no credentials are configured in .env
     """
     
-    SKIP_PATHS = ["/api/health", "/static/", "/favicon.ico"]
+    SKIP_PATHS = ["/api/health", "/static/", "/favicon.ico", "/contentiq/demo"]
     
     async def dispatch(self, request: Request, call_next):
         credentials = get_auth_credentials()

@@ -448,7 +448,7 @@ class FanoutSession(Base):
 
     id              = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
     prompt          = Column(Text,        nullable=False)
-    provider        = Column(String(20),  nullable=False)           # openai | anthropic
+    provider        = Column(String(20),  nullable=False)           # openai | anthropic | gemini | perplexity
     model           = Column(String(100), nullable=False)
     user_location   = Column(String(200), nullable=True)
     total_fanout_queries  = Column(Integer, default=0)
@@ -460,6 +460,17 @@ class FanoutSession(Base):
     # Optional linkage to other geo_tool entities
     audit_id        = Column(String(36),  ForeignKey("audits.id",  ondelete="SET NULL"), nullable=True, index=True)
     created_at      = Column(DateTime,    default=datetime.utcnow, index=True)
+    # ── Prompt 15 enrichment columns ─────────────────────────────────────────
+    query_origin      = Column(String(20),  default="actual")        # actual | inferred | generated
+    source_origin     = Column(String(20),  default="citation")      # citation | grounding | extracted
+    prompt_cluster    = Column(String(50),  nullable=True, index=True)
+    run_cost_usd      = Column(Float,       default=0.0)
+    locale            = Column(String(20),  default="en-US")
+    language          = Column(String(10),  default="en")
+    confidence_score  = Column(Float,       nullable=True)
+    engine            = Column(String(50),  nullable=True, index=True)  # alias for provider (multi-engine sessions)
+    model_version     = Column(String(50),  nullable=True)
+    from_cache        = Column(Boolean,     default=False)
 
     # Relationships
     queries = relationship("FanoutQuery",  back_populates="session", cascade="all, delete-orphan")
@@ -480,6 +491,17 @@ class FanoutSession(Base):
             "target_position":      self.target_position,
             "audit_id":             self.audit_id,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
+            # Enrichment
+            "query_origin":         self.query_origin,
+            "source_origin":        self.source_origin,
+            "prompt_cluster":       self.prompt_cluster,
+            "run_cost_usd":         self.run_cost_usd,
+            "locale":               self.locale,
+            "language":             self.language,
+            "confidence_score":     self.confidence_score,
+            "engine":               self.engine or self.provider,
+            "model_version":        self.model_version or self.model,
+            "from_cache":           self.from_cache,
         }
         if include_children:
             data["fanout_queries"] = [q.to_dict() for q in (self.queries or [])]
@@ -533,5 +555,714 @@ class FanoutSource(Base):
         }
 
 
-# Default templates to seed on first run
+# ============================================================================
+# FAN-OUT HISTORICAL TRACKING
+# ============================================================================
 
+class FanoutTrackingConfig(Base):
+    """
+    A recurring tracking job: watch how a set of prompts mention a domain
+    across one or more AI engines on a schedule (daily/weekly/monthly).
+    """
+    __tablename__ = "fanout_tracking_configs"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    name          = Column(String(200), nullable=False)
+    target_domain = Column(String(500), nullable=True, index=True)
+    target_brand  = Column(String(200), nullable=True)
+    prompts       = Column(JSON,        nullable=False)          # List[str]
+    engines       = Column(JSON,        default=lambda: ["openai"])
+    schedule      = Column(String(20),  default="weekly")        # daily | weekly | monthly
+    is_active     = Column(Boolean,     default=True,  index=True)
+    last_run_at   = Column(DateTime,    nullable=True)
+    next_run_at   = Column(DateTime,    nullable=True, index=True)
+    project_id    = Column(String(36),  nullable=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+
+    runs = relationship("FanoutTrackingRun", back_populates="config", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "name":          self.name,
+            "target_domain": self.target_domain,
+            "target_brand":  self.target_brand,
+            "prompts":       self.prompts or [],
+            "engines":       self.engines or ["openai"],
+            "schedule":      self.schedule,
+            "is_active":     self.is_active,
+            "last_run_at":   self.last_run_at.isoformat() if self.last_run_at else None,
+            "next_run_at":   self.next_run_at.isoformat() if self.next_run_at else None,
+            "project_id":    self.project_id,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FanoutTrackingRun(Base):
+    """
+    One execution of a FanoutTrackingConfig — aggregate stats for a single date.
+    Includes retry/dead-letter fields (from Prompt 29).
+    """
+    __tablename__ = "fanout_tracking_runs"
+
+    id                   = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    config_id            = Column(String(36),  ForeignKey("fanout_tracking_configs.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_date             = Column(String(10),  nullable=False)         # ISO date "YYYY-MM-DD"
+    total_prompts        = Column(Integer,     nullable=True)
+    mention_rate         = Column(Float,       nullable=True)
+    avg_source_position  = Column(Float,       nullable=True)
+    total_unique_sources = Column(Integer,     nullable=True)
+    composite_score      = Column(Float,       nullable=True)
+    score_breakdown      = Column(JSON,        nullable=True)
+    sentiment_breakdown  = Column(JSON,        nullable=True)
+    top_competitors      = Column(JSON,        nullable=True)          # [{domain, appearances}]
+    model_version        = Column(String(50),  nullable=True)
+    baseline_mention_rate = Column(Float,      nullable=True)
+    cost_usd             = Column(Float,       default=0.0)
+    # Retry / dead-letter (Prompt 29)
+    retry_count          = Column(Integer,     default=0)
+    max_retries          = Column(Integer,     default=3)
+    next_retry_at        = Column(DateTime,    nullable=True)
+    failure_reason       = Column(String(500), nullable=True)
+    is_dead_letter       = Column(Boolean,     default=False, index=True)
+    status               = Column(String(20),  default="pending", index=True)  # pending|running|completed|failed
+    error_message        = Column(Text,        nullable=True)
+    created_at           = Column(DateTime,    default=datetime.utcnow)
+
+    config  = relationship("FanoutTrackingConfig", back_populates="runs")
+    details = relationship("FanoutTrackingDetail",  back_populates="run", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                   self.id,
+            "config_id":            self.config_id,
+            "run_date":             self.run_date,
+            "total_prompts":        self.total_prompts,
+            "mention_rate":         self.mention_rate,
+            "avg_source_position":  self.avg_source_position,
+            "total_unique_sources": self.total_unique_sources,
+            "composite_score":      self.composite_score,
+            "score_breakdown":      self.score_breakdown,
+            "top_competitors":      self.top_competitors,
+            "model_version":        self.model_version,
+            "cost_usd":             self.cost_usd,
+            "status":               self.status,
+            "retry_count":          self.retry_count,
+            "is_dead_letter":       self.is_dead_letter,
+            "failure_reason":       self.failure_reason,
+            "created_at":           self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FanoutTrackingDetail(Base):
+    """Per-prompt, per-engine detail row for a tracking run."""
+    __tablename__ = "fanout_tracking_details"
+
+    id                = Column(Integer,    primary_key=True, autoincrement=True)
+    run_id            = Column(String(36), ForeignKey("fanout_tracking_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    prompt            = Column(Text,       nullable=False)
+    prompt_cluster    = Column(String(50), nullable=True)
+    engine            = Column(String(50), nullable=True)
+    query_origin      = Column(String(20), default="actual")
+    target_found      = Column(Boolean,    default=False)
+    source_position   = Column(Integer,    nullable=True)   # 1-based, None if not found
+    fanout_query_count = Column(Integer,   nullable=True)
+    source_count      = Column(Integer,    nullable=True)
+    session_id        = Column(String(36), nullable=True)   # FK to fanout_sessions if saved
+
+    run = relationship("FanoutTrackingRun", back_populates="details")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                 self.id,
+            "run_id":             self.run_id,
+            "prompt":             self.prompt,
+            "prompt_cluster":     self.prompt_cluster,
+            "engine":             self.engine,
+            "target_found":       self.target_found,
+            "source_position":    self.source_position,
+            "fanout_query_count": self.fanout_query_count,
+            "source_count":       self.source_count,
+        }
+
+
+class FanoutCompetitiveReport(Base):
+    """Stored result of a competitive fan-out comparison run."""
+    __tablename__ = "fanout_competitive_reports"
+
+    id            = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    target_domain = Column(String(500), nullable=True, index=True)
+    project_id    = Column(String(36),  nullable=True)
+    competitors   = Column(JSON,        nullable=True)   # List[str]
+    report        = Column(JSON,        nullable=True)   # full CompetitiveReport dict
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "target_domain": self.target_domain,
+            "project_id":    self.project_id,
+            "competitors":   self.competitors,
+            "report":        self.report,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# FAN-OUT CACHE  (Prompt 16)
+# ============================================================================
+
+class FanoutCacheEntry(Base):
+    """
+    Stores serialised FanoutResult objects to avoid re-calling AI APIs.
+    TTL buckets: adhoc=4h | daily=20h | weekly=160h | monthly=700h
+    """
+    __tablename__ = "fanout_cache"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    cache_key    = Column(String(64),  nullable=False, unique=True, index=True)
+    prompt_hash  = Column(String(64),  nullable=False, index=True)
+    engine       = Column(String(50),  nullable=False)
+    model        = Column(String(100), nullable=False)
+    locale       = Column(String(20),  default="en-US")
+    result_json  = Column(Text,        nullable=False)   # JSON-serialised FanoutResult
+    hit_count    = Column(Integer,     default=0)
+    created_at   = Column(DateTime,    default=datetime.utcnow, index=True)
+    expires_at   = Column(DateTime,    nullable=False,           index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":          self.id,
+            "cache_key":   self.cache_key,
+            "engine":      self.engine,
+            "model":       self.model,
+            "locale":      self.locale,
+            "hit_count":   self.hit_count,
+            "created_at":  self.created_at.isoformat() if self.created_at else None,
+            "expires_at":  self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
+# ============================================================================
+# SERP VALIDATION  (Prompt 19)
+# ============================================================================
+
+class FanoutSerpValidation(Base):
+    """Per-query SERP validation result via Serper.dev."""
+    __tablename__ = "fanout_serp_validation"
+
+    id                     = Column(Integer,     primary_key=True, autoincrement=True)
+    session_id             = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    query_text             = Column(Text,        nullable=False)
+    target_domain          = Column(String(500), nullable=True)
+    target_found           = Column(Boolean,     default=False)
+    target_position        = Column(Integer,     nullable=True)
+    has_featured_snippet   = Column(Boolean,     default=False)
+    featured_snippet_domain = Column(String(500), nullable=True)
+    top_10_domains         = Column(JSON,        nullable=True)
+    people_also_ask        = Column(JSON,        nullable=True)
+    gl                     = Column(String(5),   default="us")
+    hl                     = Column(String(5),   default="en")
+    cost_usd               = Column(Float,       default=0.001)
+    validated_at           = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                      self.id,
+            "session_id":              self.session_id,
+            "query_text":              self.query_text,
+            "target_domain":           self.target_domain,
+            "target_found":            self.target_found,
+            "target_position":         self.target_position,
+            "has_featured_snippet":    self.has_featured_snippet,
+            "featured_snippet_domain": self.featured_snippet_domain,
+            "top_10_domains":          self.top_10_domains,
+            "people_also_ask":         self.people_also_ask,
+            "gl":                      self.gl,
+            "hl":                      self.hl,
+            "cost_usd":                self.cost_usd,
+            "validated_at":            self.validated_at.isoformat() if self.validated_at else None,
+        }
+
+
+# ============================================================================
+# WEBHOOKS  (Prompt 20)
+# ============================================================================
+
+class FanoutWebhook(Base):
+    """Registered webhook endpoint for fan-out events."""
+    __tablename__ = "fanout_webhooks"
+
+    id          = Column(Integer,     primary_key=True, autoincrement=True)
+    name        = Column(String(200), nullable=False)
+    webhook_url = Column(String(2000), nullable=False)
+    events      = Column(JSON,        nullable=False)   # List[str] event names
+    is_active   = Column(Boolean,     default=True, index=True)
+    secret_key  = Column(String(200), nullable=True)
+    created_at  = Column(DateTime,    default=datetime.utcnow)
+
+    logs = relationship("FanoutWebhookLog", back_populates="webhook", cascade="all, delete-orphan")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":          self.id,
+            "name":        self.name,
+            "webhook_url": self.webhook_url,
+            "events":      self.events,
+            "is_active":   self.is_active,
+            "created_at":  self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class FanoutWebhookLog(Base):
+    """Delivery log entry for a webhook call."""
+    __tablename__ = "fanout_webhook_logs"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    webhook_id   = Column(Integer,     ForeignKey("fanout_webhooks.id", ondelete="CASCADE"), nullable=False, index=True)
+    event_type   = Column(String(100), nullable=False)
+    status       = Column(String(20),  nullable=False)   # success | failure
+    error        = Column(String(500), nullable=True)
+    payload_size = Column(Integer,     nullable=True)
+    response_code = Column(Integer,   nullable=True)
+    sent_at      = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    webhook = relationship("FanoutWebhook", back_populates="logs")
+
+    def to_dict(self) -> dict:
+        return {
+            "id":           self.id,
+            "webhook_id":   self.webhook_id,
+            "event_type":   self.event_type,
+            "status":       self.status,
+            "error":        self.error,
+            "payload_size": self.payload_size,
+            "response_code": self.response_code,
+            "sent_at":      self.sent_at.isoformat() if self.sent_at else None,
+        }
+
+
+# ============================================================================
+# WLA CROSS-REFERENCE  (Prompt 18)
+# ============================================================================
+
+class FanoutCrossRefResult(Base):
+    """Stored result of a fan-out × WLA audit cross-reference analysis."""
+    __tablename__ = "fanout_crossref_results"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id    = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="SET NULL"), nullable=True, index=True)
+    audit_id      = Column(String(36),  nullable=True, index=True)
+    project_id    = Column(String(36),  nullable=True)
+    target_domain = Column(String(500), nullable=True)
+    result_json   = Column(Text,        nullable=False)   # JSON-serialised CrossRefResult
+    created_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        import json as _json
+        try:
+            result = _json.loads(self.result_json)
+        except Exception:
+            result = {}
+        return {
+            "id":            self.id,
+            "session_id":    self.session_id,
+            "audit_id":      self.audit_id,
+            "project_id":    self.project_id,
+            "target_domain": self.target_domain,
+            "result":        result,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# PROMPT LIBRARY  (Prompt 21)
+# ============================================================================
+
+class FanoutPromptLibrary(Base):
+    """Reusable prompt templates with aggregated performance statistics."""
+    __tablename__ = "fanout_prompt_library"
+
+    id               = Column(Integer,     primary_key=True, autoincrement=True)
+    prompt_text      = Column(Text,        nullable=False)
+    prompt_hash      = Column(String(64),  nullable=False, unique=True, index=True)
+    vertical         = Column(String(100), nullable=False, default="generic", index=True)
+    cluster          = Column(String(50),  nullable=True, index=True)
+    language         = Column(String(10),  default="en")
+    locale           = Column(String(20),  default="en-US")
+    tags             = Column(JSON,        nullable=True)
+    is_template      = Column(Boolean,     default=False)
+    template_vars    = Column(JSON,        nullable=True)     # e.g. ["brand", "city", "year"]
+    times_used       = Column(Integer,     default=0)
+    avg_fanout_queries = Column(Float,     nullable=True)
+    avg_mention_rate = Column(Float,       nullable=True)
+    avg_source_count = Column(Float,       nullable=True)
+    performance_tier = Column(String(20),  default="untested", index=True)  # high|medium|low|untested
+    created_at       = Column(DateTime,    default=datetime.utcnow)
+    last_used_at     = Column(DateTime,    nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                self.id,
+            "prompt_text":       self.prompt_text,
+            "prompt_hash":       self.prompt_hash,
+            "vertical":          self.vertical,
+            "cluster":           self.cluster,
+            "language":          self.language,
+            "locale":            self.locale,
+            "tags":              self.tags,
+            "is_template":       self.is_template,
+            "template_vars":     self.template_vars,
+            "times_used":        self.times_used,
+            "avg_fanout_queries": self.avg_fanout_queries,
+            "avg_mention_rate":  self.avg_mention_rate,
+            "avg_source_count":  self.avg_source_count,
+            "performance_tier":  self.performance_tier,
+            "created_at":        self.created_at.isoformat() if self.created_at else None,
+            "last_used_at":      self.last_used_at.isoformat() if self.last_used_at else None,
+        }
+
+
+# ============================================================================
+# PROJECTS  (Prompt 25)
+# ============================================================================
+
+class FanoutProject(Base):
+    """
+    Client/project container — groups fan-out sessions, tracking configs,
+    competitive reports and cross-references for one brand/domain.
+    """
+    __tablename__ = "fanout_projects"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    name          = Column(String(200), nullable=False)
+    client_name   = Column(String(200), nullable=True)
+    target_domain = Column(String(500), nullable=False)
+    target_brand  = Column(String(200), nullable=False)
+    vertical      = Column(String(100), default="generic", index=True)
+    locale        = Column(String(20),  default="en-US")
+    language      = Column(String(10),  default="en")
+    gl            = Column(String(5),   default="us")
+    color         = Column(String(7),   default="#6366f1")
+    notes         = Column(Text,        nullable=True)
+    is_active     = Column(Boolean,     default=True, index=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "name":          self.name,
+            "client_name":   self.client_name,
+            "target_domain": self.target_domain,
+            "target_brand":  self.target_brand,
+            "vertical":      self.vertical,
+            "locale":        self.locale,
+            "language":      self.language,
+            "gl":            self.gl,
+            "color":         self.color,
+            "notes":         self.notes,
+            "is_active":     self.is_active,
+            "created_at":    self.created_at.isoformat() if self.created_at else None,
+            "updated_at":    self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+# ============================================================================
+# SENTIMENT  (Prompt 23)
+# ============================================================================
+
+class FanoutSentiment(Base):
+    """Sentiment analysis result for a fan-out session (Claude Haiku)."""
+    __tablename__ = "fanout_sentiment"
+
+    id                  = Column(Integer,     primary_key=True, autoincrement=True)
+    session_id          = Column(String(36),  ForeignKey("fanout_sessions.id", ondelete="CASCADE"),
+                                 nullable=False, unique=True, index=True)
+    overall_sentiment   = Column(String(20),  nullable=False)   # positive|neutral|negative|mixed|not_mentioned
+    confidence          = Column(Float,       nullable=True)
+    brand_mention_count = Column(Integer,     default=0)
+    mentions_json       = Column(JSON,        nullable=True)     # [{text, sentiment, context_type}]
+    summary             = Column(Text,        nullable=True)
+    analyzed_at         = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                  self.id,
+            "session_id":          self.session_id,
+            "overall_sentiment":   self.overall_sentiment,
+            "confidence":          self.confidence,
+            "brand_mention_count": self.brand_mention_count,
+            "mentions":            self.mentions_json,
+            "summary":             self.summary,
+            "analyzed_at":         self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }
+
+
+# ============================================================================
+# GEO BENCHMARKS  (Prompt 24)
+# ============================================================================
+
+class GeoBenchmark(Base):
+    """Aggregated GEO benchmarks per vertical + locale for a calendar month."""
+    __tablename__ = "geo_benchmarks"
+
+    id                   = Column(Integer,    primary_key=True, autoincrement=True)
+    vertical             = Column(String(100), nullable=False, index=True)
+    locale               = Column(String(20),  nullable=False, index=True)
+    period_month         = Column(String(7),   nullable=False)   # "2026-04"
+    sample_size          = Column(Integer,     default=0)
+    avg_mention_rate     = Column(Float,       nullable=True)
+    median_mention_rate  = Column(Float,       nullable=True)
+    p25_mention_rate     = Column(Float,       nullable=True)
+    p75_mention_rate     = Column(Float,       nullable=True)
+    avg_composite_score  = Column(Float,       nullable=True)
+    calculated_at        = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                  self.id,
+            "vertical":            self.vertical,
+            "locale":              self.locale,
+            "period_month":        self.period_month,
+            "sample_size":         self.sample_size,
+            "avg_mention_rate":    self.avg_mention_rate,
+            "median_mention_rate": self.median_mention_rate,
+            "p25_mention_rate":    self.p25_mention_rate,
+            "p75_mention_rate":    self.p75_mention_rate,
+            "avg_composite_score": self.avg_composite_score,
+            "calculated_at":       self.calculated_at.isoformat() if self.calculated_at else None,
+        }
+
+
+# ============================================================================
+# ENTITY CHECKS  (Prompt 31)
+# ============================================================================
+
+class EntityCheck(Base):
+    """Entity authority audit result for a brand/domain."""
+    __tablename__ = "entity_checks"
+
+    id                    = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id            = Column(String(36), nullable=True, index=True)
+    target_domain         = Column(String(500), nullable=False)
+    target_brand          = Column(String(200), nullable=False)
+    report_json           = Column(Text,        nullable=False)   # JSON EntityReport
+    entity_authority_score = Column(Float,      nullable=True)
+    analyzed_at           = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        import json as _json
+        try:
+            report = _json.loads(self.report_json)
+        except Exception:
+            report = {}
+        return {
+            "id":                     self.id,
+            "project_id":             self.project_id,
+            "target_domain":          self.target_domain,
+            "target_brand":           self.target_brand,
+            "report":                 report,
+            "entity_authority_score": self.entity_authority_score,
+            "analyzed_at":            self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }
+
+
+# ============================================================================
+# GSC FANOUT CONNECTION  (Prompt 27)
+# ============================================================================
+
+class GscFanoutConnection(Base):
+    """Stores GSC OAuth tokens for fanout-specific GSC cross-reference."""
+    __tablename__ = "gsc_fanout_connections"
+
+    id            = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id    = Column(String(36), nullable=False, unique=True, index=True)
+    gsc_property  = Column(String(500), nullable=False)
+    access_token  = Column(Text,        nullable=True)
+    refresh_token = Column(Text,        nullable=True)
+    token_expiry  = Column(DateTime,    nullable=True)
+    created_at    = Column(DateTime,    default=datetime.utcnow)
+    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":           self.id,
+            "project_id":   self.project_id,
+            "gsc_property": self.gsc_property,
+            "has_token":    bool(self.access_token),
+            "token_expiry": self.token_expiry.isoformat() if self.token_expiry else None,
+            "created_at":   self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# MENTION SEEDING  (Prompt 32 — Phase 5 model added early)
+# ============================================================================
+
+class MentionSeedingConfig(Base):
+    """Configuration for monitoring brand presence on authoritative platforms."""
+    __tablename__ = "mention_seeding_configs"
+
+    id                   = Column(Integer,    primary_key=True, autoincrement=True)
+    project_id           = Column(String(36), nullable=True, index=True)
+    target_brand         = Column(String(200), nullable=False)
+    target_domain        = Column(String(500), nullable=False)
+    vertical             = Column(String(100), default="generic")
+    monitor_reddit       = Column(Boolean,     default=True)
+    monitor_quora        = Column(Boolean,     default=True)
+    monitor_review_sites = Column(Boolean,     default=True)
+    monitor_press        = Column(Boolean,     default=True)
+    keywords             = Column(JSON,        nullable=True)
+    schedule             = Column(String(20),  default="weekly")
+    is_active            = Column(Boolean,     default=True, index=True)
+    last_run_at          = Column(DateTime,    nullable=True)
+    created_at           = Column(DateTime,    default=datetime.utcnow)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                   self.id,
+            "project_id":           self.project_id,
+            "target_brand":         self.target_brand,
+            "target_domain":        self.target_domain,
+            "vertical":             self.vertical,
+            "monitor_reddit":       self.monitor_reddit,
+            "monitor_quora":        self.monitor_quora,
+            "monitor_review_sites": self.monitor_review_sites,
+            "monitor_press":        self.monitor_press,
+            "keywords":             self.keywords,
+            "schedule":             self.schedule,
+            "is_active":            self.is_active,
+            "last_run_at":          self.last_run_at.isoformat() if self.last_run_at else None,
+        }
+
+
+class MentionSeedingResult(Base):
+    """Individual mention found during a seeding scan."""
+    __tablename__ = "mention_seeding_results"
+
+    id               = Column(Integer,    primary_key=True, autoincrement=True)
+    config_id        = Column(Integer,    ForeignKey("mention_seeding_configs.id", ondelete="CASCADE"),
+                               nullable=False, index=True)
+    run_date         = Column(String(10), nullable=False)   # ISO date
+    platform         = Column(String(50), nullable=False)
+    mention_url      = Column(String(2000), nullable=True)
+    mention_title    = Column(Text,        nullable=True)
+    mention_context  = Column(Text,        nullable=True)
+    sentiment        = Column(String(20),  nullable=True)
+    is_new           = Column(Boolean,     default=True)
+    discovered_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "config_id":      self.config_id,
+            "run_date":       self.run_date,
+            "platform":       self.platform,
+            "mention_url":    self.mention_url,
+            "mention_title":  self.mention_title,
+            "mention_context": self.mention_context,
+            "sentiment":      self.sentiment,
+            "is_new":         self.is_new,
+            "discovered_at":  self.discovered_at.isoformat() if self.discovered_at else None,
+        }
+
+
+
+
+# ── Phase 5 models ────────────────────────────────────────────────────────────
+
+class BotAccessAudit(Base):
+    """AI crawler accessibility audit result (Prompt 33)."""
+    __tablename__ = "bot_access_audits"
+
+    id            = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id    = Column(String(36),  nullable=True, index=True)
+    target_domain = Column(String(500), nullable=False)
+    report_json   = Column(JSON,        nullable=True)
+    access_score  = Column(Float,       nullable=True)
+    audited_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":            self.id,
+            "project_id":    self.project_id,
+            "target_domain": self.target_domain,
+            "report_json":   self.report_json,
+            "access_score":  self.access_score,
+            "audited_at":    self.audited_at.isoformat() if self.audited_at else None,
+        }
+
+
+class CocitationMap(Base):
+    """Co-citation analysis result (Prompt 34)."""
+    __tablename__ = "cocitation_maps"
+
+    id                 = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id         = Column(String(36),  nullable=True, index=True)
+    target_domain      = Column(String(500), nullable=False)
+    sessions_analyzed  = Column(JSON,        nullable=True)   # list of session_ids
+    map_json           = Column(JSON,        nullable=True)
+    generated_at       = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":                self.id,
+            "project_id":        self.project_id,
+            "target_domain":     self.target_domain,
+            "sessions_analyzed": self.sessions_analyzed,
+            "map_json":          self.map_json,
+            "generated_at":      self.generated_at.isoformat() if self.generated_at else None,
+        }
+
+
+class AnswerCalibration(Base):
+    """Ideal AI answer calibration for a fan-out session (Prompt 35)."""
+    __tablename__ = "answer_calibrations"
+
+    id                = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id        = Column(String(36),  nullable=True, index=True)
+    project_id        = Column(String(36),  nullable=True, index=True)
+    prompt            = Column(Text,        nullable=False)
+    target_brand      = Column(String(200), nullable=False)
+    calibration_json  = Column(JSON,        nullable=True)
+    brand_position    = Column(Integer,     nullable=True)
+    estimated_effort  = Column(String(20),  nullable=True)   # low|medium|high
+    cost_usd          = Column(Float,       default=0.015)
+    created_at        = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":               self.id,
+            "session_id":       self.session_id,
+            "project_id":       self.project_id,
+            "prompt":           self.prompt,
+            "target_brand":     self.target_brand,
+            "calibration_json": self.calibration_json,
+            "brand_position":   self.brand_position,
+            "estimated_effort": self.estimated_effort,
+            "cost_usd":         self.cost_usd,
+            "created_at":       self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class MultilingualGapReport(Base):
+    """Multilingual content gap detection report (Prompt 36)."""
+    __tablename__ = "multilingual_gap_reports"
+
+    id              = Column(String(36),  primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id      = Column(String(36),  nullable=True, index=True)
+    target_domain   = Column(String(500), nullable=False)
+    report_json     = Column(JSON,        nullable=True)
+    coverage_score  = Column(Float,       nullable=True)
+    analyzed_at     = Column(DateTime,    default=datetime.utcnow, index=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":             self.id,
+            "project_id":     self.project_id,
+            "target_domain":  self.target_domain,
+            "report_json":    self.report_json,
+            "coverage_score": self.coverage_score,
+            "analyzed_at":    self.analyzed_at.isoformat() if self.analyzed_at else None,
+        }

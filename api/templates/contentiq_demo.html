@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContentIQ Demo — AI Content Audit by nrankai</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+    .verdict-keep        { background:#dcfce7; color:#15803d; }
+    .verdict-update      { background:#fef9c3; color:#854d0e; }
+    .verdict-consolidate { background:#ffedd5; color:#9a3412; }
+    .verdict-delete      { background:#fee2e2; color:#991b1b; }
+    .score-green  { color:#16a34a; }
+    .score-yellow { color:#ca8a04; }
+    .score-red    { color:#dc2626; }
+    .badge-new { background:#22c55e; color:#fff; font-size:10px; font-weight:700;
+                 padding:2px 6px; border-radius:9999px; letter-spacing:.04em; }
+  </style>
+</head>
+<body class="min-h-screen">
+
+  <!-- ───────── Nav ───────── -->
+  <nav class="bg-slate-900 border-b border-slate-800">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="text-white font-bold text-lg tracking-tight">nrankai</span>
+        <span class="text-slate-500 text-sm">/</span>
+        <span class="text-slate-300 text-sm font-medium">ContentIQ</span>
+        <span class="badge-new">DEMO</span>
+      </div>
+      <a href="/contentiq" class="inline-flex items-center space-x-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+         style="background:#0284c7;">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        <span>Run Your Audit</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ───────── Hero ───────── -->
+  <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white py-16">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <div class="inline-flex items-center space-x-2 bg-slate-700/60 text-slate-300 text-xs font-semibold px-3 py-1.5 rounded-full mb-5 uppercase tracking-widest">
+        <span>📊</span><span>Live Demo — pagani.ro</span>
+      </div>
+      <h1 class="text-4xl md:text-5xl font-extrabold mb-4 leading-tight">
+        Stop guessing what to do<br>with your content.
+      </h1>
+      <p class="text-slate-300 text-lg max-w-2xl mx-auto mb-8">
+        ContentIQ audits every page on your site, scores it on 4 dimensions, and gives each page a
+        <strong class="text-white">KEEP · UPDATE · CONSOLIDATE · DELETE</strong> verdict — powered by Claude AI and real Ahrefs + GSC data.
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-4 text-sm text-slate-400">
+        <span class="flex items-center space-x-1.5"><span>⚡</span><span>Powered by Claude Sonnet</span></span>
+        <span class="text-slate-600">·</span>
+        <span class="flex items-center space-x-1.5"><span>📈</span><span>Ahrefs + GSC integrated</span></span>
+        <span class="text-slate-600">·</span>
+        <span class="flex items-center space-x-1.5"><span>📋</span><span>XLSX export</span></span>
+        <span class="text-slate-600">·</span>
+        <span class="flex items-center space-x-1.5"><span>✍️</span><span>AI content briefs</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto px-6 py-12">
+
+    <!-- ───────── Verdict stats bar ───────── -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+        <p class="text-3xl font-extrabold text-green-600">2</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mt-1">KEEP</p>
+        <p class="text-xs text-slate-400 mt-0.5">40%</p>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+        <p class="text-3xl font-extrabold text-yellow-600">1</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mt-1">UPDATE</p>
+        <p class="text-xs text-slate-400 mt-0.5">20%</p>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+        <p class="text-3xl font-extrabold text-orange-600">1</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mt-1">CONSOLIDATE</p>
+        <p class="text-xs text-slate-400 mt-0.5">20%</p>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+        <p class="text-3xl font-extrabold text-red-600">1</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mt-1">DELETE</p>
+        <p class="text-xs text-slate-400 mt-0.5">20%</p>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center col-span-2 md:col-span-1">
+        <p class="text-3xl font-extrabold text-slate-700">5</p>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 mt-1">TOTAL PAGES</p>
+        <p class="text-xs text-slate-400 mt-0.5">demo sample</p>
+      </div>
+    </div>
+
+    <!-- ───────── Pages table ───────── -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Sample Audit — pagani.ro</h2>
+          <p class="text-xs text-slate-500 mt-0.5">5 pages · crawled 2026-04-21 · scored by Claude AI</p>
+        </div>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">done</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50 border-b border-slate-100">
+              <th class="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">URL</th>
+              <th class="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Title</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Verdict</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fresh</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">GEO</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">E-E-A-T</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">SEO</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Clicks</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Traffic</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-50">
+
+            <!-- KEEP -->
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-5 py-3.5">
+                <a href="#" class="text-blue-600 hover:underline text-xs">/vis-cu-apa/</a>
+              </td>
+              <td class="px-3 py-3.5 text-xs text-slate-700 max-w-[160px] truncate">Vis cu apă — interpretare completă</td>
+              <td class="px-3 py-3.5 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-keep">KEEP</span>
+              </td>
+              <td class="px-3 py-3.5 text-center font-bold text-sm score-green">78</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">72</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">85</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">70</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">80</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">1 842</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">960</td>
+            </tr>
+
+            <!-- KEEP -->
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-5 py-3.5">
+                <a href="#" class="text-blue-600 hover:underline text-xs">/vis-cu-sarpele/</a>
+              </td>
+              <td class="px-3 py-3.5 text-xs text-slate-700 max-w-[160px] truncate">Vis cu șarpele — ce înseamnă</td>
+              <td class="px-3 py-3.5 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-keep">KEEP</span>
+              </td>
+              <td class="px-3 py-3.5 text-center font-bold text-sm score-green">74</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">68</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">80</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">71</td>
+              <td class="px-3 py-3.5 text-center text-xs score-green">77</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">1 211</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">640</td>
+            </tr>
+
+            <!-- UPDATE -->
+            <tr class="hover:bg-slate-50 transition-colors" id="update-row">
+              <td class="px-5 py-3.5">
+                <a href="#" class="text-blue-600 hover:underline text-xs">/vis-cu-mort/</a>
+              </td>
+              <td class="px-3 py-3.5 text-xs text-slate-700 max-w-[160px] truncate">Vis cu mort — semnificație</td>
+              <td class="px-3 py-3.5 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-update">UPDATE</span>
+              </td>
+              <td class="px-3 py-3.5 text-center font-bold text-sm score-yellow">52</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">18</td>
+              <td class="px-3 py-3.5 text-center text-xs score-yellow">62</td>
+              <td class="px-3 py-3.5 text-center text-xs score-yellow">58</td>
+              <td class="px-3 py-3.5 text-center text-xs score-yellow">65</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">428</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">210</td>
+            </tr>
+
+            <!-- CONSOLIDATE -->
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-5 py-3.5">
+                <a href="#" class="text-blue-600 hover:underline text-xs">/vis-cu-foc-2/</a>
+              </td>
+              <td class="px-3 py-3.5 text-xs text-slate-700 max-w-[160px] truncate">Vis cu foc — ce înseamnă (2)</td>
+              <td class="px-3 py-3.5 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-consolidate">CONSOLIDATE</span>
+              </td>
+              <td class="px-3 py-3.5 text-center font-bold text-sm score-red">31</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">22</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">38</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">28</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">34</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">12</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">5</td>
+            </tr>
+
+            <!-- DELETE -->
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-5 py-3.5">
+                <a href="#" class="text-blue-600 hover:underline text-xs">/test-pagina-veche/</a>
+              </td>
+              <td class="px-3 py-3.5 text-xs text-slate-700 max-w-[160px] truncate">Pagina de test (veche)</td>
+              <td class="px-3 py-3.5 text-center">
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-delete">DELETE</span>
+              </td>
+              <td class="px-3 py-3.5 text-center font-bold text-sm score-red">11</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">0</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">14</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">8</td>
+              <td class="px-3 py-3.5 text-center text-xs score-red">20</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">0</td>
+              <td class="px-3 py-3.5 text-center text-xs text-slate-500">0</td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ───────── Sample brief ───────── -->
+    <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-10">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center space-x-3">
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold verdict-update">UPDATE</span>
+        <div>
+          <h2 class="text-base font-bold text-slate-800">Sample AI Content Brief</h2>
+          <p class="text-xs text-slate-500">/vis-cu-mort/ · generated by Claude Sonnet · Score 52/100</p>
+        </div>
+      </div>
+      <div class="p-6">
+        <div class="prose max-w-none text-sm text-slate-700 space-y-5">
+
+          <div class="bg-slate-50 rounded-xl p-5 border border-slate-100">
+            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">1. OBJECTIVE</h3>
+            <p>Pagina are potențial semnificativ — 428 clickuri GSC și poziție medie 8.4 — dar conținutul nu a fost actualizat de peste 2 ani (scor Freshness: 18/100). Obiectivul este să refacem structura pentru a captura răspunsuri directe în Google AI Overviews și să actualizăm informațiile pentru a recâștiga pozițiile pierdute.</p>
+          </div>
+
+          <div class="bg-slate-50 rounded-xl p-5 border border-slate-100">
+            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">2. TARGET KEYWORDS</h3>
+            <ul class="space-y-1.5">
+              <li><span class="font-semibold text-slate-800">vis cu mort</span> <span class="text-slate-400">— informațional, vol. estimat 8.400/lună</span></li>
+              <li><span class="font-semibold text-slate-800">ce înseamnă să visezi un mort</span> <span class="text-slate-400">— intent: explicație, vol. 3.200/lună</span></li>
+              <li><span class="font-semibold text-slate-800">vis cu persoana decedată semnificație</span> <span class="text-slate-400">— intent: specific, vol. 1.800/lună</span></li>
+            </ul>
+          </div>
+
+          <div class="bg-slate-50 rounded-xl p-5 border border-slate-100">
+            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">3. CONTENT STRUCTURE</h3>
+            <ul class="space-y-1 list-disc list-inside text-slate-600">
+              <li><strong>H1:</strong> Ce înseamnă când visezi un mort? Semnificații și interpretări</li>
+              <li><strong>H2:</strong> De ce visăm persoane decedate — explicația psihologică</li>
+              <li><strong>H2:</strong> Semnificații în funcție de context (mort cunoscut vs. necunoscut)</li>
+              <li><strong>H2:</strong> Ce spune religia și folclorul românesc despre visele cu morți</li>
+              <li><strong>H2:</strong> Întrebări frecvente (FAQ pentru AI Overviews)</li>
+            </ul>
+          </div>
+
+          <div class="flex items-center justify-center py-3 text-slate-400 text-sm border-t border-dashed border-slate-200">
+            <span>+ 5 more sections in full brief (Content Requirements, GEO Optimization, E-E-A-T Signals, Internal Linking, Priority)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───────── How it works ───────── -->
+    <div class="mb-12">
+      <h2 class="text-2xl font-bold text-slate-800 text-center mb-8">How ContentIQ works</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+          <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <span class="text-lg">🕷️</span>
+          </div>
+          <h3 class="font-semibold text-slate-800 mb-1">1. Crawl</h3>
+          <p class="text-xs text-slate-500">Parses your sitemap and fetches every page — title, word count, canonical, last modified.</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+          <div class="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <span class="text-lg">📊</span>
+          </div>
+          <h3 class="font-semibold text-slate-800 mb-1">2. Score</h3>
+          <p class="text-xs text-slate-500">Each page is scored on Freshness, GEO Visibility, E-E-A-T, and SEO Health using Ahrefs + GSC data.</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+          <div class="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <span class="text-lg">⚖️</span>
+          </div>
+          <h3 class="font-semibold text-slate-800 mb-1">3. Verdict</h3>
+          <p class="text-xs text-slate-500">Weighted algorithm assigns KEEP · UPDATE · CONSOLIDATE · DELETE to every page.</p>
+        </div>
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-5 text-center">
+          <div class="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <span class="text-lg">✍️</span>
+          </div>
+          <h3 class="font-semibold text-slate-800 mb-1">4. Brief</h3>
+          <p class="text-xs text-slate-500">Claude generates an 8-section content brief for every UPDATE and CONSOLIDATE page.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───────── CTA ───────── -->
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl p-10 text-center text-white">
+      <h2 class="text-3xl font-extrabold mb-3">Ready to audit your content?</h2>
+      <p class="text-slate-300 mb-8 max-w-xl mx-auto">
+        Connect your sitemap, optionally link Ahrefs and GSC, and get KUCD verdicts for every page in minutes.
+      </p>
+      <a href="/contentiq" class="inline-flex items-center space-x-2 bg-white text-slate-900 font-bold text-base px-8 py-3.5 rounded-xl hover:bg-slate-100 transition-colors shadow-lg">
+        <span>Run a full audit</span>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/>
+        </svg>
+      </a>
+      <p class="text-slate-500 text-xs mt-4">nrankai.com · app.nrankai.com</p>
+    </div>
+
+  </div>
+
+  <!-- ───────── Footer ───────── -->
+  <footer class="text-center text-xs text-slate-400 py-8">
+    &copy; 2026 nrankai · <a href="/contentiq" class="hover:text-slate-600 underline">ContentIQ</a> · Powered by Claude AI &amp; Ahrefs
+  </footer>
+
+</body>
+</html>

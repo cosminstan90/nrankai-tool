@@ -32,7 +32,27 @@ from api.models.content import (
     CompetitorGapAnalysis, ContentGap, ActionCard, CrossReferenceJob,
     UrlGuide, LlmsTxtJob,
     FanoutSession, FanoutQuery, FanoutSource,
+    FanoutTrackingConfig, FanoutTrackingRun, FanoutTrackingDetail,
+    FanoutCompetitiveReport,
+    FanoutCacheEntry,
+    FanoutSerpValidation,
+    FanoutWebhook, FanoutWebhookLog,
+    FanoutCrossRefResult,
+    FanoutPromptLibrary,
+    # Phase 4
+    FanoutProject,
+    FanoutSentiment,
+    GeoBenchmark,
+    EntityCheck,
+    GscFanoutConnection,
+    MentionSeedingConfig, MentionSeedingResult,
+    # Phase 5
+    BotAccessAudit,
+    CocitationMap,
+    AnswerCalibration,
+    MultilingualGapReport,
 )
+from api.models.contentiq import CiqAudit, CiqPage, CiqCompetitor, CiqGscToken
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,
@@ -203,6 +223,30 @@ async def init_db_async():
                 print("✓ Migrated url_guides: added reviewed")
         except Exception:
             pass
+
+    # Migrate fanout_sessions: add Prompt 15 enrichment columns if missing
+    _fanout_session_migrations = [
+        ("query_origin",     "ALTER TABLE fanout_sessions ADD COLUMN query_origin VARCHAR(20) DEFAULT 'actual'"),
+        ("source_origin",    "ALTER TABLE fanout_sessions ADD COLUMN source_origin VARCHAR(20) DEFAULT 'citation'"),
+        ("prompt_cluster",   "ALTER TABLE fanout_sessions ADD COLUMN prompt_cluster VARCHAR(50)"),
+        ("run_cost_usd",     "ALTER TABLE fanout_sessions ADD COLUMN run_cost_usd REAL DEFAULT 0.0"),
+        ("locale",           "ALTER TABLE fanout_sessions ADD COLUMN locale VARCHAR(20) DEFAULT 'en-US'"),
+        ("language",         "ALTER TABLE fanout_sessions ADD COLUMN language VARCHAR(10) DEFAULT 'en'"),
+        ("confidence_score", "ALTER TABLE fanout_sessions ADD COLUMN confidence_score REAL"),
+        ("engine",           "ALTER TABLE fanout_sessions ADD COLUMN engine VARCHAR(50)"),
+        ("model_version",    "ALTER TABLE fanout_sessions ADD COLUMN model_version VARCHAR(50)"),
+        ("from_cache",       "ALTER TABLE fanout_sessions ADD COLUMN from_cache INTEGER DEFAULT 0"),
+    ]
+    async with engine.begin() as conn:
+        try:
+            rows = await conn.execute(sa_text("PRAGMA table_info(fanout_sessions)"))
+            col_names = {row[1] for row in rows.fetchall()}
+            for col, sql in _fanout_session_migrations:
+                if col not in col_names:
+                    await conn.execute(sa_text(sql))
+                    print(f"✓ Migrated fanout_sessions: added {col}")
+        except Exception as _e:
+            print(f"[WARN] fanout_sessions migration: {_e}")
 
     # Seed default templates if table is empty
     from sqlalchemy import select

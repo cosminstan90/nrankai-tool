@@ -106,42 +106,38 @@
                             <button @click="selectedQueries = []" class="text-xs text-slate-400 hover:text-red-500">Clear</button>
                         </div>
                     </div>
-                    <div class="border border-slate-100 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
-                        <table class="w-full text-xs">
-                            <thead class="bg-slate-50 sticky top-0">
-                                <tr>
-                                    <th class="px-3 py-2 text-left text-slate-500 font-medium w-8">
-                                        <input type="checkbox"
-                                               :checked="selectedQueries.length === queries.length"
-                                               @change="$event.target.checked ? selectedQueries = [...queries] : selectedQueries = []"
-                                               class="rounded border-slate-300 text-violet-600">
-                                    </th>
-                                    <th class="px-3 py-2 text-left text-slate-500 font-medium">Keyword</th>
-                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Clicks</th>
-                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Impr.</th>
-                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">CTR%</th>
-                                    <th class="px-3 py-2 text-right text-slate-500 font-medium">Pos.</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <template x-for="(q, i) in queries" :key="i">
-                                    <tr @click="toggleQuery(q)"
-                                        :class="isQuerySelected(q) ? 'bg-violet-50' : 'hover:bg-slate-50'"
-                                        class="cursor-pointer border-t border-slate-50 transition-colors">
-                                        <td class="px-3 py-1.5">
-                                            <input type="checkbox" :checked="isQuerySelected(q)"
-                                                   @click.stop="toggleQuery(q)"
-                                                   class="rounded border-slate-300 text-violet-600 pointer-events-none">
-                                        </td>
-                                        <td class="px-3 py-1.5 text-slate-700" x-text="q.query"></td>
-                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.clicks || '—'"></td>
-                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.impressions || '—'"></td>
-                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.ctr ? q.ctr + '%' : '—'"></td>
-                                        <td class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.position || '—'"></td>
-                                    </tr>
-                                </template>
-                            </tbody>
-                        </table>
+                    <div class="border border-slate-100 rounded-lg overflow-hidden max-h-64 overflow-y-auto text-xs">
+                        <!-- Header row -->
+                        <div class="grid grid-cols-[2rem_1fr_4rem_4rem_4rem_4rem] bg-slate-50 sticky top-0 border-b border-slate-100">
+                            <div class="px-3 py-2">
+                                <input type="checkbox"
+                                       :checked="selectedQueries.length === queries.length"
+                                       @change="$event.target.checked ? selectedQueries = [...queries] : selectedQueries = []"
+                                       class="rounded border-slate-300 text-violet-600">
+                            </div>
+                            <div class="px-3 py-2 text-slate-500 font-medium">Keyword</div>
+                            <div class="px-3 py-2 text-right text-slate-500 font-medium">Clicks</div>
+                            <div class="px-3 py-2 text-right text-slate-500 font-medium">Impr.</div>
+                            <div class="px-3 py-2 text-right text-slate-500 font-medium">CTR%</div>
+                            <div class="px-3 py-2 text-right text-slate-500 font-medium">Pos.</div>
+                        </div>
+                        <!-- Data rows -->
+                        <template x-for="(q, i) in queries" :key="i">
+                            <div @click="toggleQuery(q)"
+                                 :class="isQuerySelected(q) ? 'bg-violet-50' : 'hover:bg-slate-50'"
+                                 class="grid grid-cols-[2rem_1fr_4rem_4rem_4rem_4rem] cursor-pointer border-t border-slate-50 transition-colors">
+                                <div class="px-3 py-1.5">
+                                    <input type="checkbox" :checked="isQuerySelected(q)"
+                                           @click.stop="toggleQuery(q)"
+                                           class="rounded border-slate-300 text-violet-600 pointer-events-none">
+                                </div>
+                                <div class="px-3 py-1.5 text-slate-700 truncate" x-text="q.query"></div>
+                                <div class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.clicks || '—'"></div>
+                                <div class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.impressions || '—'"></div>
+                                <div class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.ctr ? q.ctr + '%' : '—'"></div>
+                                <div class="px-3 py-1.5 text-right tabular-nums text-slate-500" x-text="q.position || '—'"></div>
+                            </div>
+                        </template>
                     </div>
                 </div>
             </div>
@@ -163,9 +159,15 @@
                     <!-- Model -->
                     <div>
                         <label class="block text-xs font-medium text-slate-600 mb-1">Model</label>
-                        <select @change="form.model = $event.target.value"
-                                x-html="modelOptionsHtml()"
+                        <select x-model="form.model"
                                 class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 bg-white">
+                            <option :hidden="form.provider !== 'anthropic'" value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (fast)</option>
+                            <option :hidden="form.provider !== 'anthropic'" value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
+                            <option :hidden="form.provider !== 'anthropic'" value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
+                            <option :hidden="form.provider !== 'openai'" value="gpt-4o-mini">GPT-4o Mini</option>
+                            <option :hidden="form.provider !== 'openai'" value="gpt-4o">GPT-4o</option>
+                            <option :hidden="form.provider !== 'mistral'" value="mistral-small-latest">Mistral Small</option>
+                            <option :hidden="form.provider !== 'mistral'" value="mistral-large-latest">Mistral Large</option>
                         </select>
                     </div>
                     <!-- Audit Types -->
@@ -173,25 +175,25 @@
                         <label class="block text-xs font-medium text-slate-600 mb-1">Audit Types</label>
                         <div class="flex flex-wrap gap-2 mt-1">
                             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
-                                <input type="checkbox" :checked="hasAuditType('SEO_AUDIT')"
+                                <input type="checkbox" checked :checked="hasAuditType('SEO_AUDIT')"
                                        @change="toggleAuditType('SEO_AUDIT')" :disabled="optimizing"
                                        class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
                                 SEO
                             </label>
                             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
-                                <input type="checkbox" :checked="hasAuditType('GEO_AUDIT')"
+                                <input type="checkbox" checked :checked="hasAuditType('GEO_AUDIT')"
                                        @change="toggleAuditType('GEO_AUDIT')" :disabled="optimizing"
                                        class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
                                 GEO
                             </label>
                             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
-                                <input type="checkbox" :checked="hasAuditType('FAQ_KEYWORDS')"
+                                <input type="checkbox" checked :checked="hasAuditType('FAQ_KEYWORDS')"
                                        @change="toggleAuditType('FAQ_KEYWORDS')" :disabled="optimizing"
                                        class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
                                 FAQ
                             </label>
                             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer select-none">
-                                <input type="checkbox" :checked="hasAuditType('SCHEMA_GEN')"
+                                <input type="checkbox" checked :checked="hasAuditType('SCHEMA_GEN')"
                                        @change="toggleAuditType('SCHEMA_GEN')" :disabled="optimizing"
                                        class="rounded border-slate-300 text-violet-600 focus:ring-violet-400">
                                 Schema
@@ -205,12 +207,12 @@
                             :disabled="optimizing || !form.audit_types.length || !pageUrl.trim()"
                             class="px-5 py-2 bg-violet-600 text-white text-sm font-medium rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
                         <span x-show="!optimizing">⚡ Optimize Page</span>
-                        <span x-show="optimizing" class="inline-flex items-center gap-2">
+                        <span x-show="optimizing" style="display:none" class="inline-flex items-center gap-2">
                             <span class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
                             <span x-text="jobStatus === 'running' ? 'Running LLM…' : 'Starting…'"></span>
                         </span>
                     </button>
-                    <span x-show="optimizing && jobStatus === 'running'" class="text-xs text-slate-400">
+                    <span x-show="optimizing && jobStatus === 'running'" style="display:none" class="text-xs text-slate-400">
                         Fetching page content &amp; running audit prompts…
                     </span>
                 </div>
@@ -271,7 +273,7 @@
     <!-- ── Results section ──────────────────────────────────────────────────── -->
 
     <!-- Spinner while running -->
-    <div x-show="optimizing"
+    <div x-show="optimizing" style="display:none"
          class="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
         <div class="flex flex-col items-center gap-3">
             <div class="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin"></div>
@@ -596,15 +598,6 @@ function standaloneOptimize() {
             if (this.pastGuides.length > 0) this.loadGuideByIdx(0);
         },
 
-        modelOptionsHtml() {
-            const opts = this.modelOptions();
-            const cur  = this.form.model;
-            const hasCur = opts.some(m => m.value === cur);
-            return opts.map((m, i) =>
-                `<option value="${m.value}"${(hasCur ? m.value === cur : i === 0) ? ' selected' : ''}>${m.label}</option>`
-            ).join('');
-        },
-
         parseQueries() {
             const lines = this.queryInput.trim().split('\n').filter(l => l.trim());
             this.queries = lines.map(line => {
@@ -659,11 +652,22 @@ function standaloneOptimize() {
             return out;
         },
 
-        loadGuideByIdx(idx) {
+        async loadGuideByIdx(idx) {
             const g = this.pastGuides[idx];
-            if (!g || !g.guide_json) return;
-            const gj = g.guide_json;
+            if (!g) return;
+            this.activeGuideIdx = idx;
             this.pageUrl = g.url || '';
+            // guide_json is loaded on-demand to keep initial page data small
+            if (!g.guide_json) {
+                try {
+                    const data = await (await fetch(`/api/guide/${g.id}`)).json();
+                    if (data.guide_json) {
+                        g.guide_json = data.guide_json;
+                    }
+                } catch(e) { return; }
+            }
+            const gj = g.guide_json;
+            if (!gj) return;
             this.activeGuide = {
                 id:         g.id,
                 url:        g.url,
@@ -672,7 +676,6 @@ function standaloneOptimize() {
                 model:      g.model,
                 results:    this._processResults(gj.results),
             };
-            this.activeGuideIdx = idx;
         },
 
         async toggleReviewed() {

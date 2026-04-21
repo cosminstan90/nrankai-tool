@@ -46,7 +46,7 @@ for _k, _v in dotenv_values(_env_path).items():
 
 # Import database and models
 from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
-from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router
+from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
 from sqlalchemy import select, func, desc, case
@@ -58,6 +58,7 @@ from api.limiter import limiter
 
 # Scheduler task reference (global)
 scheduler_task = None
+_benchmark_tick = 0  # recalculate geo benchmarks every 24 h (1440 ticks at 60s intervals)
 
 
 @asynccontextmanager
@@ -136,8 +137,13 @@ async def lifespan(app: FastAPI):
     
     # Start scheduler loop
     from api.routes.schedules import check_and_run_schedules
+    from api.workers.fanout_tracker_worker import check_and_run_due_trackings
+    _tracking_tick = 0  # count scheduler ticks to run tracking every 15 min
+    _bm_tick = 0        # geo benchmark recalc every 1440 ticks (~24 h)
+
     async def scheduler_loop():
         """Background scheduler that checks schedules every minute."""
+        nonlocal _tracking_tick, _bm_tick
         while True:
             try:
                 # Hard timeout: if check_and_run_schedules hangs (DB lock, network
@@ -147,10 +153,58 @@ async def lifespan(app: FastAPI):
                 print("[WARNING] Scheduler: check_and_run_schedules timed out after 45 s -- skipping tick")
             except Exception as e:
                 print(f"[ERROR] Scheduler error: {e}")
+
+            # Fan-out tracking: check every 15 minutes (every 15th tick)
+            _tracking_tick += 1
+            if _tracking_tick >= 15:
+                _tracking_tick = 0
+                try:
+                    await asyncio.wait_for(check_and_run_due_trackings(), timeout=300)
+                except asyncio.TimeoutError:
+                    print("[WARNING] Fanout tracker: timed out after 300 s -- skipping tick")
+                except Exception as e:
+                    print(f"[ERROR] Fanout tracker error: {e}")
+
+            # Geo benchmark recalc: every 1440 ticks (~24 h)
+            _bm_tick += 1
+            if _bm_tick >= 1440:
+                _bm_tick = 0
+                try:
+                    from api.workers.benchmark_calculator import calculate_geo_benchmarks
+                    async with AsyncSessionLocal() as _bmdb:
+                        await calculate_geo_benchmarks(_bmdb)
+                    print("[OK] Geo benchmarks recalculated")
+                except Exception as e:
+                    print(f"[ERROR] Benchmark recalc error: {e}")
+
             await asyncio.sleep(60)  # Check every minute
     
     scheduler_task = asyncio.create_task(scheduler_loop())
     print("[OK] Scheduler started (checks every 60 seconds)")
+
+    # Auto-register n8n webhook if N8N_WEBHOOK_URL is set (Prompt 20)
+    _n8n_url = os.getenv("N8N_WEBHOOK_URL")
+    if _n8n_url:
+        from api.models.database import FanoutWebhook, AsyncSessionLocal
+        from api.workers.webhook_sender import ALL_EVENTS
+        from sqlalchemy import select as _sel
+        async with AsyncSessionLocal() as _wdb:
+            _existing = (await _wdb.execute(_sel(FanoutWebhook).where(FanoutWebhook.webhook_url == _n8n_url))).scalar_one_or_none()
+            if not _existing:
+                _wdb.add(FanoutWebhook(name="n8n (auto)", webhook_url=_n8n_url, events=ALL_EVENTS))
+                await _wdb.commit()
+                print(f"[OK] Registered default n8n webhook: {_n8n_url}")
+
+    # Seed prompt library (Prompt 21) — no-op if already populated
+    try:
+        from api.workers.prompt_library import PromptLibrary
+        from api.models._base import AsyncSessionLocal as _ASL
+        async with _ASL() as _pldb:
+            _seeded = await PromptLibrary.seed(_pldb)
+            if _seeded:
+                print(f"[OK] Seeded {_seeded} prompts into prompt library")
+    except Exception as _ple:
+        print(f"[WARN] Prompt library seed failed: {_ple}")
 
     # Start lead audit worker (polls nrankai.com for public free-audit jobs)
     from api.workers.lead_audit_worker import lead_audit_worker_loop
@@ -311,4 +365,13 @@ app.include_router(insights_router)
 app.include_router(llms_txt_router)
 app.include_router(guide_router)
 app.include_router(fanout_router)
+app.include_router(projects_router)
+app.include_router(entity_router)
+app.include_router(gsc_fanout_router)
+app.include_router(mention_seeding_router)
+app.include_router(bot_access_router)
+app.include_router(cocitation_router)
+app.include_router(answer_calibration_router)
+app.include_router(multilingual_router)
+app.include_router(content_iq_router)
 app.include_router(pages_router)

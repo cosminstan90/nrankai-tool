@@ -109,7 +109,7 @@ async def standalone_optimize_page(
 
     past_guides = []
     for g in past_guides_rows:
-        gj = _repair_guide_json(g.guide_json) if g.guide_json else None
+        # Only include metadata — guide_json is fetched on demand via /api/guide/{id}
         past_guides.append({
             "id":         g.id,
             "url":        g.url,
@@ -117,7 +117,7 @@ async def standalone_optimize_page(
             "model":      g.model,
             "reviewed":   bool(g.reviewed),
             "created_at": g.created_at.strftime("%Y-%m-%d %H:%M") if g.created_at else None,
-            "guide_json": gj,
+            "guide_json": None,
         })
 
     return templates.TemplateResponse("optimize_standalone.html", {

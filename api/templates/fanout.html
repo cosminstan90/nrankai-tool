@@ -104,7 +104,7 @@
 
             <!-- Coverage badge (only if target_url was set) -->
             <template x-if="form.target_url && result?.stats">
-                <span class="ml-auto px-3 py-1 rounded-full text-xs font-semibold"
+                <span class="px-3 py-1 rounded-full text-xs font-semibold"
                     :class="result.stats.target_found
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-600'"
@@ -112,6 +112,53 @@
                         ? `✓ Your site found (position ${result.stats.target_position})`
                         : '✗ Your site not found in sources'">
                 </span>
+            </template>
+            <!-- Sentiment pill (Prompt 23) -->
+            <template x-if="sentiment">
+                <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                    :class="{
+                        'bg-green-100 text-green-700':  sentiment.overall === 'positive',
+                        'bg-yellow-100 text-yellow-700': sentiment.overall === 'neutral',
+                        'bg-red-100 text-red-600':      sentiment.overall === 'negative',
+                        'bg-gray-100 text-gray-500':    sentiment.overall === 'not_mentioned',
+                    }"
+                    x-text="{ positive: '😊 Positive', neutral: '😐 Neutral', negative: '😟 Negative', not_mentioned: '👻 Not Mentioned' }[sentiment.overall] || sentiment.overall">
+                </span>
+            </template>
+
+            <!-- Composite score gauge (Prompt 22) -->
+            <template x-if="compositeScore">
+                <div class="flex items-center gap-2 ml-2">
+                    <svg width="36" height="20" viewBox="0 0 36 20">
+                        <path d="M4 18 A14 14 0 0 1 32 18" fill="none" stroke="#e5e7eb" stroke-width="4" stroke-linecap="round"/>
+                        <path d="M4 18 A14 14 0 0 1 32 18" fill="none"
+                            :stroke="compositeScore.score >= 70 ? '#22c55e' : compositeScore.score >= 50 ? '#eab308' : '#ef4444'"
+                            stroke-width="4" stroke-linecap="round"
+                            :stroke-dasharray="`${compositeScore.score * 0.44} 44`"/>
+                    </svg>
+                    <span class="text-sm font-bold"
+                        :class="compositeScore.score >= 70 ? 'text-green-600' : compositeScore.score >= 50 ? 'text-yellow-600' : 'text-red-500'"
+                        x-text="`GEO ${compositeScore.score}`"></span>
+                    <span class="text-xs text-gray-400" x-text="compositeScore.grade"></span>
+                </div>
+            </template>
+
+            <!-- Export buttons (Prompt 17) -->
+            <template x-if="result?.session_id">
+                <div class="ml-auto flex items-center gap-2">
+                    <button @click="runSentimentAnalysis()" :disabled="sentimentLoading"
+                        class="text-xs px-2 py-1 rounded border border-purple-200 text-purple-600 hover:bg-purple-50 disabled:opacity-50">
+                        <span x-text="sentimentLoading ? '…' : '💬 Sentiment'"></span>
+                    </button>
+                    <button @click="runCompositeScore()" :disabled="compositeLoading"
+                        class="text-xs px-2 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 disabled:opacity-50">
+                        <span x-text="compositeLoading ? '…' : '📊 GEO Score'"></span>
+                    </button>
+                    <a :href="`/api/fanout/sessions/${result.session_id}/export?format=json`"
+                        class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition">↓ JSON</a>
+                    <a :href="`/api/fanout/sessions/${result.session_id}/export?format=csv`"
+                        class="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition">↓ CSV</a>
+                </div>
             </template>
         </div>
 
@@ -153,6 +200,31 @@
                         <span class="px-1.5 py-0.5 text-xs rounded-full bg-red-100 text-red-600 font-semibold"
                             x-text="actionCards.length"></span>
                     </template>
+                </button>
+                <button @click="activeTab = 'multi'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'multi' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Multi-Engine
+                </button>
+                <button @click="activeTab = 'discovery'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'discovery' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Discovery
+                </button>
+                <button @click="activeTab = 'timeline'; loadTrackingConfigs()"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'timeline' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Timeline
+                </button>
+                <button @click="activeTab = 'competitive'"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'competitive' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    Competitive
+                </button>
+                <button @click="activeTab = 'library'; loadPromptLibrary()"
+                    class="px-4 py-2 text-sm font-medium border-b-2 transition"
+                    :class="activeTab === 'library' ? 'border-purple-500 text-purple-600' : 'border-transparent text-gray-500 hover:text-gray-700'">
+                    📚 Library
                 </button>
             </nav>
         </div>
@@ -358,6 +430,681 @@
             </div>
         </div>
 
+        <!-- ══ Tab: Multi-Engine ══════════════════════════════════════════ -->
+        <div x-show="activeTab === 'multi'" x-cloak>
+
+            <!-- Run form -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">Run Multi-Engine Analysis</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Prompt</label>
+                        <input type="text" x-model="multiForm.prompt" placeholder="best seo agency romania"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Engines</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <template x-for="eng in ['openai','anthropic','gemini','perplexity']" :key="eng">
+                                <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                    <input type="checkbox" :value="eng" x-model="multiForm.engines" class="rounded">
+                                    <span class="capitalize" x-text="eng"></span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="flex items-end">
+                        <button @click="runMultiEngine()"
+                            :disabled="multiLoading || !multiForm.prompt.trim() || multiForm.engines.length < 2"
+                            class="w-full px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition flex items-center justify-center gap-2">
+                            <svg x-show="multiLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                            </svg>
+                            <span x-text="multiLoading ? 'Analyzing…' : '⚡ Compare Engines'"></span>
+                        </button>
+                    </div>
+                </div>
+                <p x-show="multiError" x-text="multiError" class="text-xs text-red-500 mt-2"></p>
+            </div>
+
+            <!-- Results -->
+            <template x-if="multiResult">
+                <div class="space-y-4">
+                    <!-- Agreement gauge -->
+                    <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-3">
+                            <h4 class="text-sm font-semibold text-gray-700">Engine Agreement</h4>
+                            <span class="text-lg font-bold"
+                                :class="multiResult.engine_agreement_score > 50 ? 'text-green-600' : multiResult.engine_agreement_score > 20 ? 'text-yellow-600' : 'text-red-500'"
+                                x-text="`${multiResult.engine_agreement_score}%`"></span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-3">
+                            <div class="h-3 rounded-full transition-all duration-500"
+                                :class="multiResult.engine_agreement_score > 50 ? 'bg-green-500' : multiResult.engine_agreement_score > 20 ? 'bg-yellow-400' : 'bg-red-400'"
+                                :style="`width: ${multiResult.engine_agreement_score}%`"></div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1.5">
+                            <span x-text="multiResult.source_overlap?.all_engines?.length ?? 0"></span> sources shared across all engines •
+                            <span x-text="multiResult.combined_sources?.length ?? 0"></span> total unique sources
+                        </p>
+                    </div>
+
+                    <!-- Per-engine breakdown -->
+                    <div class="grid gap-3" :style="`grid-template-columns: repeat(${Object.keys(multiResult.engines).length}, 1fr)`">
+                        <template x-for="[eng, data] in Object.entries(multiResult.engines)" :key="eng">
+                            <div class="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-semibold capitalize text-gray-700" x-text="eng"></span>
+                                    <span class="text-xs text-gray-400" x-text="data.model"></span>
+                                </div>
+                                <div class="flex gap-4 text-center">
+                                    <div>
+                                        <div class="text-xl font-bold text-gray-800" x-text="data.total_queries"></div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">Queries</div>
+                                    </div>
+                                    <div>
+                                        <div class="text-xl font-bold text-gray-800" x-text="data.total_sources"></div>
+                                        <div class="text-[10px] text-gray-500 uppercase tracking-wide">Sources</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Source overlap table -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <h4 class="text-sm font-semibold text-gray-700">Source Overlap</h4>
+                            <span class="text-xs text-gray-400">Shared by all engines highlighted</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left font-medium text-gray-500">Source</th>
+                                        <template x-for="eng in Object.keys(multiResult.engines)" :key="eng">
+                                            <th class="px-4 py-2 text-center font-medium text-gray-500 capitalize" x-text="eng"></th>
+                                        </template>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <template x-for="src in multiResult.combined_sources.slice(0,20)" :key="src.url">
+                                        <tr :class="multiResult.source_overlap.all_engines.includes(src.url) ? 'bg-purple-50' : 'hover:bg-gray-50'">
+                                            <td class="px-4 py-2">
+                                                <a :href="src.url" target="_blank" class="text-blue-600 hover:underline text-xs" x-text="src.domain || src.url"></a>
+                                            </td>
+                                            <template x-for="eng in Object.keys(multiResult.engines)" :key="eng">
+                                                <td class="px-4 py-2 text-center">
+                                                    <span x-text="multiResult.engines[eng]?.sources?.some(s => s.url === src.url) ? '✓' : '—'"
+                                                        :class="multiResult.engines[eng]?.sources?.some(s => s.url === src.url) ? 'text-green-600 font-bold' : 'text-gray-300'"></span>
+                                                </td>
+                                            </template>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- ══ Tab: Discovery ═════════════════════════════════════════════ -->
+        <div x-show="activeTab === 'discovery'" x-cloak>
+
+            <!-- Form -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">Prompt Discovery — Which prompts mention your brand?</h3>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Domain</label>
+                        <input type="text" x-model="discForm.target_domain" placeholder="example.com"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Brand</label>
+                        <input type="text" x-model="discForm.target_brand" placeholder="Example Agency"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Category</label>
+                        <select x-model="discForm.category"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400">
+                            <option value="generic">Generic</option>
+                            <option value="seo_agency">SEO Agency</option>
+                            <option value="beauty_clinic">Beauty Clinic</option>
+                            <option value="dental_clinic">Dental Clinic</option>
+                            <option value="restaurant">Restaurant</option>
+                            <option value="saas">SaaS</option>
+                            <option value="law_firm">Law Firm</option>
+                            <option value="real_estate">Real Estate</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Location</label>
+                        <input type="text" x-model="discForm.location" placeholder="Bucharest, Romania"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-400">
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 mt-3">
+                    <label class="text-xs font-medium text-gray-600">Engine:</label>
+                    <select x-model="discForm.engines[0]" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="openai">OpenAI</option>
+                        <option value="anthropic">Anthropic</option>
+                        <option value="gemini">Gemini</option>
+                        <option value="perplexity">Perplexity</option>
+                    </select>
+                    <label class="text-xs font-medium text-gray-600 ml-2">Max prompts:</label>
+                    <select x-model="discForm.max_prompts" class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                        <option value="5">5 (quick)</option>
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                    </select>
+                    <label class="flex items-center gap-1.5 text-xs cursor-pointer ml-2">
+                        <input type="checkbox" x-model="discForm.quick" class="rounded">
+                        Quick mode
+                    </label>
+                    <button @click="runDiscovery()"
+                        :disabled="discLoading || !discForm.target_domain.trim()"
+                        class="ml-auto px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-2">
+                        <svg x-show="discLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                        </svg>
+                        <span x-text="discLoading ? 'Discovering…' : '🔍 Run Discovery'"></span>
+                    </button>
+                </div>
+                <p x-show="discError" x-text="discError" class="text-xs text-red-500 mt-2"></p>
+            </div>
+
+            <!-- Results -->
+            <template x-if="discResult">
+                <div class="space-y-4">
+                    <!-- Mention rate bar -->
+                    <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="text-sm font-semibold text-gray-700">Mention Rate</h4>
+                            <span class="text-2xl font-bold"
+                                :class="discResult.mention_rate > 0.5 ? 'text-green-600' : discResult.mention_rate > 0.2 ? 'text-yellow-500' : 'text-red-500'"
+                                x-text="`${Math.round(discResult.mention_rate * 100)}%`"></span>
+                        </div>
+                        <div class="w-full bg-gray-100 rounded-full h-4 mb-2">
+                            <div class="h-4 rounded-full transition-all"
+                                :class="discResult.mention_rate > 0.5 ? 'bg-green-500' : discResult.mention_rate > 0.2 ? 'bg-yellow-400' : 'bg-red-400'"
+                                :style="`width: ${Math.round(discResult.mention_rate * 100)}%`"></div>
+                        </div>
+                        <p class="text-xs text-gray-500">
+                            Mentioned in <strong x-text="discResult.prompts_with_mention"></strong> of <strong x-text="discResult.prompts_tested"></strong> prompts tested •
+                            Cost: $<span x-text="discResult.total_cost_usd"></span>
+                        </p>
+                    </div>
+
+                    <!-- Split table: mentioned vs not -->
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="bg-white border border-green-200 rounded-xl shadow-sm overflow-hidden">
+                            <div class="px-4 py-2.5 bg-green-50 border-b border-green-100">
+                                <h4 class="text-sm font-semibold text-green-700">✓ Mentioned in (<span x-text="discResult.mentioned_in.length"></span>)</h4>
+                            </div>
+                            <ul class="divide-y divide-gray-100">
+                                <template x-for="r in discResult.mentioned_in" :key="r.prompt">
+                                    <li class="px-4 py-2.5">
+                                        <div class="text-sm text-gray-800 line-clamp-1" x-text="r.prompt"></div>
+                                        <div class="flex items-center gap-2 mt-1">
+                                            <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600" x-text="r.cluster"></span>
+                                            <span class="text-xs text-green-600" x-text="`pos ${Object.values(r.position_per_engine || {})[0] || '?'}`"></span>
+                                        </div>
+                                    </li>
+                                </template>
+                                <li x-show="!discResult.mentioned_in.length" class="px-4 py-6 text-center text-gray-400 text-sm">None found</li>
+                            </ul>
+                        </div>
+                        <div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+                            <div class="px-4 py-2.5 bg-red-50 border-b border-red-100">
+                                <h4 class="text-sm font-semibold text-red-700">✗ Not mentioned (<span x-text="discResult.not_mentioned_in.length"></span>)</h4>
+                            </div>
+                            <ul class="divide-y divide-gray-100">
+                                <template x-for="r in discResult.not_mentioned_in.slice(0, 10)" :key="r.prompt">
+                                    <li class="px-4 py-2.5">
+                                        <div class="text-sm text-gray-800 line-clamp-1" x-text="r.prompt"></div>
+                                        <div class="text-xs text-gray-400 mt-0.5" x-text="r.top_competitors?.slice(0,2).join(', ') || ''"></div>
+                                    </li>
+                                </template>
+                                <li x-show="!discResult.not_mentioned_in.length" class="px-4 py-6 text-center text-gray-400 text-sm">All prompts matched!</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Competitor dominance -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <h4 class="text-sm font-semibold text-gray-700">Competitor Dominance</h4>
+                            <button @click="exportDiscovery()" class="text-xs text-gray-400 hover:text-blue-600 transition">↓ Export CSV</button>
+                        </div>
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50"><tr>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500">Domain</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">Appearances</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <template x-for="[domain, stats] in Object.entries(discResult.competitor_dominance || {}).sort((a,b) => b[1].appearances - a[1].appearances).slice(0,10)" :key="domain">
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="px-4 py-2 text-gray-700" x-text="domain"></td>
+                                        <td class="px-4 py-2 text-right font-mono text-gray-600" x-text="stats.appearances"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- ══ Tab: Timeline ══════════════════════════════════════════════ -->
+        <div x-show="activeTab === 'timeline'" x-cloak>
+
+            <!-- Config selector + create -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-semibold text-gray-700">Fan-Out Timeline Tracking</h3>
+                    <button @click="tlShowCreate = !tlShowCreate"
+                        class="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition">
+                        + New Tracking Config
+                    </button>
+                </div>
+
+                <!-- Create form (collapsible) -->
+                <div x-show="tlShowCreate" x-transition class="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-100">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Config Name</label>
+                            <input type="text" x-model="tlForm.name" placeholder="My Brand Tracking"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Domain</label>
+                            <input type="text" x-model="tlForm.target_domain" placeholder="example.com"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Schedule</label>
+                            <select x-model="tlForm.schedule" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="daily">Daily</option>
+                                <option value="weekly" selected>Weekly</option>
+                                <option value="monthly">Monthly</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Engine</label>
+                            <select x-model="tlForm.engines[0]" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="openai">OpenAI</option>
+                                <option value="anthropic">Anthropic</option>
+                                <option value="gemini">Gemini</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Prompts (one per line)</label>
+                        <textarea x-model="tlForm.prompts_raw" rows="3" placeholder="best seo agency romania&#10;top marketing companies romania"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"></textarea>
+                    </div>
+                    <button @click="createTrackingConfig()"
+                        :disabled="tlCreating || !tlForm.name || !tlForm.target_domain || !tlForm.prompts_raw"
+                        class="px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition">
+                        <span x-text="tlCreating ? 'Creating…' : 'Create Config'"></span>
+                    </button>
+                </div>
+
+                <!-- Config list -->
+                <div x-show="trackingConfigs.length > 0" class="space-y-2">
+                    <template x-for="cfg in trackingConfigs" :key="cfg.id">
+                        <div class="flex items-center justify-between px-4 py-3 rounded-lg border cursor-pointer"
+                            :class="tlSelectedConfig?.id === cfg.id ? 'border-purple-400 bg-purple-50' : 'border-gray-200 hover:bg-gray-50'"
+                            @click="selectTrackingConfig(cfg)">
+                            <div>
+                                <span class="text-sm font-medium text-gray-800" x-text="cfg.name"></span>
+                                <span class="ml-2 text-xs text-gray-400" x-text="cfg.target_domain"></span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600" x-text="cfg.schedule"></span>
+                                <button @click.stop="runTrackingNow(cfg.id)"
+                                    class="text-xs text-purple-600 hover:text-purple-800 transition">▶ Run now</button>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p x-show="trackingConfigs.length === 0" class="text-sm text-gray-400 text-center py-4">No tracking configs yet — create one above.</p>
+            </div>
+
+            <!-- Timeline chart -->
+            <template x-if="tlResult">
+                <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-sm font-semibold text-gray-700" x-text="tlSelectedConfig?.name"></h4>
+                        <div class="flex items-center gap-3">
+                            <!-- Trend badge -->
+                            <template x-if="tlResult.trend">
+                                <span class="px-2.5 py-1 text-xs font-semibold rounded-full"
+                                    :class="{
+                                        'bg-green-100 text-green-700': tlResult.trend === 'up',
+                                        'bg-red-100 text-red-600':    tlResult.trend === 'down',
+                                        'bg-gray-100 text-gray-600':  tlResult.trend === 'stable',
+                                    }"
+                                    x-text="{up: '↑ Improving', down: '↓ Declining', stable: '→ Stable'}[tlResult.trend]"></span>
+                            </template>
+                            <template x-if="tlResult.model_drift_detected">
+                                <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-700">⚠ Model drift</span>
+                            </template>
+                            <!-- Period selector -->
+                            <select @change="loadTimeline(tlSelectedConfig.id, $event.target.value)"
+                                class="text-xs border border-gray-200 rounded px-2 py-1">
+                                <option value="7d">7 days</option>
+                                <option value="30d" selected>30 days</option>
+                                <option value="90d">90 days</option>
+                                <option value="all">All time</option>
+                            </select>
+                        </div>
+                    </div>
+                    <canvas id="timelineChart" height="100"></canvas>
+                    <div class="flex items-center justify-between mt-2">
+                        <p class="text-xs text-gray-400"
+                            x-text="`${tlResult.run_count} data points • Change vs first: ${tlResult.change_vs_first !== null ? (tlResult.change_vs_first * 100).toFixed(1) + '%' : 'N/A'}`"></p>
+                        <a :href="`/api/fanout/tracking/${tlSelectedConfig?.id}/export?format=csv`"
+                            class="text-xs text-gray-400 hover:text-blue-600 transition">↓ Export CSV</a>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- ══ Tab: Competitive ═══════════════════════════════════════════ -->
+        <div x-show="activeTab === 'competitive'" x-cloak>
+
+            <!-- Form -->
+            <div class="bg-white border border-gray-200 rounded-xl p-5 mb-4 shadow-sm">
+                <h3 class="text-sm font-semibold text-gray-700 mb-3">Competitive Fan-Out Comparison</h3>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Prompts (one per line, max 20)</label>
+                        <textarea x-model="compForm.prompts_raw" rows="5"
+                            placeholder="best seo agency romania&#10;top marketing agency bucharest&#10;seo agency pricing romania"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Competitors (one per line, max 5, include your domain)</label>
+                        <textarea x-model="compForm.competitors_raw" rows="5"
+                            placeholder="yourdomain.com&#10;competitor1.com&#10;competitor2.com"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"></textarea>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 mt-3 flex-wrap">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Target domain</label>
+                        <input type="text" x-model="compForm.target_domain" placeholder="yourdomain.com"
+                            class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-48">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Engine</label>
+                        <select x-model="compForm.engines[0]" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                            <option value="openai">OpenAI</option>
+                            <option value="anthropic">Anthropic</option>
+                            <option value="gemini">Gemini</option>
+                        </select>
+                    </div>
+                    <!-- Cost estimate -->
+                    <div class="ml-2 text-xs text-gray-500 self-end pb-2">
+                        ≈ $<span x-text="(compForm.prompts_raw.split('\n').filter(l=>l.trim()).length * 0.005).toFixed(3)"></span>
+                    </div>
+                    <button @click="runCompetitive()"
+                        :disabled="compLoading || !compForm.prompts_raw.trim() || !compForm.competitors_raw.trim()"
+                        class="ml-auto self-end px-5 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition flex items-center gap-2">
+                        <svg x-show="compLoading" class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                        </svg>
+                        <span x-text="compLoading ? 'Comparing… (may take minutes)' : '🏆 Compare'"></span>
+                    </button>
+                </div>
+                <p x-show="compError" x-text="compError" class="text-xs text-red-500 mt-2"></p>
+            </div>
+
+            <!-- Results -->
+            <template x-if="compResult?.report">
+                <div class="space-y-4">
+                    <!-- Ranking table -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700">Overall Ranking</h4>
+                        </div>
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50"><tr>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500">Rank</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500">Domain</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">Mention Rate</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">Avg Position</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500">Score</th>
+                            </tr></thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <template x-for="row in compResult.report.overall_ranking" :key="row.domain">
+                                    <tr :class="row.domain === compForm.target_domain ? 'bg-blue-50 font-semibold' : 'hover:bg-gray-50'">
+                                        <td class="px-4 py-2.5 text-gray-500" x-text="`#${row.rank}`"></td>
+                                        <td class="px-4 py-2.5 text-gray-800" x-text="row.domain"></td>
+                                        <td class="px-4 py-2.5 text-right" x-text="`${Math.round((compResult.report.competitors[row.domain]?.mention_rate ?? 0) * 100)}%`"></td>
+                                        <td class="px-4 py-2.5 text-right text-gray-500" x-text="compResult.report.competitors[row.domain]?.avg_position?.toFixed(1) ?? '—'"></td>
+                                        <td class="px-4 py-2.5 text-right font-mono" x-text="row.score?.toFixed(1)"></td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Head-to-head matrix -->
+                    <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                        <div class="px-4 py-3 border-b border-gray-100">
+                            <h4 class="text-sm font-semibold text-gray-700">Head-to-Head Matrix</h4>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left font-medium text-gray-500 min-w-32">Prompt</th>
+                                        <th class="px-3 py-2 text-left font-medium text-gray-500">Cluster</th>
+                                        <template x-for="domain in Object.keys(compResult.report.competitors)" :key="domain">
+                                            <th class="px-3 py-2 text-center font-medium text-gray-500 max-w-20 truncate" x-text="domain"></th>
+                                        </template>
+                                        <th class="px-3 py-2 text-center font-medium text-gray-500">Winner</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <template x-for="row in compResult.report.head_to_head" :key="row.prompt">
+                                        <tr class="hover:bg-gray-50">
+                                            <td class="px-3 py-2 text-gray-700 max-w-xs"><span class="line-clamp-1" x-text="row.prompt"></span></td>
+                                            <td class="px-3 py-2"><span class="px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600" x-text="row.cluster"></span></td>
+                                            <template x-for="domain in Object.keys(compResult.report.competitors)" :key="domain">
+                                                <td class="px-3 py-2 text-center">
+                                                    <span x-text="row.results?.[domain]?.found ? `✓ ${row.results[domain].position || '?'}` : '—'"
+                                                        :class="row.results?.[domain]?.found ? 'text-green-600 font-semibold' : 'text-gray-300'"></span>
+                                                </td>
+                                            </template>
+                                            <td class="px-3 py-2 text-center">
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700" x-text="row.winner || '—'"></span>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Recommendations -->
+                    <template x-if="compResult.report.recommendations?.length">
+                        <div class="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-3">Recommendations</h4>
+                            <ul class="space-y-2">
+                                <template x-for="(rec, i) in compResult.report.recommendations" :key="i">
+                                    <li class="flex items-start gap-2 text-sm text-gray-700">
+                                        <span class="text-gray-400 flex-shrink-0 mt-0.5">→</span>
+                                        <span x-text="rec"></span>
+                                    </li>
+                                </template>
+                            </ul>
+                        </div>
+                    </template>
+                    <!-- Export button -->
+                    <div class="flex justify-end">
+                        <a :href="`/api/fanout/competitive/${compResult.report_id}/export?format=csv`"
+                            class="text-xs text-gray-400 hover:text-blue-600 transition">↓ Export CSV</a>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- ══ Tab: Prompt Library ════════════════════════════════════════ -->
+        <div x-show="activeTab === 'library'" x-cloak>
+
+            <!-- Filter bar -->
+            <div class="bg-white border border-gray-200 rounded-xl p-4 mb-4 shadow-sm">
+                <div class="flex flex-wrap gap-3 items-end">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Vertical</label>
+                        <select x-model="libForm.vertical" @change="loadPromptLibrary()"
+                            class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                            <option value="">All verticals</option>
+                            <option value="seo_agency">SEO Agency</option>
+                            <option value="beauty_clinic">Beauty Clinic</option>
+                            <option value="dental_clinic">Dental Clinic</option>
+                            <option value="restaurant">Restaurant</option>
+                            <option value="saas">SaaS</option>
+                            <option value="real_estate">Real Estate</option>
+                            <option value="law_firm">Law Firm</option>
+                            <option value="generic">Generic</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Performance tier</label>
+                        <select x-model="libForm.performance" @change="loadPromptLibrary()"
+                            class="px-3 py-1.5 border border-gray-300 rounded-lg text-sm">
+                            <option value="">All tiers</option>
+                            <option value="high">High (≥60%)</option>
+                            <option value="medium">Medium (≥30%)</option>
+                            <option value="low">Low (&lt;30%)</option>
+                            <option value="untested">Untested</option>
+                        </select>
+                    </div>
+                    <div class="ml-auto flex items-center gap-3">
+                        <span class="text-xs text-gray-400" x-text="`${libPrompts.length} prompts`"></span>
+                        <button @click="libShowAdd = !libShowAdd"
+                            class="px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 transition">
+                            + Add Custom
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Add custom prompt form -->
+                <div x-show="libShowAdd" x-transition class="mt-3 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <div class="grid md:grid-cols-3 gap-3">
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Prompt text</label>
+                            <input type="text" x-model="libNewPrompt" placeholder="best {service} {city} {year}"
+                                class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">Vertical</label>
+                            <select x-model="libNewVertical" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <option value="generic">Generic</option>
+                                <option value="seo_agency">SEO Agency</option>
+                                <option value="beauty_clinic">Beauty Clinic</option>
+                                <option value="dental_clinic">Dental Clinic</option>
+                                <option value="restaurant">Restaurant</option>
+                                <option value="saas">SaaS</option>
+                                <option value="real_estate">Real Estate</option>
+                                <option value="law_firm">Law Firm</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button @click="addLibraryPrompt()"
+                        :disabled="!libNewPrompt.trim()"
+                        class="mt-2 px-4 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition">
+                        Add Prompt
+                    </button>
+                </div>
+            </div>
+
+            <!-- Stats bar -->
+            <template x-if="libStats">
+                <div class="grid grid-cols-4 gap-3 mb-4">
+                    <div class="bg-white border border-gray-200 rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-xl font-bold text-gray-800" x-text="libStats.total"></div>
+                        <div class="text-xs text-gray-500 mt-0.5">Total Prompts</div>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-xl font-bold text-green-700" x-text="libStats.by_tier?.high || 0"></div>
+                        <div class="text-xs text-green-600 mt-0.5">High Performers</div>
+                    </div>
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-xl font-bold text-yellow-700" x-text="libStats.by_tier?.medium || 0"></div>
+                        <div class="text-xs text-yellow-600 mt-0.5">Medium Performers</div>
+                    </div>
+                    <div class="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center shadow-sm">
+                        <div class="text-xl font-bold text-gray-600" x-text="libStats.by_tier?.untested || 0"></div>
+                        <div class="text-xs text-gray-500 mt-0.5">Untested</div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Prompt table -->
+            <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500">Prompt</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500 w-28">Vertical</th>
+                                <th class="px-4 py-2 text-left font-medium text-gray-500 w-24">Cluster</th>
+                                <th class="px-4 py-2 text-center font-medium text-gray-500 w-20">Tier</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500 w-20">Mention%</th>
+                                <th class="px-4 py-2 text-right font-medium text-gray-500 w-16">Uses</th>
+                                <th class="px-4 py-2 w-20"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="p in libPrompts" :key="p.id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-2.5 text-gray-800 max-w-xs">
+                                        <span class="line-clamp-1" x-text="p.prompt_text"></span>
+                                        <span x-show="p.is_template" class="ml-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-600">template</span>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-xs text-gray-500" x-text="p.vertical"></td>
+                                    <td class="px-4 py-2.5 text-xs text-gray-500" x-text="p.cluster || '—'"></td>
+                                    <td class="px-4 py-2.5 text-center">
+                                        <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                                            :class="{
+                                                'bg-green-100 text-green-700':  p.performance_tier === 'high',
+                                                'bg-yellow-100 text-yellow-700': p.performance_tier === 'medium',
+                                                'bg-red-100 text-red-600':      p.performance_tier === 'low',
+                                                'bg-gray-100 text-gray-500':    p.performance_tier === 'untested',
+                                            }"
+                                            x-text="p.performance_tier"></span>
+                                    </td>
+                                    <td class="px-4 py-2.5 text-right text-xs text-gray-600"
+                                        x-text="p.avg_mention_rate !== null ? Math.round(p.avg_mention_rate * 100) + '%' : '—'"></td>
+                                    <td class="px-4 py-2.5 text-right text-xs text-gray-500" x-text="p.times_used"></td>
+                                    <td class="px-4 py-2.5 text-center">
+                                        <button @click="useLibraryPrompt(p)"
+                                            class="text-xs text-blue-600 hover:text-blue-800 transition">+ Use</button>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="libPrompts.length === 0">
+                                <td colspan="7" class="px-4 py-8 text-center text-gray-400 text-sm">
+                                    No prompts found. Try a different filter or add a custom prompt above.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- ── History ──────────────────────────────────────────────────────── -->
@@ -461,6 +1208,13 @@ function fanoutApp() {
         actionCards:        [],
         actionCardsLoading: false,
         _actionCardsSessionId: null,
+
+        // Prompt 22 — composite score
+        compositeScore:   null,
+        compositeLoading: false,
+        // Prompt 23 — sentiment
+        sentiment:        null,
+        sentimentLoading: false,
 
         async init() {
             await this.loadHistory();
@@ -635,6 +1389,398 @@ function fanoutApp() {
             if (!iso) return '';
             const d = new Date(iso);
             return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' });
+        },
+
+        // ── Multi-Engine ──────────────────────────────────────────────────────
+        multiForm:    { prompt: '', engines: ['openai', 'gemini'] },
+        multiResult:  null,
+        multiLoading: false,
+        multiError:   '',
+
+        async runMultiEngine() {
+            if (!this.multiForm.prompt.trim() || this.multiForm.engines.length < 2) return;
+            this.multiLoading = true;
+            this.multiError   = '';
+            this.multiResult  = null;
+            try {
+                const res = await fetch('/api/fanout/analyze-multi', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        prompt:  this.multiForm.prompt.trim(),
+                        engines: this.multiForm.engines,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                this.multiResult = await res.json();
+            } catch (e) {
+                this.multiError = e.message;
+            } finally {
+                this.multiLoading = false;
+            }
+        },
+
+        multiAgreementPct() {
+            return Math.round((this.multiResult?.engine_agreement_score ?? 0) * 100);
+        },
+
+        multiAgreementColor() {
+            const pct = this.multiAgreementPct();
+            if (pct >= 70) return 'bg-green-500';
+            if (pct >= 40) return 'bg-yellow-500';
+            return 'bg-red-500';
+        },
+
+        // ── Discovery ─────────────────────────────────────────────────────────
+        discForm: {
+            target_domain: '', target_brand: '', category: 'generic',
+            location: '', engines: ['openai'], max_prompts: 20, quick: false,
+        },
+        discResult:  null,
+        discLoading: false,
+        discError:   '',
+
+        async runDiscovery() {
+            if (!this.discForm.target_domain.trim()) return;
+            this.discLoading = true;
+            this.discError   = '';
+            this.discResult  = null;
+            try {
+                const res = await fetch('/api/fanout/discover', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        target_domain: this.discForm.target_domain.trim(),
+                        target_brand:  this.discForm.target_brand.trim() || undefined,
+                        category:      this.discForm.category,
+                        location:      this.discForm.location.trim() || undefined,
+                        engines:       this.discForm.engines,
+                        max_prompts:   parseInt(this.discForm.max_prompts),
+                        quick:         this.discForm.quick,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                this.discResult = await res.json();
+            } catch (e) {
+                this.discError = e.message;
+            } finally {
+                this.discLoading = false;
+            }
+        },
+
+        discMentionPct() {
+            const r = this.discResult;
+            if (!r || !r.total_prompts) return 0;
+            return Math.round((r.mentioned_count / r.total_prompts) * 100);
+        },
+
+        exportDiscovery() {
+            if (!this.discResult?.results) return;
+            const rows = [['prompt','mentioned','mention_type','confidence','competitors_found']];
+            for (const r of this.discResult.results) {
+                rows.push([
+                    `"${(r.prompt||'').replace(/"/g,'""')}"`,
+                    r.mentioned ? 'yes' : 'no',
+                    r.mention_type || '',
+                    r.confidence || '',
+                    (r.competitors_found || []).join('; '),
+                ]);
+            }
+            const csv  = rows.map(r => r.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = `discovery_${this.discForm.target_domain}_${Date.now()}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        // ── Timeline / Tracking ───────────────────────────────────────────────
+        tlForm: {
+            name: '', target_domain: '', schedule: 'weekly',
+            engines: ['openai'], prompts_raw: '',
+        },
+        tlResult:         null,
+        tlLoading:        false,
+        tlShowCreate:     false,
+        tlCreating:       false,
+        tlSelectedConfig: null,
+        trackingConfigs:  [],
+        _tlChart:         null,
+
+        async loadTrackingConfigs() {
+            try {
+                const res = await fetch('/api/fanout/tracking');
+                if (res.ok) {
+                    this.trackingConfigs = await res.json();
+                    if (this.trackingConfigs.length && !this.tlSelectedConfig) {
+                        await this.selectTrackingConfig(this.trackingConfigs[0]);
+                    }
+                }
+            } catch (_) {}
+        },
+
+        async selectTrackingConfig(cfg) {
+            this.tlSelectedConfig = cfg;
+            await this.loadTimeline(cfg.id);
+        },
+
+        async createTrackingConfig() {
+            if (!this.tlForm.name || !this.tlForm.target_domain || !this.tlForm.prompts_raw) return;
+            this.tlCreating = true;
+            try {
+                const prompts = this.tlForm.prompts_raw.split('\n').map(l => l.trim()).filter(Boolean);
+                const res = await fetch('/api/fanout/tracking', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        name:          this.tlForm.name,
+                        target_domain: this.tlForm.target_domain,
+                        schedule:      this.tlForm.schedule,
+                        engines:       this.tlForm.engines,
+                        prompts:       prompts,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                const created = await res.json();
+                this.tlForm = { name: '', target_domain: '', schedule: 'weekly', engines: ['openai'], prompts_raw: '' };
+                this.tlShowCreate = false;
+                await this.loadTrackingConfigs();
+                await this.selectTrackingConfig(created);
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                this.tlCreating = false;
+            }
+        },
+
+        async runTrackingNow(configId) {
+            try {
+                const res = await fetch(`/api/fanout/tracking/${configId}/run-now`, { method: 'POST' });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                alert('Run started! Check back in a few minutes.');
+                setTimeout(() => this.loadTimeline(configId), 3000);
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        },
+
+        async loadTimeline(configId, period) {
+            this.tlLoading = true;
+            this.tlResult  = null;
+            try {
+                const qs  = period ? `?period=${period}` : '';
+                const res = await fetch(`/api/fanout/tracking/${configId}/timeline${qs}`);
+                if (res.ok) {
+                    this.tlResult = await res.json();
+                    this.$nextTick(() => this.renderTimelineChart());
+                }
+            } catch (_) {}
+            finally { this.tlLoading = false; }
+        },
+
+        renderTimelineChart() {
+            const runs = this.tlResult?.runs;
+            if (!runs || !runs.length) return;
+            const ctx = document.getElementById('timelineChart');
+            if (!ctx) return;
+            if (this._tlChart) { this._tlChart.destroy(); this._tlChart = null; }
+            const labels   = runs.map(r => this.formatDate(r.ran_at));
+            const mention  = runs.map(r => Math.round((r.mention_rate ?? 0) * 100));
+            const visible  = runs.map(r => r.visibility_score ?? 0);
+            this._tlChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label:           'Mention Rate %',
+                            data:            mention,
+                            borderColor:     'rgb(139,92,246)',
+                            backgroundColor: 'rgba(139,92,246,0.1)',
+                            tension:         0.3,
+                            fill:            true,
+                            yAxisID:         'y',
+                        },
+                        {
+                            label:           'Visibility Score',
+                            data:            visible,
+                            borderColor:     'rgb(59,130,246)',
+                            backgroundColor: 'rgba(59,130,246,0.05)',
+                            tension:         0.3,
+                            borderDash:      [5, 3],
+                            yAxisID:         'y2',
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { position: 'top' } },
+                    scales: {
+                        y:  { beginAtZero: true, max: 100, title: { display: true, text: 'Mention %' } },
+                        y2: { beginAtZero: true, position: 'right', title: { display: true, text: 'Visibility' }, grid: { drawOnChartArea: false } },
+                    },
+                },
+            });
+        },
+
+        tlTrendBadge() {
+            const runs = this.tlResult?.runs;
+            if (!runs || runs.length < 2) return null;
+            const last  = runs[runs.length - 1].mention_rate ?? 0;
+            const prev  = runs[runs.length - 2].mention_rate ?? 0;
+            const delta = Math.round((last - prev) * 100);
+            if (delta > 0) return { text: `+${delta}pp`, color: 'text-green-600 bg-green-50' };
+            if (delta < 0) return { text: `${delta}pp`, color: 'text-red-600 bg-red-50' };
+            return { text: '±0pp', color: 'text-gray-500 bg-gray-100' };
+        },
+
+        // ── Competitive ───────────────────────────────────────────────────────
+        compForm: {
+            prompts_raw: '', competitors_raw: '', target_domain: '', engines: ['openai'],
+        },
+        compResult:  null,
+        compLoading: false,
+        compError:   '',
+
+        async runCompetitive() {
+            if (!this.compForm.prompts_raw.trim() || !this.compForm.competitors_raw.trim()) return;
+            this.compLoading = true;
+            this.compError   = '';
+            this.compResult  = null;
+            try {
+                const prompts     = this.compForm.prompts_raw.split('\n').map(l => l.trim()).filter(Boolean);
+                const competitors = this.compForm.competitors_raw.split('\n').map(l => l.trim()).filter(Boolean);
+                const res = await fetch('/api/fanout/competitive', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({
+                        prompts,
+                        competitors,
+                        target_domain: this.compForm.target_domain.trim() || undefined,
+                        engines:       this.compForm.engines,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${res.status}`);
+                }
+                this.compResult = await res.json();
+            } catch (e) {
+                this.compError = e.message;
+            } finally {
+                this.compLoading = false;
+            }
+        },
+
+        compRankingColor(score) {
+            if (score >= 70) return 'text-green-600 font-semibold';
+            if (score >= 40) return 'text-yellow-600';
+            return 'text-red-500';
+        },
+
+        compH2HClass(val) {
+            if (!val) return 'bg-gray-50 text-gray-400 text-xs';
+            if (val >= 2) return 'bg-green-100 text-green-800 text-xs font-medium';
+            if (val === 1) return 'bg-yellow-50 text-yellow-800 text-xs';
+            return 'bg-red-50 text-red-700 text-xs';
+        },
+
+        // ── Prompt Library (Prompt 21) ────────────────────────────────────────
+        libForm:       { vertical: '', performance: '' },
+        libPrompts:    [],
+        libStats:      null,
+        libShowAdd:    false,
+        libNewPrompt:  '',
+        libNewVertical: 'generic',
+
+        async loadPromptLibrary() {
+            try {
+                const params = new URLSearchParams();
+                if (this.libForm.vertical)   params.set('vertical',    this.libForm.vertical);
+                if (this.libForm.performance) params.set('performance', this.libForm.performance);
+                params.set('limit', '100');
+
+                const [listRes, statsRes] = await Promise.all([
+                    fetch(`/api/fanout/prompt-library?${params}`),
+                    fetch('/api/fanout/prompt-library/stats'),
+                ]);
+                if (listRes.ok)  this.libPrompts = await listRes.json();
+                if (statsRes.ok) this.libStats   = await statsRes.json();
+            } catch (_) {}
+        },
+
+        async addLibraryPrompt() {
+            if (!this.libNewPrompt.trim()) return;
+            try {
+                const res = await fetch('/api/fanout/prompt-library', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify({ prompt_text: this.libNewPrompt.trim(), vertical: this.libNewVertical }),
+                });
+                if (res.ok) {
+                    this.libNewPrompt = '';
+                    this.libShowAdd   = false;
+                    await this.loadPromptLibrary();
+                }
+            } catch (_) {}
+        },
+
+        useLibraryPrompt(p) {
+            // Populate the main analyze form with this prompt
+            this.form.prompt = p.prompt_text;
+            this.activeTab   = 'queries';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        // ── Prompt 22: GEO Composite Score ───────────────────────────────────
+        async runCompositeScore() {
+            if (!this.result?.session_id) return;
+            this.compositeLoading = true;
+            try {
+                const res = await fetch(`/api/fanout/sessions/${this.result.session_id}/composite-score`);
+                if (res.ok) {
+                    this.compositeScore = await res.json();
+                }
+            } catch (_) {}
+            finally { this.compositeLoading = false; }
+        },
+
+        // ── Prompt 23: Sentiment Analysis ────────────────────────────────────
+        async runSentimentAnalysis() {
+            if (!this.result?.session_id) return;
+            this.sentimentLoading = true;
+            try {
+                const res = await fetch(`/api/fanout/sessions/${this.result.session_id}/analyze-sentiment`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}),
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    this.sentiment = {
+                        overall:          data.overall_sentiment,
+                        confidence:       data.confidence_score,
+                        positive_mentions: data.positive_mentions,
+                        negative_mentions: data.negative_mentions,
+                    };
+                }
+            } catch (_) {}
+            finally { this.sentimentLoading = false; }
         },
     };
 }
