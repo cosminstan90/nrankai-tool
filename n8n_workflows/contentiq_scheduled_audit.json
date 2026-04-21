@@ -1,0 +1,222 @@
+{
+  "name": "ContentIQ — Weekly Scheduled Audit",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0000-0000-000000000001",
+      "name": "Every Monday 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.WLA_BASE_URL || 'http://localhost:8000' }}/api/contentiq/audits",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "label",
+              "value": "={{ 'Weekly Audit — ' + new Date().toISOString().slice(0,10) }}"
+            },
+            {
+              "name": "domain",
+              "value": "pagani.ro"
+            },
+            {
+              "name": "sitemap_url",
+              "value": "https://pagani.ro/sitemap.xml"
+            },
+            {
+              "name": "triggered_by",
+              "value": "scheduled"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-0000-0000-000000000002",
+      "name": "Create Audit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($vars.WLA_BASE_URL || 'http://localhost:8000') + '/api/contentiq/audits/' + $('Create Audit').item.json.id + '/start' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "max_urls",
+              "value": "500"
+            },
+            {
+              "name": "concurrency",
+              "value": "10"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-0000-0000-000000000003",
+      "name": "Start Crawl",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "minutes"
+      },
+      "id": "a1b2c3d4-0004-0000-0000-000000000004",
+      "name": "Wait 30 min (crawl)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [900, 300],
+      "webhookId": "wait-crawl-done"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($vars.WLA_BASE_URL || 'http://localhost:8000') + '/api/contentiq/audits/' + $('Create Audit').item.json.id + '/briefs' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "concurrency",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-0000-0000-000000000005",
+      "name": "Generate Briefs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "minutes"
+      },
+      "id": "a1b2c3d4-0006-0000-0000-000000000006",
+      "name": "Wait 10 min (briefs)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1340, 300],
+      "webhookId": "wait-briefs-done"
+    },
+    {
+      "parameters": {
+        "url": "={{ ($vars.WLA_BASE_URL || 'http://localhost:8000') + '/api/contentiq/audits/' + $('Create Audit').item.json.id + '/export' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "a1b2c3d4-0007-0000-0000-000000000007",
+      "name": "Download XLSX",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "fromEmail": "hello@nrankai.com",
+        "toEmail": "={{ $vars.REPORT_EMAIL || 'your@email.com' }}",
+        "subject": "={{ 'ContentIQ Weekly Report — ' + new Date().toISOString().slice(0,10) }}",
+        "emailFormat": "html",
+        "html": "={{ '<h2>ContentIQ Weekly Audit Complete</h2><p>Your weekly content audit for <strong>' + $('Create Audit').item.json.domain + '</strong> has finished.</p><p><a href=\"' + ($vars.WLA_BASE_URL || 'http://localhost:8000') + '/contentiq\">View full report in ContentIQ &rarr;</a></p><p style=\"color:#666;font-size:12px;\">Powered by nrankai ContentIQ &bull; Claude AI</p>' }}",
+        "attachments": "data",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0008-0000-0000-000000000008",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Every Monday 07:00": {
+      "main": [[{ "node": "Create Audit", "type": "main", "index": 0 }]]
+    },
+    "Create Audit": {
+      "main": [[{ "node": "Start Crawl", "type": "main", "index": 0 }]]
+    },
+    "Start Crawl": {
+      "main": [[{ "node": "Wait 30 min (crawl)", "type": "main", "index": 0 }]]
+    },
+    "Wait 30 min (crawl)": {
+      "main": [[{ "node": "Generate Briefs", "type": "main", "index": 0 }]]
+    },
+    "Generate Briefs": {
+      "main": [[{ "node": "Wait 10 min (briefs)", "type": "main", "index": 0 }]]
+    },
+    "Wait 10 min (briefs)": {
+      "main": [[{ "node": "Download XLSX", "type": "main", "index": 0 }]]
+    },
+    "Download XLSX": {
+      "main": [[{ "node": "Send Email Report", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": ["contentiq", "scheduled", "audit"],
+  "triggerCount": 1,
+  "updatedAt": "2026-04-21T00:00:00.000Z",
+  "versionId": "1"
+}
