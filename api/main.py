@@ -185,7 +185,7 @@ async def lifespan(app: FastAPI):
     # Auto-register n8n webhook if N8N_WEBHOOK_URL is set (Prompt 20)
     _n8n_url = os.getenv("N8N_WEBHOOK_URL")
     if _n8n_url:
-        from api.models.database import FanoutWebhook, AsyncSessionLocal
+        from api.models.database import FanoutWebhook
         from api.workers.webhook_sender import ALL_EVENTS
         from sqlalchemy import select as _sel
         async with AsyncSessionLocal() as _wdb:
