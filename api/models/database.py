@@ -52,6 +52,7 @@ from api.models.content import (
     AnswerCalibration,
     MultilingualGapReport,
 )
+from api.models.contentiq import CiqAudit, CiqPage, CiqCompetitor, CiqGscToken
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,

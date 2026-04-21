@@ -1,0 +1,888 @@
+{% extends "base.html" %}
+{% block title %}ContentIQ — Content Audit{% endblock %}
+{% block content %}
+
+<div x-data="contentIQ()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
+    <div class="flex items-center space-x-3">
+      <template x-if="view === 'detail'">
+        <button @click="backToList()" class="text-slate-400 hover:text-slate-600 mr-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+      </template>
+      <div>
+        <h1 class="text-xl font-bold text-slate-800">
+          <template x-if="view === 'list'"><span>ContentIQ &mdash; Content Audit</span></template>
+          <template x-if="view === 'detail'">
+            <span>
+              <button @click="backToList()" class="text-primary-600 hover:underline text-base font-medium">ContentIQ</button>
+              <span class="text-slate-400 mx-1">/</span>
+              <span x-text="audit ? audit.label : ''"></span>
+            </span>
+          </template>
+        </h1>
+        <p class="text-sm text-slate-500 mt-0.5" x-show="view === 'list'">KEEP · UPDATE · CONSOLIDATE · DELETE — AI-powered content triage</p>
+        <p class="text-sm text-slate-500 mt-0.5" x-show="view === 'detail' && audit" x-text="audit ? audit.domain : ''"></p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-2">
+      <template x-if="view === 'list'">
+        <button @click="showCreate = true" class="inline-flex items-center space-x-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          <span>New Audit</span>
+        </button>
+      </template>
+      <template x-if="view === 'detail' && audit">
+        <div class="flex items-center space-x-2">
+          <button @click="startAudit()" :disabled="audit.status === 'crawling' || audit.status === 'scoring'" class="inline-flex items-center space-x-1 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span x-text="(audit.status === 'crawling' || audit.status === 'scoring') ? 'Running...' : 'Start / Re-crawl'"></span>
+          </button>
+          <button @click="pullAhrefs()" class="inline-flex items-center space-x-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+            <span>Ahrefs</span>
+          </button>
+          <template x-if="audit.gsc_connected">
+            <button @click="syncGsc()" class="inline-flex items-center space-x-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+              <span>Sync GSC</span>
+            </button>
+          </template>
+          <template x-if="!audit.gsc_connected">
+            <button @click="connectGsc()" class="inline-flex items-center space-x-1 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+              <span>Connect GSC</span>
+            </button>
+          </template>
+          <button @click="generateBriefs()" class="inline-flex items-center space-x-1 bg-purple-100 hover:bg-purple-200 text-purple-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+            <span>Gen Briefs</span>
+          </button>
+          <button @click="rescoreAudit()" class="inline-flex items-center space-x-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+            <span>Re-score</span>
+          </button>
+          <a :href="'/api/contentiq/audits/' + audit.id + '/export'" class="inline-flex items-center space-x-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-sm font-medium px-3 py-2 rounded-lg transition-colors">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            <span>Export XLSX</span>
+          </a>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm" x-text="toast"></div>
+
+  <!-- ===================================================================== -->
+  <!-- LIST VIEW -->
+  <!-- ===================================================================== -->
+  <div x-show="view === 'list'" class="flex-1 overflow-auto p-6">
+
+    <!-- Loading -->
+    <div x-show="loading" class="flex items-center justify-center py-20">
+      <div class="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!loading && audits.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      <p class="text-lg font-medium mb-1">No audits yet</p>
+      <p class="text-sm mb-4">Create your first ContentIQ audit to start triaging your content.</p>
+      <button @click="showCreate = true" class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg">New Audit</button>
+    </div>
+
+    <!-- Audit grid -->
+    <div x-show="!loading && audits.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <template x-for="a in audits" :key="a.id">
+        <div class="bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow p-5">
+          <!-- Header -->
+          <div class="flex items-start justify-between mb-3">
+            <div class="flex-1 min-w-0">
+              <h3 class="text-base font-semibold text-slate-800 truncate" x-text="a.label"></h3>
+              <p class="text-sm text-slate-500 truncate" x-text="a.domain"></p>
+            </div>
+            <span class="ml-3 flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium" :class="statusClass(a.status)">
+              <span x-show="a.status === 'crawling' || a.status === 'scoring'" class="w-1.5 h-1.5 rounded-full bg-current mr-1.5 animate-pulse"></span>
+              <span x-text="a.status"></span>
+            </span>
+          </div>
+
+          <!-- Progress bar for active states -->
+          <template x-if="(a.status === 'crawling' || a.status === 'scoring') && a.total_urls > 0">
+            <div class="mb-3">
+              <div class="flex justify-between text-xs text-slate-500 mb-1">
+                <span x-text="a.scored_urls + ' / ' + a.total_urls + ' pages'"></span>
+                <span x-text="Math.round((a.scored_urls / a.total_urls) * 100) + '%'"></span>
+              </div>
+              <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-primary-500 rounded-full transition-all duration-500" :style="'width:' + Math.round((a.scored_urls / a.total_urls) * 100) + '%'"></div>
+              </div>
+            </div>
+          </template>
+
+          <!-- KPIs -->
+          <div class="flex items-center space-x-4 text-sm text-slate-600 mb-3">
+            <span><strong x-text="a.total_urls"></strong> URLs</span>
+            <span><strong x-text="a.scored_urls"></strong> scored</span>
+            <span class="text-slate-400" x-text="formatDate(a.created_at)"></span>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center space-x-2 pt-3 border-t border-slate-100">
+            <button @click="viewDetail(a)" class="flex-1 text-center text-sm font-medium text-primary-600 hover:text-primary-800 py-1.5 rounded-lg hover:bg-primary-50 transition-colors">View Detail</button>
+            <a :href="'/api/contentiq/audits/' + a.id + '/export'" class="text-sm font-medium text-emerald-600 hover:text-emerald-800 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition-colors">Export</a>
+            <button @click="deleteAudit(a.id)" class="text-sm font-medium text-red-500 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">Delete</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- DETAIL VIEW -->
+  <!-- ===================================================================== -->
+  <div x-show="view === 'detail'" class="flex-1 overflow-auto">
+
+    <!-- KPI cards -->
+    <div x-show="audit" class="grid grid-cols-2 lg:grid-cols-4 gap-4 p-6 pb-0">
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Total Pages</p>
+        <p class="text-2xl font-bold text-slate-800" x-text="audit ? audit.total_urls : 0"></p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Scored</p>
+        <p class="text-2xl font-bold text-slate-800" x-text="audit ? audit.scored_urls : 0"></p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Avg Score</p>
+        <p class="text-2xl font-bold" :class="avgScoreColor()" x-text="avgScore !== null ? avgScore : '–'"></p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
+        <p class="text-xs text-slate-500 font-medium uppercase tracking-wide mb-1">Status</p>
+        <div class="mt-1">
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-medium" :class="audit ? statusClass(audit.status) : ''">
+            <span x-show="audit && (audit.status === 'crawling' || audit.status === 'scoring')" class="w-1.5 h-1.5 rounded-full bg-current mr-1.5 animate-pulse"></span>
+            <span x-text="audit ? audit.status : ''"></span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Verdict tabs + filters -->
+    <div class="px-6 pt-4">
+      <!-- Tabs -->
+      <div class="flex items-center space-x-1 mb-3">
+        <template x-for="tab in ['', 'KEEP', 'UPDATE', 'CONSOLIDATE', 'DELETE']" :key="tab">
+          <button
+            @click="setVerdictFilter(tab)"
+            class="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors"
+            :class="verdictFilter === tab
+              ? (tab === '' ? 'bg-slate-700 text-white' : verdictTabActive(tab))
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'"
+          >
+            <span x-text="tab === '' ? 'All' : tab"></span>
+            <span class="ml-1.5 text-xs opacity-75" x-text="tab === '' ? total : (verdictCounts[tab] || 0)"></span>
+          </button>
+        </template>
+      </div>
+
+      <!-- Search + per-page -->
+      <div class="flex items-center space-x-3 mb-4">
+        <div class="relative flex-1 max-w-sm">
+          <svg class="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input type="text" x-model="search" @input="debouncedSearch()" placeholder="Search URL or title…" class="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+        <select x-model.number="perPage" @change="currentPage = 1; loadPages()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+          <option value="25">25 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+          <option value="200">200 / page</option>
+        </select>
+        <!-- Start settings inline -->
+        <div class="flex items-center space-x-2 ml-auto">
+          <label class="text-xs text-slate-500">Max URLs</label>
+          <input type="number" x-model.number="startSettings.max_urls" min="10" max="5000" class="w-20 text-sm border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500">
+          <label class="text-xs text-slate-500">Workers</label>
+          <input type="number" x-model.number="startSettings.concurrency" min="1" max="20" class="w-14 text-sm border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+      </div>
+    </div>
+
+    <!-- Pages table -->
+    <div class="px-6">
+      <!-- Loading -->
+      <div x-show="pagesLoading" class="flex items-center justify-center py-12">
+        <div class="w-6 h-6 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+
+      <!-- Table -->
+      <div x-show="!pagesLoading" class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 border-b border-slate-200">
+                <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">URL</th>
+                <th class="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Title</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">WC</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Verdict</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Total</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Fresh</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">GEO</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">E-E-A-T</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">SEO</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Clicks</th>
+                <th class="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Traffic</th>
+                <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <template x-for="p in pages" :key="p.id">
+                <tr class="hover:bg-slate-50 transition-colors">
+                  <td class="px-4 py-3 max-w-xs">
+                    <a :href="p.url" target="_blank" :title="p.url" class="text-primary-600 hover:underline text-xs block truncate" x-text="truncateUrl(p.url)"></a>
+                  </td>
+                  <td class="px-3 py-3 text-slate-700 max-w-[200px]">
+                    <span class="block truncate text-xs" x-text="p.title || '—'" :title="p.title"></span>
+                  </td>
+                  <td class="px-3 py-3 text-center text-xs text-slate-500" x-text="p.word_count || '—'"></td>
+                  <td class="px-3 py-3 text-center">
+                    <template x-if="p.verdict">
+                      <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="verdictClass(p.verdict)" x-text="p.verdict"></span>
+                    </template>
+                    <template x-if="!p.verdict">
+                      <span class="text-slate-300 text-xs">—</span>
+                    </template>
+                  </td>
+                  <td class="px-3 py-3 text-center">
+                    <span class="font-semibold text-sm" :class="scoreColor(p.score_total)" x-text="p.score_total !== null && p.score_total !== undefined ? p.score_total : '—'"></span>
+                  </td>
+                  <td class="px-3 py-3 text-center text-xs" :class="scoreColor(p.score_freshness)" x-text="p.score_freshness !== null && p.score_freshness !== undefined ? p.score_freshness : '—'"></td>
+                  <td class="px-3 py-3 text-center text-xs" :class="scoreColor(p.score_geo)" x-text="p.score_geo !== null && p.score_geo !== undefined ? p.score_geo : '—'"></td>
+                  <td class="px-3 py-3 text-center text-xs" :class="scoreColor(p.score_eeat)" x-text="p.score_eeat !== null && p.score_eeat !== undefined ? p.score_eeat : '—'"></td>
+                  <td class="px-3 py-3 text-center text-xs" :class="scoreColor(p.score_seo_health)" x-text="p.score_seo_health !== null && p.score_seo_health !== undefined ? p.score_seo_health : '—'"></td>
+                  <td class="px-3 py-3 text-center text-xs text-slate-500" x-text="p.gsc_clicks !== null && p.gsc_clicks !== undefined ? p.gsc_clicks : '—'"></td>
+                  <td class="px-3 py-3 text-center text-xs text-slate-500" x-text="p.ahrefs_traffic !== null && p.ahrefs_traffic !== undefined ? p.ahrefs_traffic : '—'"></td>
+                  <td class="px-4 py-3 text-right">
+                    <div class="flex items-center justify-end space-x-1">
+                      <button @click="openBrief(p)" title="View brief" class="p-1 text-slate-400 hover:text-purple-600 rounded transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                      </button>
+                      <button @click="openEditVerdict(p)" title="Edit verdict" class="p-1 text-slate-400 hover:text-primary-600 rounded transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+              <template x-if="!pagesLoading && pages.length === 0">
+                <tr>
+                  <td colspan="12" class="px-4 py-12 text-center text-slate-400 text-sm">
+                    <span x-show="verdictFilter || search">No pages match the current filter.</span>
+                    <span x-show="!verdictFilter && !search">No pages yet. Start the crawl to populate pages.</span>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="total > perPage" class="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+          <p class="text-xs text-slate-500">
+            Showing <span x-text="(currentPage - 1) * perPage + 1"></span>–<span x-text="Math.min(currentPage * perPage, total)"></span> of <span x-text="total"></span>
+          </p>
+          <div class="flex items-center space-x-1">
+            <button @click="prevPage()" :disabled="currentPage <= 1" class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Prev</button>
+            <span class="px-3 py-1.5 text-sm text-slate-600">Page <span x-text="currentPage"></span> of <span x-text="totalPages()"></span></span>
+            <button @click="nextPage()" :disabled="currentPage >= totalPages()" class="px-3 py-1.5 text-sm rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Next</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Competitors section -->
+      <div class="mt-6 bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+        <button @click="showCompetitors = !showCompetitors" class="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
+          <span class="text-sm font-semibold text-slate-700">Competitors (<span x-text="competitors.length"></span>)</span>
+          <svg class="w-4 h-4 text-slate-400 transition-transform" :class="showCompetitors ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="showCompetitors" class="border-t border-slate-100 p-5">
+          <!-- Add form -->
+          <div class="flex items-center space-x-2 mb-4">
+            <input type="text" x-model="competitorForm.domain" placeholder="competitor.com" class="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+            <input type="text" x-model="competitorForm.label" placeholder="Label (optional)" class="w-40 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+            <button @click="addCompetitor()" class="bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">Add</button>
+          </div>
+          <!-- List -->
+          <div class="space-y-2">
+            <template x-for="c in competitors" :key="c.id">
+              <div class="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                <div>
+                  <span class="text-sm font-medium text-slate-700" x-text="c.domain"></span>
+                  <span x-show="c.label" class="ml-2 text-xs text-slate-400" x-text="c.label"></span>
+                </div>
+                <button @click="deleteCompetitor(c.id)" class="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors">Remove</button>
+              </div>
+            </template>
+            <p x-show="competitors.length === 0" class="text-sm text-slate-400 py-2">No competitors added yet.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="h-8"></div>
+  </div><!-- /detail -->
+
+  <!-- ===================================================================== -->
+  <!-- CREATE MODAL -->
+  <!-- ===================================================================== -->
+  <div x-show="showCreate" x-transition class="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+    <div @click.stop class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-lg font-bold text-slate-800">New ContentIQ Audit</h2>
+        <button @click="showCreate = false" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Label</label>
+          <input type="text" x-model="form.label" placeholder="My Site Q2 2026" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Domain</label>
+          <input type="text" x-model="form.domain" placeholder="example.com" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Sitemap URL <span class="text-slate-400 font-normal">(optional)</span></label>
+          <input type="text" x-model="form.sitemap_url" placeholder="https://example.com/sitemap.xml" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Max URLs</label>
+          <input type="number" x-model.number="form.max_urls" min="10" max="5000" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+      </div>
+      <div class="flex items-center space-x-3 mt-6">
+        <button @click="createAudit(true)" class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">Create &amp; Start Crawl</button>
+        <button @click="createAudit(false)" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2.5 rounded-lg transition-colors">Create Only</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- BRIEF MODAL -->
+  <!-- ===================================================================== -->
+  <div x-show="showBrief" x-transition class="fixed inset-0 z-40 flex items-start justify-center bg-black/50 overflow-auto py-10">
+    <div @click.stop x-show="selectedPage" class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-4 p-6">
+      <div class="flex items-start justify-between mb-4">
+        <div class="flex-1 min-w-0 pr-4">
+          <h2 class="text-base font-bold text-slate-800 mb-0.5">Content Brief</h2>
+          <a x-show="selectedPage" :href="selectedPage ? selectedPage.url : '#'" target="_blank" class="text-xs text-primary-600 hover:underline truncate block" x-text="selectedPage ? selectedPage.url : ''"></a>
+        </div>
+        <div class="flex items-center space-x-2 flex-shrink-0">
+          <template x-if="selectedPage && selectedPage.verdict">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :class="verdictClass(selectedPage.verdict)" x-text="selectedPage.verdict"></span>
+          </template>
+          <template x-if="selectedPage && selectedPage.score_total !== null && selectedPage.score_total !== undefined">
+            <span class="text-sm font-bold" :class="scoreColor(selectedPage.score_total)" x-text="selectedPage.score_total"></span>
+          </template>
+          <button @click="showBrief = false" class="text-slate-400 hover:text-slate-600 ml-2">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <template x-if="selectedPage && selectedPage.brief_content">
+        <pre class="whitespace-pre-wrap text-sm text-slate-700 bg-slate-50 rounded-xl p-4 max-h-[60vh] overflow-auto" x-text="selectedPage.brief_content"></pre>
+      </template>
+      <template x-if="selectedPage && !selectedPage.brief_content">
+        <div class="text-center py-10 text-slate-400">
+          <p class="text-sm mb-2">No brief available for this page.</p>
+          <p class="text-xs">Click "Gen Briefs" in the top bar to generate briefs for UPDATE &amp; CONSOLIDATE pages.</p>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- EDIT VERDICT MODAL -->
+  <!-- ===================================================================== -->
+  <div x-show="showEditVerdict" x-transition class="fixed inset-0 z-40 flex items-center justify-center bg-black/50">
+    <div @click.stop class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6">
+      <div class="flex items-center justify-between mb-5">
+        <h2 class="text-lg font-bold text-slate-800">Edit Verdict</h2>
+        <button @click="showEditVerdict = false" class="text-slate-400 hover:text-slate-600">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Verdict</label>
+          <select x-model="editForm.verdict" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+            <option value="KEEP">KEEP</option>
+            <option value="UPDATE">UPDATE</option>
+            <option value="CONSOLIDATE">CONSOLIDATE</option>
+            <option value="DELETE">DELETE</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Reason (optional)</label>
+          <textarea x-model="editForm.verdict_reason" rows="3" placeholder="Why this verdict?" class="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"></textarea>
+        </div>
+      </div>
+      <div class="flex items-center space-x-3 mt-6">
+        <button @click="saveVerdict()" class="flex-1 bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold py-2.5 rounded-lg transition-colors">Save</button>
+        <button @click="showEditVerdict = false" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold py-2.5 rounded-lg transition-colors">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /x-data -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+function contentIQ() {
+  return {
+    view: 'list',
+    audits: [],
+    audit: null,
+    pages: [],
+    total: 0,
+    currentPage: 1,
+    perPage: 50,
+    verdictFilter: '',
+    search: '',
+    searchTimeout: null,
+    loading: false,
+    pagesLoading: false,
+    showCreate: false,
+    showBrief: false,
+    showEditVerdict: false,
+    showCompetitors: false,
+    selectedPage: null,
+    form: { label: '', domain: '', sitemap_url: '', max_urls: 500 },
+    startSettings: { max_urls: 500, concurrency: 10 },
+    editForm: { verdict: '', verdict_reason: '' },
+    competitorForm: { domain: '', label: '' },
+    competitors: [],
+    verdictCounts: { KEEP: 0, UPDATE: 0, CONSOLIDATE: 0, DELETE: 0 },
+    avgScore: null,
+    toast: null,
+    _pollTimer: null,
+
+    async init() {
+      // Check for GSC OAuth callback
+      const params = new URLSearchParams(window.location.search);
+      const code  = params.get('code');
+      const state = params.get('state');
+      if (code && state && state.startsWith('ciq_')) {
+        const auditId = parseInt(state.replace('ciq_', ''));
+        const propertyUrl = params.get('property_url') || '';
+        history.replaceState({}, '', window.location.pathname);
+        try {
+          await fetch(`/api/contentiq/audits/${auditId}/gsc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, redirect_uri: window.location.origin + '/contentiq', property_url: propertyUrl }),
+          });
+          this.showToast('GSC connected successfully!');
+        } catch (e) {
+          this.showToast('GSC connection failed: ' + e.message);
+        }
+      }
+      await this.loadAudits();
+    },
+
+    async loadAudits() {
+      this.loading = true;
+      try {
+        const r = await fetch('/api/contentiq/audits');
+        if (!r.ok) throw new Error(await r.text());
+        this.audits = await r.json();
+      } catch (e) {
+        this.showToast('Failed to load audits: ' + e.message);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async createAudit(andStart) {
+      if (!this.form.label.trim() || !this.form.domain.trim()) {
+        this.showToast('Label and domain are required');
+        return;
+      }
+      try {
+        const r = await fetch('/api/contentiq/audits', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: this.form.label, domain: this.form.domain, sitemap_url: this.form.sitemap_url || null }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const newAudit = await r.json();
+        this.form = { label: '', domain: '', sitemap_url: '', max_urls: 500 };
+        this.showCreate = false;
+
+        if (andStart && newAudit.sitemap_url) {
+          await fetch(`/api/contentiq/audits/${newAudit.id}/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_urls: this.form.max_urls || 500, concurrency: 10 }),
+          });
+        }
+        await this.loadAudits();
+        this.showToast('Audit created' + (andStart ? ' and crawl started' : ''));
+      } catch (e) {
+        this.showToast('Error: ' + e.message);
+      }
+    },
+
+    async deleteAudit(id) {
+      if (!confirm('Delete this audit and all its pages?')) return;
+      try {
+        await fetch(`/api/contentiq/audits/${id}`, { method: 'DELETE' });
+        await this.loadAudits();
+        this.showToast('Audit deleted');
+      } catch (e) {
+        this.showToast('Delete failed: ' + e.message);
+      }
+    },
+
+    async viewDetail(a) {
+      this.audit = a;
+      this.view = 'detail';
+      this.currentPage = 1;
+      this.verdictFilter = '';
+      this.search = '';
+      this.verdictCounts = { KEEP: 0, UPDATE: 0, CONSOLIDATE: 0, DELETE: 0 };
+      this.avgScore = null;
+      await Promise.all([this.loadPages(), this.loadCompetitors(), this.refreshAudit()]);
+      if (a.status === 'crawling' || a.status === 'scoring') {
+        this.startPolling();
+      }
+    },
+
+    backToList() {
+      this.stopPolling();
+      this.view = 'list';
+      this.audit = null;
+      this.pages = [];
+      this.loadAudits();
+    },
+
+    async refreshAudit() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        this.audit = data;
+        this.audit.gsc_connected = !!data.competitors; // rough proxy; gsc token in competitors list
+      } catch (e) { /* silent */ }
+    },
+
+    async loadPages() {
+      if (!this.audit) return;
+      this.pagesLoading = true;
+      try {
+        const params = new URLSearchParams({
+          page:     this.currentPage,
+          per_page: this.perPage,
+        });
+        if (this.verdictFilter) params.set('verdict', this.verdictFilter);
+        if (this.search.trim()) params.set('search', this.search.trim());
+
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/pages?${params}`);
+        if (!r.ok) throw new Error(await r.text());
+        const data = await r.json();
+        this.pages = data.pages;
+        this.total = data.total;
+
+        // Recompute verdict counts from visible + total (load all without filter for counts)
+        this.recomputeVerdictCounts();
+        this.recomputeAvgScore();
+      } catch (e) {
+        this.showToast('Failed to load pages: ' + e.message);
+      } finally {
+        this.pagesLoading = false;
+      }
+    },
+
+    recomputeVerdictCounts() {
+      const counts = { KEEP: 0, UPDATE: 0, CONSOLIDATE: 0, DELETE: 0 };
+      for (const p of this.pages) {
+        if (p.verdict && counts[p.verdict] !== undefined) counts[p.verdict]++;
+      }
+      // If we have no filter, trust these counts (may be partial if paginated)
+      if (!this.verdictFilter) {
+        // fetch all-verdict counts asynchronously (fire and forget)
+        this._loadVerdictCounts();
+      } else {
+        this.verdictCounts = counts;
+      }
+    },
+
+    async _loadVerdictCounts() {
+      if (!this.audit) return;
+      const verdicts = ['KEEP', 'UPDATE', 'CONSOLIDATE', 'DELETE'];
+      const counts = { KEEP: 0, UPDATE: 0, CONSOLIDATE: 0, DELETE: 0 };
+      await Promise.all(verdicts.map(async v => {
+        try {
+          const r = await fetch(`/api/contentiq/audits/${this.audit.id}/pages?per_page=1&verdict=${v}`);
+          if (r.ok) {
+            const d = await r.json();
+            counts[v] = d.total || 0;
+          }
+        } catch (e) { /* silent */ }
+      }));
+      this.verdictCounts = counts;
+    },
+
+    recomputeAvgScore() {
+      const scores = this.pages.map(p => p.score_total).filter(s => s !== null && s !== undefined);
+      this.avgScore = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+    },
+
+    setVerdictFilter(v) {
+      this.verdictFilter = v;
+      this.currentPage = 1;
+      this.loadPages();
+    },
+
+    debouncedSearch() {
+      clearTimeout(this.searchTimeout);
+      this.searchTimeout = setTimeout(() => {
+        this.currentPage = 1;
+        this.loadPages();
+      }, 300);
+    },
+
+    async startAudit() {
+      if (!this.audit || !this.audit.sitemap_url) {
+        this.showToast('No sitemap URL configured for this audit');
+        return;
+      }
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.startSettings),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.audit.status = 'crawling';
+        this.showToast('Crawl started!');
+        this.startPolling();
+      } catch (e) {
+        this.showToast('Start failed: ' + e.message);
+      }
+    },
+
+    async pullAhrefs() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/ahrefs`, { method: 'POST' });
+        if (!r.ok) throw new Error(await r.text());
+        this.showToast('Ahrefs data pull queued');
+      } catch (e) {
+        this.showToast('Ahrefs pull failed: ' + e.message);
+      }
+    },
+
+    async syncGsc() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/gsc/sync`, { method: 'POST' });
+        if (!r.ok) throw new Error(await r.text());
+        this.showToast('GSC sync queued');
+      } catch (e) {
+        this.showToast('GSC sync failed: ' + e.message);
+      }
+    },
+
+    async connectGsc() {
+      if (!this.audit) return;
+      try {
+        const redirectUri = window.location.origin + '/contentiq';
+        const r = await fetch(`/api/contentiq/gsc/oauth-url?audit_id=${this.audit.id}&redirect_uri=${encodeURIComponent(redirectUri)}`);
+        if (!r.ok) throw new Error(await r.text());
+        const { url } = await r.json();
+        window.location.href = url;
+      } catch (e) {
+        this.showToast('GSC OAuth failed: ' + e.message);
+      }
+    },
+
+    async generateBriefs() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/briefs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ concurrency: 3 }),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        this.showToast('Brief generation queued for UPDATE/CONSOLIDATE pages');
+      } catch (e) {
+        this.showToast('Brief generation failed: ' + e.message);
+      }
+    },
+
+    async rescoreAudit() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/rescore`, { method: 'POST' });
+        if (!r.ok) throw new Error(await r.text());
+        this.showToast('Re-scoring queued');
+        setTimeout(() => this.loadPages(), 2000);
+      } catch (e) {
+        this.showToast('Re-score failed: ' + e.message);
+      }
+    },
+
+    openBrief(page) {
+      this.selectedPage = page;
+      this.showBrief = true;
+    },
+
+    openEditVerdict(page) {
+      this.selectedPage = page;
+      this.editForm = { verdict: page.verdict || 'KEEP', verdict_reason: page.verdict_reason || '' };
+      this.showEditVerdict = true;
+    },
+
+    async saveVerdict() {
+      if (!this.selectedPage || !this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/pages/${this.selectedPage.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.editForm),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const updated = await r.json();
+        const idx = this.pages.findIndex(p => p.id === updated.id);
+        if (idx !== -1) this.pages[idx] = updated;
+        this.showEditVerdict = false;
+        this.showToast('Verdict saved');
+      } catch (e) {
+        this.showToast('Save failed: ' + e.message);
+      }
+    },
+
+    async addCompetitor() {
+      if (!this.audit || !this.competitorForm.domain.trim()) {
+        this.showToast('Domain is required');
+        return;
+      }
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}/competitors`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.competitorForm),
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const c = await r.json();
+        this.competitors.push(c);
+        this.competitorForm = { domain: '', label: '' };
+      } catch (e) {
+        this.showToast('Add competitor failed: ' + e.message);
+      }
+    },
+
+    async deleteCompetitor(id) {
+      try {
+        await fetch(`/api/contentiq/competitors/${id}`, { method: 'DELETE' });
+        this.competitors = this.competitors.filter(c => c.id !== id);
+      } catch (e) {
+        this.showToast('Delete failed: ' + e.message);
+      }
+    },
+
+    async loadCompetitors() {
+      if (!this.audit) return;
+      try {
+        const r = await fetch(`/api/contentiq/audits/${this.audit.id}`);
+        if (!r.ok) return;
+        const data = await r.json();
+        this.competitors = data.competitors || [];
+      } catch (e) { /* silent */ }
+    },
+
+    startPolling() {
+      this.stopPolling();
+      this._pollTimer = setInterval(async () => {
+        if (!this.audit) { this.stopPolling(); return; }
+        await this.refreshAudit();
+        if (this.audit.status === 'done' || this.audit.status === 'failed') {
+          this.stopPolling();
+          await this.loadPages();
+          this.showToast(this.audit.status === 'done' ? 'Crawl complete!' : 'Crawl failed — check logs');
+        }
+      }, 3000);
+    },
+
+    stopPolling() {
+      if (this._pollTimer) { clearInterval(this._pollTimer); this._pollTimer = null; }
+    },
+
+    prevPage() { if (this.currentPage > 1) { this.currentPage--; this.loadPages(); } },
+    nextPage()  { if (this.currentPage < this.totalPages()) { this.currentPage++; this.loadPages(); } },
+    totalPages() { return Math.ceil(this.total / this.perPage) || 1; },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => { this.toast = null; }, 4000);
+    },
+
+    avgScoreColor() {
+      return this.scoreColor(this.avgScore);
+    },
+
+    scoreColor(s) {
+      if (s === null || s === undefined) return 'text-slate-400';
+      if (s >= 70) return 'text-green-600';
+      if (s >= 50) return 'text-yellow-600';
+      if (s >= 30) return 'text-orange-500';
+      return 'text-red-500';
+    },
+
+    verdictClass(v) {
+      const m = {
+        KEEP:        'bg-green-100 text-green-800',
+        UPDATE:      'bg-yellow-100 text-yellow-800',
+        CONSOLIDATE: 'bg-orange-100 text-orange-800',
+        DELETE:      'bg-red-100 text-red-800',
+      };
+      return m[v] || 'bg-gray-100 text-gray-700';
+    },
+
+    verdictTabActive(v) {
+      const m = {
+        KEEP:        'bg-green-100 text-green-800',
+        UPDATE:      'bg-yellow-100 text-yellow-800',
+        CONSOLIDATE: 'bg-orange-100 text-orange-800',
+        DELETE:      'bg-red-100 text-red-800',
+      };
+      return m[v] || 'bg-slate-700 text-white';
+    },
+
+    statusClass(s) {
+      const m = {
+        pending:  'bg-gray-100 text-gray-700',
+        crawling: 'bg-yellow-100 text-yellow-700',
+        scoring:  'bg-blue-100 text-blue-700',
+        done:     'bg-green-100 text-green-700',
+        failed:   'bg-red-100 text-red-700',
+      };
+      return m[s] || 'bg-gray-100 text-gray-700';
+    },
+
+    formatDate(iso) {
+      if (!iso) return '—';
+      try { return new Date(iso).toLocaleDateString(); } catch(e) { return iso; }
+    },
+
+    truncateUrl(url, n = 60) {
+      if (!url) return '';
+      if (url.length <= n) return url;
+      return '…' + url.slice(-(n - 1));
+    },
+  };
+}
+</script>
+{% endblock %}
