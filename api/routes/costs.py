@@ -9,7 +9,7 @@ Created: 2026-02-20
 """
 
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, Depends, HTTPException
 from api.utils.errors import raise_not_found
@@ -164,7 +164,7 @@ def get_date_range(period: str) -> tuple[Optional[datetime], Optional[datetime]]
     }
     
     days = days_map.get(period, 30)
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     return start_date, None
 
 
@@ -317,7 +317,7 @@ async def get_cost_summary(
         ]
         
         # By month (last 12 months)
-        twelve_months_ago = datetime.utcnow() - timedelta(days=365)
+        twelve_months_ago = datetime.now(timezone.utc) - timedelta(days=365)
         month_filters = [CostRecord.created_at >= twelve_months_ago]
         if website:
             month_filters.append(CostRecord.website == website)
@@ -343,7 +343,7 @@ async def get_cost_summary(
         
         # Daily trend (last 30 days for selected period)
         days_for_trend = 30 if period in ["30d", "90d", "all"] else 7
-        trend_start = datetime.utcnow() - timedelta(days=days_for_trend)
+        trend_start = datetime.now(timezone.utc) - timedelta(days=days_for_trend)
         trend_filters = [CostRecord.created_at >= trend_start]
         if website:
             trend_filters.append(CostRecord.website == website)
@@ -394,7 +394,7 @@ async def get_margins(db: AsyncSession = Depends(get_db)):
         billings = result.scalars().all()
         
         # Get current month's costs per website
-        current_month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        current_month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         
         clients = []
         
@@ -459,7 +459,7 @@ async def create_or_update_billing(
                 existing.monthly_fee_eur = billing_data.monthly_fee_eur
             if billing_data.notes is not None:
                 existing.notes = billing_data.notes
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = datetime.now(timezone.utc)
             
             await db.commit()
             await db.refresh(existing)

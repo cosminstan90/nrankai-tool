@@ -571,32 +571,35 @@ async def rerun_single_page(
                 else:
                     classification = "poor"
             
+            # Capture old score before overwriting
+            old_score = page_result.score
+
             # Update result in database
             page_result.score = score
             page_result.classification = classification
             page_result.result_json = json.dumps(result_data)
             await db.commit()
-            
+
             # Also save updated JSON file
             if score is not None:
                 output_filename = f"{score:03d}_{txt_name.replace('.txt', '.json')}"
             else:
                 output_filename = txt_name.replace('.txt', '.json')
-            
+
             output_path = os.path.join(output_dir, output_filename)
-            
+
             # Remove old file if it exists
             old_path = os.path.join(output_dir, page_result.filename)
             if os.path.exists(old_path) and old_path != output_path:
                 os.remove(old_path)
-            
+
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(result_data, f, ensure_ascii=False, indent=2)
-            
+
             # Update filename in DB
             page_result.filename = output_filename
             await db.commit()
-            
+
             # Recalculate audit average
             avg_query = select(func.avg(AuditResult.score)).where(
                 AuditResult.audit_id == audit_id,
@@ -604,15 +607,15 @@ async def rerun_single_page(
             )
             avg_result = await db.execute(avg_query)
             new_avg = avg_result.scalar()
-            
+
             if new_avg is not None:
                 audit.average_score = round(new_avg, 1)
                 await db.commit()
-            
+
             return {
                 "status": "success",
                 "page_url": page_result.page_url,
-                "old_score": page_result.score,
+                "old_score": old_score,
                 "new_score": score,
                 "new_classification": classification,
                 "result_json": result_data

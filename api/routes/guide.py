@@ -15,7 +15,7 @@ GET    /api/guide/by-url            list guides for a given URL
 import asyncio
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from api.utils.task_runner import create_tracked_task
@@ -187,7 +187,7 @@ async def _generate_guide(guide_id: int):
                             prop = await db.get(GscProperty, guide.gsc_property_id)
                             site_url = prop.site_url if prop else None
                             if site_url:
-                                end_date = datetime.utcnow().date()
+                                end_date = datetime.now(timezone.utc).date()
                                 start_date = end_date - timedelta(days=90)
 
                                 def _fetch_page_queries():
@@ -310,7 +310,7 @@ async def _generate_guide(guide_id: int):
             guide.status = "failed"
             guide.error_message = str(exc)
 
-        guide.updated_at = datetime.utcnow()
+        guide.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
 
@@ -423,7 +423,7 @@ async def mark_guide_reviewed(guide_id: int, reviewed: bool = True):
         if not guide:
             raise_not_found("Guide")
         guide.reviewed = reviewed
-        guide.updated_at = datetime.utcnow()
+        guide.updated_at = datetime.now(timezone.utc)
         await db.commit()
     return {"ok": True, "reviewed": reviewed}
 

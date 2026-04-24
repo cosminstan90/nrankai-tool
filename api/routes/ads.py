@@ -20,10 +20,11 @@ import csv
 import io
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from api.limiter import limiter
 from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -38,6 +39,8 @@ from api.models.database import (
 )
 
 router = APIRouter(prefix="/api/ads", tags=["ads"])
+
+_MAX_CSV_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -231,7 +234,8 @@ async def delete_account(account_id: str):
 # ── CSV upload ────────────────────────────────────────────────────────────────
 
 @router.post("/accounts/{account_id}/upload")
-async def upload_csv(account_id: str, file: UploadFile = File(...)):
+@limiter.limit("30/hour")
+async def upload_csv(request: Request, account_id: str, file: UploadFile = File(...)):
     """
     Upload a Google Ads CSV (search terms OR campaigns).
     Report type is auto-detected from column headers.
@@ -243,6 +247,8 @@ async def upload_csv(account_id: str, file: UploadFile = File(...)):
             raise_not_found("Account")
 
         content = await file.read()
+        if len(content) > _MAX_CSV_BYTES:
+            raise HTTPException(status_code=413, detail="File too large (max 20MB)")
         try:
             report_type, rows = _parse_ads_csv(content)
         except ValueError as exc:
@@ -290,7 +296,7 @@ async def upload_csv(account_id: str, file: UploadFile = File(...)):
             ])
             acct.total_campaigns = len(rows)
 
-        acct.updated_at = datetime.utcnow()
+        acct.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
     return {

@@ -7,15 +7,18 @@ a quantitative GEO Visibility Score for consultants to justify ROI.
 
 import asyncio
 import json
+import logging
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Depends
+import httpx
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Depends, Request
+from api.limiter import limiter
 from api.utils.errors import raise_not_found
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,33 +28,58 @@ from openai import AsyncOpenAI
 from api.models.database import AsyncSessionLocal, get_db, GeoMonitorProject, GeoMonitorScan
 from api.routes.costs import track_cost
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/geo-monitor", tags=["geo_monitor"])
 
 
 # ==================== Pydantic Models ====================
 
+class CompetitorConfig(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    brand_keywords: List[str] = Field(..., min_length=1)
+    website: str = Field(..., min_length=1, max_length=255)
+
+
 class CreateProjectRequest(BaseModel):
-    name: str
-    website: str
-    brand_keywords: List[str]
-    target_queries: List[str]
+    name: str = Field(..., min_length=1, max_length=500)
+    website: str = Field(..., min_length=1, max_length=500)
+    brand_keywords: List[str] = Field(..., max_length=100)
+    target_queries: List[str] = Field(..., max_length=100)
     providers: Dict[str, bool]
-    language: str = "English"
-    
+    language: str = Field("English", max_length=50)
+    competitors: Optional[List[CompetitorConfig]] = Field(default_factory=list)
+
+    @field_validator('website')
+    @classmethod
+    def validate_website(cls, v: str) -> str:
+        v = v.strip()
+        bare = re.sub(r'^https?://', '', v.lower())
+        bare = bare.split('/')[0]  # domain only
+        if not re.match(r'^[a-z0-9]([a-z0-9\-\.]{0,250}[a-z0-9])?$', bare):
+            raise ValueError("Invalid website format — must be a domain name")
+        if '..' in bare:
+            raise ValueError("Invalid website — path traversal not allowed")
+        return v
+
     @field_validator('brand_keywords')
     @classmethod
     def validate_keywords(cls, v):
         if not v or len(v) == 0:
             raise ValueError("At least one brand keyword is required")
+        if len(v) > 100:
+            raise ValueError("Maximum 100 brand keywords allowed")
         return v
-    
+
     @field_validator('target_queries')
     @classmethod
     def validate_queries(cls, v):
         if not v or len(v) == 0:
             raise ValueError("At least one target query is required")
+        if len(v) > 100:
+            raise ValueError("Maximum 100 target queries allowed")
         return v
-    
+
     @field_validator('providers')
     @classmethod
     def validate_providers(cls, v):
@@ -62,6 +90,12 @@ class CreateProjectRequest(BaseModel):
 
 class ScanRequest(BaseModel):
     providers: Optional[Dict[str, bool]] = None
+
+
+class UpdateProjectRequest(BaseModel):
+    alert_threshold: Optional[float] = None
+    alert_webhook_url: Optional[str] = None
+    competitors: Optional[List[CompetitorConfig]] = None
 
 
 # ==================== Helper Functions ====================
@@ -209,6 +243,29 @@ async def _query_provider(provider: str, query: str) -> tuple[str, int, int, str
         out_tok = response.usage.completion_tokens if response.usage else 0
         return response.choices[0].message.content, in_tok, out_tok, model
 
+    elif provider == "gemini":
+        try:
+            import google.generativeai as genai
+            model_name = "gemini-2.0-flash"
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY not configured")
+            genai.configure(api_key=api_key)
+            gemini_model = genai.GenerativeModel(model_name)
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: gemini_model.generate_content(query)
+            )
+            response_text = response.text
+            # Estimate tokens from word count (Gemini doesn't expose raw token counts easily)
+            input_tokens = int(len(query.split()) * 1.3)
+            output_tokens = int(len(response_text.split()) * 1.3)
+            return response_text, input_tokens, output_tokens, model_name
+        except Exception as e:
+            logger.error(f"Gemini API error in geo_monitor: {e}")
+            raise
+
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -277,6 +334,48 @@ def _analyze_response(response_text: str, brand_keywords: List[str], website: st
     }
 
 
+async def _check_and_alert_visibility_drop(project, current_scan, db: AsyncSession):
+    """Fire an alert if visibility dropped significantly since the last scan."""
+    if not getattr(project, 'alert_webhook_url', None):
+        return  # No webhook configured — skip
+
+    # Get previous completed scan
+    result = await db.execute(
+        select(GeoMonitorScan)
+        .where(GeoMonitorScan.project_id == project.id)
+        .where(GeoMonitorScan.status == "completed")
+        .where(GeoMonitorScan.id != current_scan.id)
+        .order_by(GeoMonitorScan.completed_at.desc())
+        .limit(1)
+    )
+    prev = result.scalar_one_or_none()
+    if not prev or prev.visibility_score is None or current_scan.visibility_score is None:
+        return
+
+    threshold = getattr(project, 'alert_threshold', 15.0) or 15.0
+    drop = prev.visibility_score - current_scan.visibility_score
+    if drop < threshold:
+        return
+
+    # Fire webhook
+    payload = {
+        "type": "visibility_drop",
+        "project_name": project.name,
+        "website": project.website,
+        "previous_score": round(prev.visibility_score, 1),
+        "current_score": round(current_scan.visibility_score, 1),
+        "drop": round(drop, 1),
+        "threshold": threshold,
+        "scan_url": f"/geo-monitor/projects/{project.id}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(project.alert_webhook_url, json=payload)
+        logger.info(f"Visibility drop alert sent for {project.website}: -{drop:.1f}%")
+    except Exception as e:
+        logger.warning(f"Failed to send visibility drop alert: {e}")
+
+
 async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optional[Dict[str, bool]] = None):
     """Background task: Run GEO visibility scan."""
     
@@ -312,7 +411,7 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
             
             # Update scan status
             scan.status = "running"
-            scan.started_at = datetime.utcnow()
+            scan.started_at = datetime.now(timezone.utc)
             scan.total_checks = len(target_queries) * len(active_providers)
             await session.commit()
             
@@ -320,6 +419,8 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
             semaphore = asyncio.Semaphore(3)  # Max 3 concurrent calls
             results = []
             provider_stats = {p: {"total": 0, "mentioned": 0} for p in active_providers}
+            # Competitor accumulator: {website: {"name": str, "mention_count": int, "total": int}}
+            all_competitor_results: Dict[str, Dict] = {}
             
             async def check_query_provider(query: str, provider: str):
                 """Check single query-provider combination."""
@@ -353,14 +454,35 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
                             "sentiment": analysis["sentiment"],
                             "position": analysis["position"],
                             "response_text": analysis["response_text"],
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }
                         
                         # Update stats
                         provider_stats[provider]["total"] += 1
                         if analysis["mentioned"]:
                             provider_stats[provider]["mentioned"] += 1
-                        
+
+                        # Competitor analysis for this response
+                        for comp in (getattr(project, 'competitors', None) or []):
+                            comp_website = comp.get('website', '')
+                            comp_keywords = comp.get('brand_keywords', [])
+                            if not comp_keywords or not comp_website:
+                                continue
+                            comp_analysis = _analyze_response(
+                                response_text=response,
+                                brand_keywords=comp_keywords,
+                                website=comp_website,
+                            )
+                            if comp_website not in all_competitor_results:
+                                all_competitor_results[comp_website] = {
+                                    'name': comp.get('name', comp_website),
+                                    'mention_count': 0,
+                                    'total': 0,
+                                }
+                            all_competitor_results[comp_website]['total'] += 1
+                            if comp_analysis.get('mentioned'):
+                                all_competitor_results[comp_website]['mention_count'] += 1
+
                         return result
                         
                     except Exception as e:
@@ -371,7 +493,7 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
                             "mentioned": False,
                             "cited": False,
                             "error": str(e),
-                            "timestamp": datetime.utcnow().isoformat()
+                            "timestamp": datetime.now(timezone.utc).isoformat()
                         }
             
             # Create tasks for all combinations
@@ -397,19 +519,32 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
                 else:
                     provider_scores[provider] = 0
             
+            # Build competitor_scores summary
+            competitor_scores_summary = {}
+            for website, data in all_competitor_results.items():
+                total = data['total']
+                if total > 0:
+                    competitor_scores_summary[website] = {
+                        'name': data['name'],
+                        'mention_rate': round(data['mention_count'] / total * 100, 1),
+                    }
+
             # Update scan with results
             scan.status = "completed"
-            scan.completed_at = datetime.utcnow()
+            scan.completed_at = datetime.now(timezone.utc)
             scan.completed_checks = total_checks
             scan.visibility_score = round(visibility_score, 1)
             scan.mention_count = mention_count
             scan.citation_count = citation_count
             scan.results_json = json.dumps(results)
             scan.provider_scores = json.dumps(provider_scores)
+            scan.competitor_scores = competitor_scores_summary
             
             await session.commit()
             print(f"✓ GEO scan {scan_id} completed: {visibility_score:.1f}% visibility")
-            
+
+            await _check_and_alert_visibility_drop(project, scan, session)
+
         except Exception as e:
             # Mark scan as failed
             try:
@@ -419,7 +554,7 @@ async def _run_geo_scan(scan_id: str, project_id: str, providers_override: Optio
                 scan = result.scalar_one_or_none()
                 if scan:
                     scan.status = "failed"
-                    scan.completed_at = datetime.utcnow()
+                    scan.completed_at = datetime.now(timezone.utc)
                     await session.commit()
             except Exception as _db_ex:
                 print(f"[geo_monitor] Warning: failed to persist failed status for scan {scan_id}: {_db_ex}")
@@ -444,7 +579,8 @@ async def create_project(
         brand_keywords=json.dumps(request.brand_keywords),
         target_queries=json.dumps(request.target_queries),
         providers_config=json.dumps(request.providers),
-        language=request.language
+        language=request.language,
+        competitors=[c.model_dump() for c in request.competitors] if request.competitors else []
     )
     
     db.add(project)
@@ -548,10 +684,39 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
     return {"message": "Project deleted successfully"}
 
 
-@router.post("/projects/{project_id}/scan")
-async def start_scan(
+@router.patch("/projects/{project_id}")
+async def update_project(
     project_id: str,
-    request: ScanRequest = ScanRequest(),
+    update: UpdateProjectRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Update alert settings for a GEO monitoring project."""
+    result = await db.execute(
+        select(GeoMonitorProject).where(GeoMonitorProject.id == project_id)
+    )
+    project = result.scalar_one_or_none()
+
+    if not project:
+        raise_not_found("Project")
+
+    if update.alert_threshold is not None:
+        project.alert_threshold = update.alert_threshold
+    if update.alert_webhook_url is not None:
+        project.alert_webhook_url = update.alert_webhook_url
+    if update.competitors is not None:
+        project.competitors = [c.model_dump() for c in update.competitors]
+
+    await db.commit()
+
+    return {"message": "Project updated", "project": project.to_dict()}
+
+
+@router.post("/projects/{project_id}/scan")
+@limiter.limit("20/hour")
+async def start_scan(
+    request: Request,
+    project_id: str,
+    scan_request: ScanRequest = ScanRequest(),
     background_tasks: BackgroundTasks = BackgroundTasks(),
     db: AsyncSession = Depends(get_db)
 ):
@@ -582,7 +747,7 @@ async def start_scan(
         _run_geo_scan,
         scan_id,
         project_id,
-        request.providers
+        scan_request.providers
     )
     
     return {

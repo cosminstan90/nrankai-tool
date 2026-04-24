@@ -214,7 +214,7 @@ async def sync_property(property_id: str, days: int = 90):
             raise_not_found("Property")
         site_url = prop.site_url
 
-    end_date   = datetime.utcnow().date()
+    end_date   = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=days)
     start_str  = start_date.isoformat()
     end_str    = end_date.isoformat()
@@ -304,7 +304,7 @@ async def sync_property(property_id: str, days: int = 90):
                 total_pages=len(page_rows),
                 date_range_start=start_str,
                 date_range_end=end_str,
-                last_synced_at=datetime.utcnow(),
+                last_synced_at=datetime.now(timezone.utc),
                 sync_type="api",
             )
         )
@@ -341,7 +341,7 @@ async def get_page_queries(property_id: str, url: str, days: int = 90):
     except ImportError:
         raise HTTPException(500, "google-api-python-client not installed")
 
-    end_date   = datetime.utcnow().date()
+    end_date   = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=days)
 
     def _fetch():

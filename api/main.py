@@ -46,7 +46,7 @@ for _k, _v in dotenv_values(_env_path).items():
 
 # Import database and models
 from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
-from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router
+from api.routes import pages_router, audits_router, results_router, health_router, compare_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router, meta_generator_router, query_suggestions_router, ai_visibility_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
 from sqlalchemy import select, func, desc, case
@@ -79,11 +79,17 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE keyword_results ADD COLUMN cluster VARCHAR(200)",
             "ALTER TABLE keyword_results ADD COLUMN priority_score FLOAT",
             "ALTER TABLE keyword_sessions ADD COLUMN source VARCHAR(20) DEFAULT 'dataforseo'",
+            "ALTER TABLE geo_monitor_projects ADD COLUMN alert_threshold FLOAT DEFAULT 15.0",
+            "ALTER TABLE geo_monitor_projects ADD COLUMN alert_webhook_url VARCHAR(500)",
+            "ALTER TABLE citation_trackers ADD COLUMN alert_threshold FLOAT DEFAULT 15.0",
+            "ALTER TABLE citation_trackers ADD COLUMN alert_webhook_url VARCHAR(500)",
+            "ALTER TABLE geo_monitor_projects ADD COLUMN competitors JSON",
+            "ALTER TABLE geo_monitor_scans ADD COLUMN competitor_scores JSON",
         ]:
             try:
                 await _mdb.execute(_sa_text(_stmt))
-            except Exception:
-                pass  # column already exists
+            except Exception as e:
+                logger.debug(f"ALTER TABLE skipped (likely column already exists): {e}")
         await _mdb.commit()
     print("[OK] Keyword research schema migration complete")
 
@@ -304,7 +310,7 @@ class ContentSizeLimitMiddleware(BaseHTTPMiddleware):
                         status_code=413,
                     )
             except ValueError:
-                pass
+                pass  # Non-numeric Content-Length header — ignore and proceed
         return await call_next(request)
 
 app.add_middleware(ContentSizeLimitMiddleware)
@@ -374,4 +380,7 @@ app.include_router(cocitation_router)
 app.include_router(answer_calibration_router)
 app.include_router(multilingual_router)
 app.include_router(content_iq_router)
+app.include_router(meta_generator_router)
+app.include_router(query_suggestions_router)
+app.include_router(ai_visibility_router)
 app.include_router(pages_router)

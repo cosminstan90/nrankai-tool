@@ -10,7 +10,7 @@ import uuid
 logger = logging.getLogger(__name__)
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pathlib import Path
 
@@ -32,6 +32,7 @@ from bs4 import BeautifulSoup
 import httpx
 from pydantic import BaseModel
 from api.workers.audit_worker import start_audit_pipeline, get_active_audit_count
+from api.utils.url_validator import validate_external_url, safe_work_dir
 
 router = APIRouter(prefix="/api/audits", tags=["audits"])
 
@@ -136,6 +137,12 @@ async def single_page_audit(
     Returns the JSON results directly and saves to DB.
     """
     try:
+        # Validate URL before fetching (SSRF prevention)
+        try:
+            validate_external_url(request.url, field_name="url")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
         # Fetch HTML
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
             headers = {"User-Agent": "GEO-Analyzer/2.1 (Single Page Audit)"}
@@ -241,8 +248,8 @@ async def single_page_audit(
             average_score=avg_score,
             current_step="finished",
             progress_percent=100,
-            started_at=datetime.utcnow(),
-            completed_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
+            completed_at=datetime.now(timezone.utc),
             language=request.language
         )
         db.add(new_audit)
@@ -450,7 +457,12 @@ async def get_sitemap_count(url: str = Query(..., description="The full URL to t
     """
     if not url.startswith(('http://', 'https://')):
         return SitemapCountResponse(url=url, count=0, error="URL must start with http:// or https://")
-        
+
+    try:
+        validate_external_url(url, field_name="url")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     count, error = await _count_sitemap_urls(url, set())
     
     return SitemapCountResponse(
@@ -481,7 +493,7 @@ async def cancel_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
     audit.status = "failed"
     audit.current_step = "Cancelled"
     audit.error_message = "Audit cancelled by user"
-    audit.completed_at = datetime.utcnow()
+    audit.completed_at = datetime.now(timezone.utc)
 
     await db.commit()
 
@@ -616,16 +628,15 @@ async def delete_audit(audit_id: str, force: bool = False, db: AsyncSession = De
     await db.commit()
     
     # Also clean up the data directory
-    data_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        audit.website
-    )
-    if os.path.exists(data_dir):
-        import shutil
-        try:
+    import shutil
+    from api.utils.url_validator import safe_work_dir
+    base_dir = Path(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    try:
+        data_dir = safe_work_dir(audit.website, base_dir)
+        if data_dir.exists():
             shutil.rmtree(data_dir)
-        except Exception:
-            pass  # Best effort cleanup
+    except (ValueError, Exception):
+        pass  # Best effort cleanup
 
 
 @router.get("/{audit_id}/export")

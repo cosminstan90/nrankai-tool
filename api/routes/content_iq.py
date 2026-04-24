@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -356,7 +356,9 @@ async def delete_audit(audit_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/audits/{audit_id}/start")
+@limiter.limit("20/hour")
 async def start_audit(
+    request: Request,
     audit_id: int,
     body: dict,
     background_tasks: BackgroundTasks,
@@ -535,7 +537,9 @@ async def sync_gsc(
 # ---------------------------------------------------------------------------
 
 @router.post("/audits/{audit_id}/briefs")
+@limiter.limit("20/hour")
 async def generate_briefs(
+    request: Request,
     audit_id: int,
     body: dict,
     background_tasks: BackgroundTasks,

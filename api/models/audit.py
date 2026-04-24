@@ -1,7 +1,7 @@
 """Audit-related ORM models."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -27,7 +27,7 @@ class Audit(Base):
     provider = Column(String(20), nullable=False)
     model = Column(String(100), nullable=False)
     status = Column(String(20), default="pending", index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     total_pages = Column(Integer, default=0)
@@ -86,7 +86,7 @@ class AuditResult(Base):
     score = Column(Integer, nullable=True)
     classification = Column(String(50), nullable=True, index=True)   # indexed: used in GROUP BY / ORDER BY
     result_json = Column(Text, nullable=True)  # Full JSON result
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship back to audit
     audit = relationship("Audit", back_populates="results")
@@ -117,7 +117,7 @@ class AuditLog(Base):
     audit_id = Column(String(36), ForeignKey("audits.id", ondelete="CASCADE"), nullable=False, index=True)
     level = Column(String(10), default="INFO")  # INFO, WARNING, ERROR
     message = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship back to audit
     audit = relationship("Audit", back_populates="logs")
@@ -152,7 +152,7 @@ class AuditSummary(Base):
     language = Column(String(30), default="English")
     provider = Column(String(20))  # Provider used for summary generation
     model = Column(String(100))  # Model used for summary generation
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship back to audit
     audit = relationship("Audit", backref="summary")
@@ -220,8 +220,8 @@ class AuditTemplate(Base):
     # Metadata
     use_count = Column(Integer, default=0)                     # How many times used
     is_default = Column(Integer, default=0)                    # Show in quick-launch
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -260,7 +260,7 @@ class AuditWeightConfig(Base):
 
     audit_type = Column(String(50), primary_key=True)
     weight     = Column(Float, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 
@@ -272,8 +272,8 @@ class ResultNote(Base):
     result_id  = Column(Integer, ForeignKey("audit_results.id", ondelete="CASCADE"),
                         unique=True, index=True)   # one note per result (upsert)
     note       = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 

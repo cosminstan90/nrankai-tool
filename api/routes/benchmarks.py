@@ -8,7 +8,7 @@ with AI-generated competitive insights.
 import json
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -340,7 +340,7 @@ async def generate_benchmark_analysis_task(
             # ── Persist completed state ──────────────────────────────────
             benchmark.benchmark_summary = json.dumps(analysis_data)
             benchmark.analysis_status   = "completed"
-            benchmark.updated_at        = datetime.utcnow()
+            benchmark.updated_at        = datetime.now(timezone.utc)
             await db.commit()
             print(f"[Benchmark] Analysis completed for {benchmark_id}")
 
@@ -358,7 +358,7 @@ async def generate_benchmark_analysis_task(
                     if err_bench:
                         err_bench.analysis_status = "failed"
                         err_bench.analysis_error  = err_msg
-                        err_bench.updated_at      = datetime.utcnow()
+                        err_bench.updated_at      = datetime.now(timezone.utc)
                         await err_db.commit()
             except Exception as db_exc:
                 print(f"[Benchmark] Could not persist failed state for {benchmark_id}: {db_exc}")

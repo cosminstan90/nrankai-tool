@@ -6,7 +6,7 @@ PUT  /api/notes/{result_id}   → upsert note text ({"note": "..."})
 DELETE /api/notes/{result_id} → delete note
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from api.utils.errors import raise_not_found
 from pydantic import BaseModel
@@ -47,7 +47,7 @@ async def upsert_note(result_id: int, payload: NotePayload, db: AsyncSession = D
 
     if note:
         note.note = payload.note
-        note.updated_at = datetime.utcnow()
+        note.updated_at = datetime.now(timezone.utc)
     else:
         note = ResultNote(result_id=result_id, note=payload.note)
         db.add(note)

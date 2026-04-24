@@ -9,7 +9,7 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -378,7 +378,7 @@ async def generate_summary_task(
                 existing.language = language
                 existing.provider = provider
                 existing.model = model
-                existing.generated_at = datetime.utcnow()
+                existing.generated_at = datetime.now(timezone.utc)
             else:
                 # Create new
                 new_summary = AuditSummary(
@@ -390,7 +390,7 @@ async def generate_summary_task(
                     language=language,
                     provider=provider,
                     model=model,
-                    generated_at=datetime.utcnow()
+                    generated_at=datetime.now(timezone.utc)
                 )
                 db.add(new_summary)
             

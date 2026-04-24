@@ -6,7 +6,7 @@ and aggregated metrics across audits, GEO visibility, citations, briefs, and sch
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from api.utils.errors import raise_not_found
@@ -329,7 +329,7 @@ async def detect_alerts_for_website(
         .where(and_(
             Audit.website == website,
             Audit.status == "failed",
-            Audit.created_at >= datetime.utcnow() - timedelta(days=7)
+            Audit.created_at >= datetime.now(timezone.utc) - timedelta(days=7)
         ))
     )
     failed_result = await db.execute(recent_failed_stmt)
@@ -341,7 +341,7 @@ async def detect_alerts_for_website(
     # Check for stale data (no audit in 30 days)
     if audits_data["last_audit_date"]:
         last_audit = datetime.fromisoformat(audits_data["last_audit_date"])
-        days_since = (datetime.utcnow() - last_audit).days
+        days_since = (datetime.now(timezone.utc) - last_audit).days
         if days_since > 30:
             alerts.append(f"No audit in {days_since} days")
     
@@ -606,7 +606,7 @@ async def get_website_details(domain: str, db: AsyncSession = Depends(get_db)):
     
     if audits["last_audit_date"]:
         last_audit = datetime.fromisoformat(audits["last_audit_date"])
-        days_since = (datetime.utcnow() - last_audit).days
+        days_since = (datetime.now(timezone.utc) - last_audit).days
         if days_since > 30:
             actions.append({
                 "priority": "medium",
@@ -662,7 +662,7 @@ async def get_portfolio_alerts(db: AsyncSession = Depends(get_db)):
                 "website": website,
                 "message": alert_msg,
                 "severity": severity,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             })
     
     # Sort by severity

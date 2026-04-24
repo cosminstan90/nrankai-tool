@@ -170,7 +170,7 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
             ])
             prop.total_pages = len(rows)
 
-        prop.updated_at = datetime.utcnow()
+        prop.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
     return {

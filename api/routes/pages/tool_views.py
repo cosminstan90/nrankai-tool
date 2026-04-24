@@ -134,7 +134,12 @@ async def llms_txt_page(request: Request):
 
 @router.get("/citations", response_class=HTMLResponse)
 async def citation_tracker_page(request: Request):
-    return templates.TemplateResponse("citation_tracker.html", {"request": request})
+    from api.provider_registry import get_available_providers
+    available = get_available_providers()
+    return templates.TemplateResponse("citation_tracker.html", {
+        "request": request,
+        "gemini_available": available.get("google", False),
+    })
 
 
 @router.get("/guide/{page_url:path}", response_class=HTMLResponse)

@@ -22,7 +22,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from api.utils.task_runner import create_tracked_task
@@ -355,7 +355,7 @@ async def _run_session(session_id: str) -> None:
             session.status          = "completed"
             session.progress        = 100
             session.progress_message = "Done"
-            session.completed_at    = datetime.utcnow()
+            session.completed_at    = datetime.now(timezone.utc)
             await db.commit()
 
         except Exception as exc:
@@ -694,7 +694,7 @@ async def _run_import_session(session_id: str, keywords_data: List[dict], provid
             session.status          = "completed"
             session.progress        = 100
             session.progress_message = "Done"
-            session.completed_at    = datetime.utcnow()
+            session.completed_at    = datetime.now(timezone.utc)
             await db.commit()
 
         except Exception as exc:
@@ -707,7 +707,8 @@ async def _run_import_session(session_id: str, keywords_data: List[dict], provid
 
 
 @router.post("/import", status_code=201)
-async def import_session(req: ImportSessionRequest):
+@limiter.limit("50/hour")
+async def import_session(request: Request, req: ImportSessionRequest):
     """Create a keyword session from pasted CSV/TSV data and run LLM analysis."""
     if not req.raw_text.strip():
         raise_bad_request("Paste some keyword data first.")

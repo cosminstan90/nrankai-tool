@@ -6,7 +6,7 @@ Prefix: /api/templates
 
 import asyncio
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -146,7 +146,7 @@ async def update_template(
         else:
             setattr(template, field, value)
     
-    template.updated_at = datetime.utcnow()
+    template.updated_at = datetime.now(timezone.utc)
     
     await db.commit()
     await db.refresh(template)
@@ -221,7 +221,7 @@ async def launch_audit_from_template(
         provider=template.provider,
         model=template.model or get_default_model(template.provider),
         status="pending",
-        created_at=datetime.utcnow()
+        created_at=datetime.now(timezone.utc)
     )
     
     db.add(audit)

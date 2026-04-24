@@ -139,21 +139,63 @@
             
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-1">Target Queries</label>
-                <textarea 
+                <div class="flex items-center gap-2 mb-2">
+                    <button
+                        type="button"
+                        @click="generateSuggestions"
+                        class="text-sm text-primary-600 hover:text-primary-700 font-medium"
+                    >
+                        ✨ Generate Suggested Queries
+                    </button>
+                    <button
+                        type="button"
+                        @click="suggestQueries()"
+                        :disabled="suggestingQueries || !newProject.website || !newProject.name"
+                        class="text-sm bg-purple-100 text-purple-700 px-3 py-1 rounded hover:bg-purple-200 transition disabled:opacity-50"
+                    >
+                        <span x-show="!suggestingQueries">✨ Sugerează queries (AI)</span>
+                        <span x-show="suggestingQueries">Se generează...</span>
+                    </button>
+                    <span x-show="queriesSuggested" class="text-green-600 text-xs">
+                        ✓ <span x-text="suggestedCount"></span> queries adăugate
+                    </span>
+                </div>
+                <textarea
                     x-model="queriesInput"
                     rows="5"
                     placeholder="Enter test queries (one per line)&#10;e.g., Care sunt cele mai bune bănci din România?"
                     class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                 ></textarea>
-                <button 
-                    type="button" 
-                    @click="generateSuggestions"
-                    class="mt-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                    ✨ Generate Suggested Queries
-                </button>
             </div>
             
+            <!-- Competitors -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Competitori (opțional)
+                </label>
+                <div class="space-y-2">
+                    <template x-for="(comp, idx) in newProject.competitors" :key="idx">
+                        <div class="flex gap-2 items-start border rounded p-2 bg-gray-50">
+                            <div class="flex-1 space-y-1">
+                                <input type="text" x-model="comp.name" placeholder="Nume competitor"
+                                       class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm">
+                                <input type="text" x-model="comp.website" placeholder="website.com"
+                                       class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm">
+                                <input type="text" x-model="comp.brand_keywords_raw" placeholder="keyword1, keyword2"
+                                       class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500 text-sm">
+                            </div>
+                            <button type="button" @click="newProject.competitors.splice(idx, 1)"
+                                    class="text-red-400 hover:text-red-600 text-sm mt-1">&#10005;</button>
+                        </div>
+                    </template>
+                    <button type="button"
+                            @click="newProject.competitors.push({name:'', website:'', brand_keywords_raw:''})"
+                            class="text-sm text-indigo-600 hover:underline">
+                        + Adaugă competitor
+                    </button>
+                </div>
+            </div>
+
             <div>
                 <label class="block text-sm font-medium text-slate-700 mb-2">Providers to Monitor</label>
                 <div class="space-y-2">
@@ -184,6 +226,13 @@
                         <span class="ml-2 text-xs text-slate-500">(Not configured)</span>
                         {% endif %}
                     </label>
+                    {% if gemini_available %}
+                    <label class="flex items-center">
+                        <input type="checkbox" x-model="newProject.providers.gemini"
+                               class="mr-2">
+                        <span>Google Gemini</span>
+                    </label>
+                    {% endif %}
                 </div>
             </div>
             
@@ -277,6 +326,36 @@
             </div>
         </div>
         
+        <!-- Alert Settings -->
+        <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+            <div class="mt-0 border-t-0 pt-0">
+              <h3 class="font-semibold text-gray-700 mb-3">Alert Settings</h3>
+              <div class="space-y-3">
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">Alert threshold (%)</label>
+                  <input type="number"
+                         x-model="alertThreshold"
+                         min="1" max="100" step="1"
+                         placeholder="15"
+                         class="w-32 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+                  <span class="text-xs text-gray-400 ml-2">Alert when score drops by this many points</span>
+                </div>
+                <div>
+                  <label class="block text-sm text-gray-600 mb-1">Webhook URL (optional)</label>
+                  <input type="url"
+                         x-model="alertWebhookUrl"
+                         placeholder="https://hooks.example.com/..."
+                         class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500">
+                  <span class="text-xs text-gray-400">POST request sent when visibility drops</span>
+                </div>
+                <button @click="saveAlertSettings()"
+                        class="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium py-2 px-4 rounded-lg">
+                  Save Alert Settings
+                </button>
+              </div>
+            </div>
+        </div>
+
         <!-- Latest Scan Results -->
         <template x-if="latestScan && latestScan.status === 'completed'">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -358,6 +437,47 @@
             </div>
         </template>
         
+        <!-- Competitor Comparison -->
+        <template x-if="latestScan && Object.keys(latestScan.competitor_scores || {}).length > 0">
+            <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+                <h3 class="text-lg font-semibold mb-4">Comparație Competitori</h3>
+                <div class="space-y-3">
+                    <!-- Primary brand -->
+                    <div class="flex items-center gap-3">
+                        <span class="w-36 text-sm font-medium text-indigo-600 truncate"
+                              x-text="selectedProject?.website || 'Tu'"></span>
+                        <div class="flex-1 bg-gray-200 rounded-full h-4">
+                            <div class="bg-indigo-500 h-4 rounded-full transition-all"
+                                 :style="`width: ${latestScan.visibility_score || 0}%`"></div>
+                        </div>
+                        <span class="w-14 text-sm text-right font-bold"
+                              x-text="(latestScan.visibility_score || 0).toFixed(1) + '%'"></span>
+                    </div>
+                    <!-- Competitors -->
+                    <template x-for="(data, website) in (latestScan.competitor_scores || {})" :key="website">
+                        <div class="flex items-center gap-3">
+                            <span class="w-36 text-sm text-gray-600 truncate"
+                                  x-text="data.name || website"></span>
+                            <div class="flex-1 bg-gray-200 rounded-full h-4">
+                                <div class="bg-orange-400 h-4 rounded-full transition-all"
+                                     :style="`width: ${data.mention_rate || 0}%`"></div>
+                            </div>
+                            <span class="w-14 text-sm text-right"
+                                  x-text="(data.mention_rate || 0).toFixed(1) + '%'"></span>
+                        </div>
+                    </template>
+                </div>
+                <!-- Headline summary -->
+                <p class="text-xs text-gray-500 mt-3">
+                    Tu: <span class="font-semibold text-indigo-600"
+                              x-text="(latestScan.visibility_score || 0).toFixed(1) + '%'"></span>
+                    <template x-for="(data, website) in (latestScan.competitor_scores || {})" :key="website">
+                        <span> | <span x-text="data.name || website"></span>: <span x-text="(data.mention_rate || 0).toFixed(1) + '%'"></span></span>
+                    </template>
+                </p>
+            </div>
+        </template>
+
         <!-- Trend Chart -->
         <template x-if="scans.length > 1">
             <div class="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
@@ -493,6 +613,11 @@ function geoMonitor() {
         detailResult: null,
         keywordInput: '',
         queriesInput: '',
+        alertThreshold: 15,
+        alertWebhookUrl: '',
+        suggestingQueries: false,
+        queriesSuggested: false,
+        suggestedCount: 0,
         newProject: {
             name: '',
             website: '',
@@ -501,8 +626,10 @@ function geoMonitor() {
             providers: {
                 chatgpt: {{ 'true' if providers.chatgpt else 'false' }},
                 claude: {{ 'true' if providers.claude else 'false' }},
-                perplexity: {{ 'true' if providers.perplexity else 'false' }}
-            }
+                perplexity: {{ 'true' if providers.perplexity else 'false' }},
+                gemini: {{ 'true' if gemini_available else 'false' }}
+            },
+            competitors: []
         },
         chart: null,
         
@@ -522,6 +649,8 @@ function geoMonitor() {
         
         async selectProject(project) {
             this.selectedProject = project;
+            this.alertThreshold = project.alert_threshold ?? 15;
+            this.alertWebhookUrl = project.alert_webhook_url || '';
             await this.loadProjectDetails();
         },
         
@@ -662,7 +791,16 @@ function geoMonitor() {
                         brand_keywords: this.newProject.brand_keywords,
                         target_queries: queries,
                         providers: this.newProject.providers,
-                        language: this.newProject.language
+                        language: this.newProject.language,
+                        competitors: this.newProject.competitors
+                            .filter(c => c.name && c.website)
+                            .map(c => ({
+                                name: c.name,
+                                website: c.website,
+                                brand_keywords: c.brand_keywords_raw
+                                    ? c.brand_keywords_raw.split(',').map(k => k.trim()).filter(k => k)
+                                    : []
+                            }))
                     })
                 });
                 
@@ -691,8 +829,10 @@ function geoMonitor() {
                 providers: {
                     chatgpt: {{ 'true' if providers.chatgpt else 'false' }},
                     claude: {{ 'true' if providers.claude else 'false' }},
-                    perplexity: {{ 'true' if providers.perplexity else 'false' }}
-                }
+                    perplexity: {{ 'true' if providers.perplexity else 'false' }},
+                    gemini: {{ 'true' if gemini_available else 'false' }}
+                },
+                competitors: []
             };
             this.queriesInput = '';
         },
@@ -758,10 +898,66 @@ function geoMonitor() {
             this.detailResult = result;
         },
         
+        async saveAlertSettings() {
+            if (!this.selectedProject) return;
+            try {
+                const response = await fetch(`/api/geo-monitor/projects/${this.selectedProject.id}`, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        alert_threshold: parseFloat(this.alertThreshold) || 15,
+                        alert_webhook_url: this.alertWebhookUrl || null
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    this.selectedProject = data.project;
+                    alert('Alert settings saved!');
+                } else {
+                    const error = await response.json();
+                    alert('Failed to save: ' + (error.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to save alert settings:', error);
+                alert('Failed to save alert settings');
+            }
+        },
+
         formatDate(dateStr) {
             if (!dateStr) return 'N/A';
             const date = new Date(dateStr);
             return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        },
+
+        async suggestQueries() {
+            if (!this.newProject.website || !this.newProject.name) return;
+            this.suggestingQueries = true;
+            try {
+                const resp = await fetch('/api/ai-visibility/suggest-queries', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        brand_name: this.newProject.name,
+                        website: this.newProject.website,
+                        industry: '',
+                        language: this.newProject.language || 'ro',
+                        count: 20
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Failed');
+                const newQueries = data.queries || [];
+                const existing = this.queriesInput ? this.queriesInput.split('\n').filter(q => q.trim()) : [];
+                const merged = [...new Set([...existing, ...newQueries])];
+                this.queriesInput = merged.join('\n');
+                this.suggestedCount = newQueries.length;
+                this.queriesSuggested = true;
+                setTimeout(() => this.queriesSuggested = false, 3000);
+            } catch(e) {
+                alert('Eroare la generare queries: ' + e.message);
+            } finally {
+                this.suggestingQueries = false;
+            }
         }
     };
 }

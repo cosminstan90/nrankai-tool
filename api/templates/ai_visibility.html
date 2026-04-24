@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+
+{% block title %}AI Visibility Dashboard - Website Analyzer{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    .metric-card {
+        background: white;
+        border-radius: 0.75rem;
+        border: 1px solid #e2e8f0;
+        padding: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .score-value {
+        font-size: 3rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .trend-up { color: #16a34a; }
+    .trend-down { color: #dc2626; }
+    .trend-neutral { color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="aiVisibility()" x-init="init()">
+
+    <!-- Header -->
+    <div class="mb-8">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold text-slate-900">AI Visibility Dashboard</h1>
+                <p class="mt-1 text-slate-500">Scor compozit GeoMonitor + CitationTracker</p>
+            </div>
+            <button
+                @click="loadData()"
+                :disabled="loading"
+                class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 text-sm font-medium"
+            >
+                <svg x-show="loading" class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <svg x-show="!loading" class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Error banner -->
+    <div x-show="error" class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm" x-text="error"></div>
+
+    <!-- Loading skeleton -->
+    <div x-show="loading && !summary" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-pulse">
+        <template x-for="i in 3">
+            <div class="metric-card">
+                <div class="h-4 bg-slate-200 rounded w-1/2 mb-4"></div>
+                <div class="h-12 bg-slate-200 rounded w-2/3"></div>
+            </div>
+        </template>
+    </div>
+
+    <!-- ── Top Metrics Row ─────────────────────────────────────────────── -->
+    <div x-show="summary" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+
+        <!-- Composite Score -->
+        <div class="metric-card flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+                <span class="text-sm font-medium text-slate-500 uppercase tracking-wide">Composite Score</span>
+                <span
+                    x-show="summary?.trend"
+                    class="text-sm font-semibold"
+                    :class="summary?.trend?.startsWith('+') ? 'trend-up' : (summary?.trend?.startsWith('-') ? 'trend-down' : 'trend-neutral')"
+                    x-text="summary?.trend ? (summary.trend.startsWith('+') ? '↑ ' + summary.trend : '↓ ' + summary.trend) : ''"
+                ></span>
+            </div>
+            <div
+                class="score-value"
+                :class="scoreColor(summary?.composite_score)"
+                x-text="summary ? summary.composite_score.toFixed(1) + '%' : '—'"
+            ></div>
+            <p class="text-xs text-slate-400">GeoMonitor × 0.4 + Citations × 0.6</p>
+            <div class="flex gap-4 mt-1 text-xs text-slate-500">
+                <span x-text="(summary?.geo_projects_count || 0) + ' geo projects'"></span>
+                <span x-text="(summary?.citation_trackers_count || 0) + ' citation trackers'"></span>
+            </div>
+        </div>
+
+        <!-- Mention Rate -->
+        <div class="metric-card flex flex-col gap-2">
+            <span class="text-sm font-medium text-slate-500 uppercase tracking-wide">Mention Rate</span>
+            <div
+                class="score-value"
+                :class="scoreColor(summary?.mention_rate)"
+                x-text="summary ? summary.mention_rate.toFixed(1) + '%' : '—'"
+            ></div>
+            <p class="text-xs text-slate-400">From GeoMonitor visibility scores</p>
+            <div class="mt-2 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                    class="h-full rounded-full transition-all"
+                    :class="summary?.mention_rate >= 70 ? 'bg-green-500' : (summary?.mention_rate >= 40 ? 'bg-yellow-500' : 'bg-red-500')"
+                    :style="'width: ' + Math.min(summary?.mention_rate || 0, 100) + '%'"
+                ></div>
+            </div>
+        </div>
+
+        <!-- Citation Rate -->
+        <div class="metric-card flex flex-col gap-2">
+            <span class="text-sm font-medium text-slate-500 uppercase tracking-wide">Citation Rate</span>
+            <div
+                class="score-value"
+                :class="scoreColor(summary?.citation_rate)"
+                x-text="summary ? summary.citation_rate.toFixed(1) + '%' : '—'"
+            ></div>
+            <p class="text-xs text-slate-400">From CitationTracker citation rates</p>
+            <div class="mt-2 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                    class="h-full rounded-full transition-all"
+                    :class="summary?.citation_rate >= 70 ? 'bg-green-500' : (summary?.citation_rate >= 40 ? 'bg-yellow-500' : 'bg-red-500')"
+                    :style="'width: ' + Math.min(summary?.citation_rate || 0, 100) + '%'"
+                ></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Provider Breakdown + Radar Chart ────────────────────────────── -->
+    <div x-show="summary" class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+
+        <!-- Provider Table -->
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-100">
+                <h2 class="text-base font-semibold text-slate-900">Provider Breakdown</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-50 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                        <tr>
+                            <th class="px-4 py-3 text-left">Provider</th>
+                            <th class="px-4 py-3 text-right">Mention %</th>
+                            <th class="px-4 py-3 text-right">Citation %</th>
+                            <th class="px-4 py-3 text-right">Combined</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-if="summary && Object.keys(summary.provider_breakdown).length === 0">
+                            <tr>
+                                <td colspan="4" class="px-4 py-6 text-center text-slate-400 text-xs">No provider data yet — run a GeoMonitor or CitationTracker scan first.</td>
+                            </tr>
+                        </template>
+                        <template x-for="[provider, stats] in Object.entries(summary?.provider_breakdown || {})" :key="provider">
+                            <tr class="hover:bg-slate-50">
+                                <td class="px-4 py-3 font-medium text-slate-700 capitalize" x-text="provider"></td>
+                                <td class="px-4 py-3 text-right" :class="scoreColor(stats.mentions)" x-text="stats.mentions != null ? stats.mentions.toFixed(1) + '%' : '—'"></td>
+                                <td class="px-4 py-3 text-right" :class="scoreColor(stats.citations)" x-text="stats.citations != null ? stats.citations.toFixed(1) + '%' : '—'"></td>
+                                <td class="px-4 py-3 text-right font-semibold"
+                                    :class="scoreColor(Math.round((stats.mentions || 0) * 0.4 + (stats.citations || 0) * 0.6))"
+                                    x-text="Math.round((stats.mentions || 0) * 0.4 + (stats.citations || 0) * 0.6) + '%'"
+                                ></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Radar Chart -->
+        <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
+            <h2 class="text-base font-semibold text-slate-900 mb-4">Per-Provider Visibility</h2>
+            <div x-show="summary && Object.keys(summary.provider_breakdown).length > 0" class="flex items-center justify-center" style="height: 260px;">
+                <canvas id="providerChart"></canvas>
+            </div>
+            <div x-show="!summary || Object.keys(summary?.provider_breakdown || {}).length === 0" class="flex items-center justify-center h-48 text-slate-400 text-sm">
+                No data to display
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Recent Scans ─────────────────────────────────────────────────── -->
+    <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden mb-8">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-base font-semibold text-slate-900">Recent Scans</h2>
+            <span class="text-xs text-slate-400" x-text="'Last ' + recentScans.length + ' scans'"></span>
+        </div>
+        <div x-show="recentScans.length === 0 && !loading" class="px-6 py-8 text-center text-slate-400 text-sm">
+            No scans found. Start a GeoMonitor or CitationTracker scan to see data here.
+        </div>
+        <div class="overflow-x-auto" x-show="recentScans.length > 0">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                    <tr>
+                        <th class="px-4 py-3 text-left">Type</th>
+                        <th class="px-4 py-3 text-left">Project</th>
+                        <th class="px-4 py-3 text-left">Website</th>
+                        <th class="px-4 py-3 text-right">Score</th>
+                        <th class="px-4 py-3 text-left">Status</th>
+                        <th class="px-4 py-3 text-left">Date</th>
+                        <th class="px-4 py-3 text-left">Link</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    <template x-for="scan in recentScans" :key="scan.id">
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3">
+                                <span
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                    :class="scan.type === 'geo' ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'"
+                                    x-text="scan.type === 'geo' ? 'GEO' : 'Citation'"
+                                ></span>
+                            </td>
+                            <td class="px-4 py-3 font-medium text-slate-800" x-text="scan.project_name"></td>
+                            <td class="px-4 py-3 text-slate-500" x-text="scan.website"></td>
+                            <td class="px-4 py-3 text-right font-semibold"
+                                :class="scan.score != null ? scoreColor(scan.score) : 'text-slate-400'"
+                                x-text="scan.score != null ? scan.score.toFixed(1) + '%' : '—'"
+                            ></td>
+                            <td class="px-4 py-3">
+                                <span
+                                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                                    :class="{
+                                        'bg-green-100 text-green-700': scan.status === 'completed',
+                                        'bg-yellow-100 text-yellow-700': scan.status === 'running',
+                                        'bg-slate-100 text-slate-600': scan.status === 'pending',
+                                        'bg-red-100 text-red-700': scan.status === 'failed'
+                                    }"
+                                    x-text="scan.status"
+                                ></span>
+                            </td>
+                            <td class="px-4 py-3 text-slate-500 whitespace-nowrap" x-text="formatDate(scan.completed_at)"></td>
+                            <td class="px-4 py-3">
+                                <a :href="scan.project_url" class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">View →</a>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Quick Links ──────────────────────────────────────────────────── -->
+    <div class="flex flex-wrap gap-3">
+        <a href="/geo-monitor" class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-medium transition-colors">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            → GeoMonitor Projects
+        </a>
+        <a href="/citations" class="inline-flex items-center gap-2 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg text-sm font-medium transition-colors">
+            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            → Citation Trackers
+        </a>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function aiVisibility() {
+    return {
+        summary: null,
+        recentScans: [],
+        loading: true,
+        error: null,
+        chart: null,
+
+        async init() {
+            await this.loadData();
+        },
+
+        async loadData() {
+            this.loading = true;
+            this.error = null;
+            try {
+                const [sumResp, scansResp] = await Promise.all([
+                    fetch('/api/ai-visibility/summary'),
+                    fetch('/api/ai-visibility/recent-scans'),
+                ]);
+                if (!sumResp.ok) throw new Error('Failed to load summary: ' + sumResp.status);
+                if (!scansResp.ok) throw new Error('Failed to load scans: ' + scansResp.status);
+                this.summary = await sumResp.json();
+                this.recentScans = await scansResp.json();
+                this.$nextTick(() => this.renderChart());
+            } catch (e) {
+                this.error = e.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        renderChart() {
+            if (!this.summary?.provider_breakdown) return;
+            const ctx = document.getElementById('providerChart');
+            if (!ctx) return;
+            if (this.chart) this.chart.destroy();
+            const providers = Object.keys(this.summary.provider_breakdown);
+            if (providers.length === 0) return;
+            const scores = providers.map(p => {
+                const d = this.summary.provider_breakdown[p];
+                const m = d.mentions || 0;
+                const c = d.citations || 0;
+                return Math.round(m * 0.4 + c * 0.6);
+            });
+            this.chart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: providers.map(p => p.charAt(0).toUpperCase() + p.slice(1)),
+                    datasets: [{
+                        label: 'Visibility Score',
+                        data: scores,
+                        backgroundColor: 'rgba(99, 102, 241, 0.2)',
+                        borderColor: 'rgba(99, 102, 241, 1)',
+                        pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(99, 102, 241, 1)',
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        r: {
+                            min: 0,
+                            max: 100,
+                            ticks: { stepSize: 25, font: { size: 10 } },
+                            grid: { color: 'rgba(148, 163, 184, 0.3)' },
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+        },
+
+        scoreColor(score) {
+            if (score == null) return 'text-slate-400';
+            if (score >= 70) return 'text-green-600';
+            if (score >= 40) return 'text-yellow-600';
+            return 'text-red-600';
+        },
+
+        formatDate(iso) {
+            if (!iso) return '—';
+            return new Date(iso).toLocaleDateString('ro-RO', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric'
+            });
+        }
+    }
+}
+</script>
+{% endblock %}

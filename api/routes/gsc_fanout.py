@@ -11,13 +11,16 @@ Endpoints:
   DELETE /api/gsc-fanout/disconnect/{project_id}
 """
 
+import hashlib
+import hmac
 import json
 import logging
 import os
+import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -41,6 +44,29 @@ def _redirect_uri()  -> str:
     return f"{base}/api/gsc-fanout/callback"
 
 
+def _make_oauth_state(project_id: str) -> str:
+    """Return a signed state token: '{project_id}:{nonce}:{sig}'."""
+    nonce = secrets.token_urlsafe(16)
+    payload = f"{project_id}:{nonce}"
+    secret = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{project_id}:{nonce}:{sig}"
+
+
+def _verify_oauth_state(state: str) -> str:
+    """Return project_id if the state signature is valid; raise ValueError otherwise."""
+    parts = state.split(":")
+    if len(parts) != 3:
+        raise ValueError("Invalid OAuth state format")
+    project_id, nonce, sig = parts
+    payload = f"{project_id}:{nonce}"
+    secret = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    expected = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()[:16]
+    if not secrets.compare_digest(sig, expected):
+        raise ValueError("OAuth state signature mismatch — possible CSRF")
+    return project_id
+
+
 @router.get("/connect/{project_id}")
 async def gsc_connect(project_id: str):
     """Redirect to Google OAuth to authorise GSC access for a project."""
@@ -55,7 +81,7 @@ async def gsc_connect(project_id: str):
         "scope":         " ".join(_SCOPES),
         "access_type":   "offline",
         "prompt":        "consent",
-        "state":         project_id,
+        "state":         _make_oauth_state(project_id),
     }
     url = f"{_AUTH_URL}?{urlencode(params)}"
     return RedirectResponse(url=url)
@@ -87,7 +113,10 @@ async def gsc_callback(
     except Exception as exc:
         raise_bad_request(f"Token exchange failed: {exc}")
 
-    project_id = state or ""
+    try:
+        project_id = _verify_oauth_state(state or "")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid OAuth state — please try again")
 
     # Discover GSC property — list sites and take the first verified one
     gsc_property = ""

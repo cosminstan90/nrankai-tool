@@ -59,9 +59,12 @@ async def geo_monitor_page(request: Request):
         "claude": bool(os.getenv("ANTHROPIC_API_KEY")),
         "perplexity": bool(os.getenv("PERPLEXITY_API_KEY"))
     }
+    from api.provider_registry import get_available_providers
+    available = get_available_providers()
     return templates.TemplateResponse("geo_monitor.html", {
         "request": request,
-        "providers": providers
+        "providers": providers,
+        "gemini_available": available.get("google", False),
     })
 
 

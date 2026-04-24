@@ -1,7 +1,8 @@
 """Infrastructure ORM models (Benchmarks, Schedules, Monitoring, Costs)."""
 
+import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -25,8 +26,8 @@ class BenchmarkProject(Base):
     # Analysis lifecycle: "pending" → "generating" → "completed" | "failed"
     analysis_status = Column(String(20), nullable=False, default="pending", server_default="pending")
     analysis_error  = Column(Text, nullable=True)     # Error message when status == "failed"
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -75,7 +76,7 @@ class ScheduledAudit(Base):
     is_active = Column(Integer, default=1)
     last_run_at = Column(DateTime, nullable=True)
     next_run_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -108,8 +109,12 @@ class GeoMonitorProject(Base):
     schedule_cron = Column(String(100), nullable=True)  # "0 10 * * 1" (weekly)
     is_active = Column(Integer, default=1)
     last_scan_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    alert_threshold = Column(Float, default=15.0, nullable=True)
+    alert_webhook_url = Column(String(500), nullable=True)
+    competitors = Column(JSON, nullable=True, default=list)
+    # Format: [{"name": "Competitor A", "brand_keywords": ["brand-a"], "website": "brand-a.com"}]
+
     # Relationship to scans
     scans = relationship("GeoMonitorScan", back_populates="project", cascade="all, delete-orphan")
     
@@ -141,7 +146,8 @@ class GeoMonitorProject(Base):
             "schedule_cron": self.schedule_cron,
             "is_active": bool(self.is_active),
             "last_scan_at": self.last_scan_at.isoformat() if self.last_scan_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "competitors": self.competitors if self.competitors is not None else []
         }
 
 
@@ -160,8 +166,10 @@ class GeoMonitorScan(Base):
     provider_breakdown = Column(Text, nullable=True)  # JSON: {"chatgpt": {mentioned: 5, total: 10}, ...}
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    competitor_scores = Column(JSON, nullable=True, default=dict)
+    # Format: {"brand-a.com": {"name": "Competitor A", "mention_rate": 72.0}}
+
     # Relationship back to project
     project = relationship("GeoMonitorProject", back_populates="scans")
     
@@ -195,7 +203,8 @@ class GeoMonitorScan(Base):
             "provider_breakdown": provider_breakdown_parsed,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "competitor_scores": self.competitor_scores if self.competitor_scores is not None else {}
         }
 
 
@@ -214,7 +223,7 @@ class CostRecord(Base):
     input_tokens = Column(Integer, default=0)
     output_tokens = Column(Integer, default=0)
     estimated_cost_usd = Column(Float, default=0.0)  # Calculated from token counts × price per million
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -244,8 +253,8 @@ class ClientBilling(Base):
     monthly_fee_eur = Column(Float, nullable=True)  # What you charge the client
     currency = Column(String(3), default="EUR")
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -278,8 +287,8 @@ class BrandingConfig(Base):
     contact_email = Column(String(255), nullable=True)
     contact_website = Column(String(255), nullable=True)
     is_default = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -318,8 +327,8 @@ class TrackingProject(Base):
     current_date = Column(DateTime, nullable=True)
     score_delta = Column(Float, nullable=True)  # current - baseline
     status = Column(String(20), default="active")  # active, archived
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     snapshots = relationship("TrackingSnapshot", back_populates="project", cascade="all, delete-orphan",
                             order_by="TrackingSnapshot.created_at")
@@ -360,7 +369,7 @@ class TrackingSnapshot(Base):
     delta_from_baseline = Column(Float, nullable=True)
     page_scores_json = Column(Text, nullable=True)  # JSON: per-page scores for drill-down
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     project = relationship("TrackingProject", back_populates="snapshots")
     

@@ -71,7 +71,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                 return await call_next(request)
             
         except (ValueError, UnicodeDecodeError, base64.binascii.Error):
-            pass
+            return self._unauthorized_response()  # Malformed Authorization header
         
         return self._unauthorized_response()
     

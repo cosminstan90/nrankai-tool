@@ -1,7 +1,8 @@
 """Content-related ORM models (Briefs, Schema, Citations, Gaps, Actions)."""
 
+import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -24,7 +25,9 @@ class ContentBrief(Base):
     priority = Column(String(20), default="medium")  # critical, high, medium, low
     provider = Column(String(20), nullable=True)
     model = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    current_score = Column(Float, nullable=True)
+    executive_summary = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     audit = relationship("Audit", backref="briefs")
@@ -59,7 +62,7 @@ class SchemaMarkup(Base):
     validation_notes = Column(Text, nullable=True)  # JSON array of validation notes
     provider = Column(String(20))
     model = Column(String(100))
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Relationship
     audit = relationship("Audit", backref="schemas")
@@ -94,8 +97,10 @@ class CitationTracker(Base):
     schedule_cron = Column(String(100), nullable=True)  # "0 9 * * 1" (weekly)
     is_active = Column(Integer, default=1)
     last_scan_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    alert_threshold = Column(Float, default=15.0, nullable=True)
+    alert_webhook_url = Column(String(500), nullable=True)
+
     # Relationship to scans
     scans = relationship("CitationScan", back_populates="tracker", cascade="all, delete-orphan")
     
@@ -156,7 +161,7 @@ class CitationScan(Base):
     top_cited_urls = Column(Text, nullable=True)  # JSON: [{"url": "/services", "count": 12}, ...]
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship back to tracker
     tracker = relationship("CitationTracker", back_populates="scans")
@@ -223,7 +228,7 @@ class CompetitorGapAnalysis(Base):
     error_message = Column(Text, nullable=True)
     provider = Column(String(20), nullable=True)
     model = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = Column(DateTime, nullable=True)
     
     def to_dict(self):
@@ -270,8 +275,8 @@ class ContentGap(Base):
     status = Column(String(20), default="identified")  # identified, in_progress, published, dismissed
     provider = Column(String(20), nullable=True)
     model = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -317,8 +322,8 @@ class ActionCard(Base):
     completed_actions = Column(Integer, default=0)
     provider = Column(String(20), nullable=True)
     model = Column(String(100), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     audit = relationship("Audit", backref="action_cards")
     
@@ -362,7 +367,7 @@ class CrossReferenceJob(Base):
     status = Column(String(20), default="queued", index=True)  # queued|running|completed|failed
     output_path = Column(String(512), nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -397,8 +402,8 @@ class UrlGuide(Base):
     guide_json      = Column(Text,         nullable=True)   # structured JSON from LLM
     error_message   = Column(Text,         nullable=True)
     reviewed        = Column(Boolean,      nullable=False, default=False)
-    created_at      = Column(DateTime,     default=datetime.utcnow)
-    updated_at      = Column(DateTime,     default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at      = Column(DateTime,     default=lambda: datetime.now(timezone.utc))
+    updated_at      = Column(DateTime,     default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 # ------------------------------------------------------------------
@@ -429,7 +434,7 @@ class LlmsTxtJob(Base):
     generated_content = Column(Text,       nullable=True)   # full llms.txt markdown
     page_count        = Column(Integer,    nullable=False, default=0)
     # Timestamps
-    created_at       = Column(DateTime,    default=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
     completed_at     = Column(DateTime,    nullable=True)
 
 
@@ -459,7 +464,7 @@ class FanoutSession(Base):
     target_position       = Column(Integer, nullable=True)          # 1-based index in sources list
     # Optional linkage to other geo_tool entities
     audit_id        = Column(String(36),  ForeignKey("audits.id",  ondelete="SET NULL"), nullable=True, index=True)
-    created_at      = Column(DateTime,    default=datetime.utcnow, index=True)
+    created_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
     # ── Prompt 15 enrichment columns ─────────────────────────────────────────
     query_origin      = Column(String(20),  default="actual")        # actual | inferred | generated
     source_origin     = Column(String(20),  default="citation")      # citation | grounding | extracted
@@ -577,7 +582,7 @@ class FanoutTrackingConfig(Base):
     last_run_at   = Column(DateTime,    nullable=True)
     next_run_at   = Column(DateTime,    nullable=True, index=True)
     project_id    = Column(String(36),  nullable=True)
-    created_at    = Column(DateTime,    default=datetime.utcnow)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     runs = relationship("FanoutTrackingRun", back_populates="config", cascade="all, delete-orphan")
 
@@ -627,7 +632,7 @@ class FanoutTrackingRun(Base):
     is_dead_letter       = Column(Boolean,     default=False, index=True)
     status               = Column(String(20),  default="pending", index=True)  # pending|running|completed|failed
     error_message        = Column(Text,        nullable=True)
-    created_at           = Column(DateTime,    default=datetime.utcnow)
+    created_at           = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     config  = relationship("FanoutTrackingConfig", back_populates="runs")
     details = relationship("FanoutTrackingDetail",  back_populates="run", cascade="all, delete-orphan")
@@ -695,7 +700,7 @@ class FanoutCompetitiveReport(Base):
     project_id    = Column(String(36),  nullable=True)
     competitors   = Column(JSON,        nullable=True)   # List[str]
     report        = Column(JSON,        nullable=True)   # full CompetitiveReport dict
-    created_at    = Column(DateTime,    default=datetime.utcnow)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -727,7 +732,7 @@ class FanoutCacheEntry(Base):
     locale       = Column(String(20),  default="en-US")
     result_json  = Column(Text,        nullable=False)   # JSON-serialised FanoutResult
     hit_count    = Column(Integer,     default=0)
-    created_at   = Column(DateTime,    default=datetime.utcnow, index=True)
+    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
     expires_at   = Column(DateTime,    nullable=False,           index=True)
 
     def to_dict(self) -> dict:
@@ -764,7 +769,7 @@ class FanoutSerpValidation(Base):
     gl                     = Column(String(5),   default="us")
     hl                     = Column(String(5),   default="en")
     cost_usd               = Column(Float,       default=0.001)
-    validated_at           = Column(DateTime,    default=datetime.utcnow, index=True)
+    validated_at           = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -799,7 +804,7 @@ class FanoutWebhook(Base):
     events      = Column(JSON,        nullable=False)   # List[str] event names
     is_active   = Column(Boolean,     default=True, index=True)
     secret_key  = Column(String(200), nullable=True)
-    created_at  = Column(DateTime,    default=datetime.utcnow)
+    created_at  = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     logs = relationship("FanoutWebhookLog", back_populates="webhook", cascade="all, delete-orphan")
 
@@ -825,7 +830,7 @@ class FanoutWebhookLog(Base):
     error        = Column(String(500), nullable=True)
     payload_size = Column(Integer,     nullable=True)
     response_code = Column(Integer,   nullable=True)
-    sent_at      = Column(DateTime,    default=datetime.utcnow, index=True)
+    sent_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     webhook = relationship("FanoutWebhook", back_populates="logs")
 
@@ -856,7 +861,7 @@ class FanoutCrossRefResult(Base):
     project_id    = Column(String(36),  nullable=True)
     target_domain = Column(String(500), nullable=True)
     result_json   = Column(Text,        nullable=False)   # JSON-serialised CrossRefResult
-    created_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         import json as _json
@@ -898,7 +903,7 @@ class FanoutPromptLibrary(Base):
     avg_mention_rate = Column(Float,       nullable=True)
     avg_source_count = Column(Float,       nullable=True)
     performance_tier = Column(String(20),  default="untested", index=True)  # high|medium|low|untested
-    created_at       = Column(DateTime,    default=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
     last_used_at     = Column(DateTime,    nullable=True)
 
     def to_dict(self) -> dict:
@@ -946,8 +951,8 @@ class FanoutProject(Base):
     color         = Column(String(7),   default="#6366f1")
     notes         = Column(Text,        nullable=True)
     is_active     = Column(Boolean,     default=True, index=True)
-    created_at    = Column(DateTime,    default=datetime.utcnow)
-    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -984,7 +989,7 @@ class FanoutSentiment(Base):
     brand_mention_count = Column(Integer,     default=0)
     mentions_json       = Column(JSON,        nullable=True)     # [{text, sentiment, context_type}]
     summary             = Column(Text,        nullable=True)
-    analyzed_at         = Column(DateTime,    default=datetime.utcnow, index=True)
+    analyzed_at         = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -1017,7 +1022,7 @@ class GeoBenchmark(Base):
     p25_mention_rate     = Column(Float,       nullable=True)
     p75_mention_rate     = Column(Float,       nullable=True)
     avg_composite_score  = Column(Float,       nullable=True)
-    calculated_at        = Column(DateTime,    default=datetime.utcnow)
+    calculated_at        = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -1049,7 +1054,7 @@ class EntityCheck(Base):
     target_brand          = Column(String(200), nullable=False)
     report_json           = Column(Text,        nullable=False)   # JSON EntityReport
     entity_authority_score = Column(Float,      nullable=True)
-    analyzed_at           = Column(DateTime,    default=datetime.utcnow, index=True)
+    analyzed_at           = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         import json as _json
@@ -1082,8 +1087,8 @@ class GscFanoutConnection(Base):
     access_token  = Column(Text,        nullable=True)
     refresh_token = Column(Text,        nullable=True)
     token_expiry  = Column(DateTime,    nullable=True)
-    created_at    = Column(DateTime,    default=datetime.utcnow)
-    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -1117,7 +1122,7 @@ class MentionSeedingConfig(Base):
     schedule             = Column(String(20),  default="weekly")
     is_active            = Column(Boolean,     default=True, index=True)
     last_run_at          = Column(DateTime,    nullable=True)
-    created_at           = Column(DateTime,    default=datetime.utcnow)
+    created_at           = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> dict:
         return {
@@ -1151,7 +1156,7 @@ class MentionSeedingResult(Base):
     mention_context  = Column(Text,        nullable=True)
     sentiment        = Column(String(20),  nullable=True)
     is_new           = Column(Boolean,     default=True)
-    discovered_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+    discovered_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -1181,7 +1186,7 @@ class BotAccessAudit(Base):
     target_domain = Column(String(500), nullable=False)
     report_json   = Column(JSON,        nullable=True)
     access_score  = Column(Float,       nullable=True)
-    audited_at    = Column(DateTime,    default=datetime.utcnow, index=True)
+    audited_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -1203,7 +1208,7 @@ class CocitationMap(Base):
     target_domain      = Column(String(500), nullable=False)
     sessions_analyzed  = Column(JSON,        nullable=True)   # list of session_ids
     map_json           = Column(JSON,        nullable=True)
-    generated_at       = Column(DateTime,    default=datetime.utcnow, index=True)
+    generated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -1229,7 +1234,7 @@ class AnswerCalibration(Base):
     brand_position    = Column(Integer,     nullable=True)
     estimated_effort  = Column(String(20),  nullable=True)   # low|medium|high
     cost_usd          = Column(Float,       default=0.015)
-    created_at        = Column(DateTime,    default=datetime.utcnow, index=True)
+    created_at        = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {
@@ -1255,7 +1260,7 @@ class MultilingualGapReport(Base):
     target_domain   = Column(String(500), nullable=False)
     report_json     = Column(JSON,        nullable=True)
     coverage_score  = Column(Float,       nullable=True)
-    analyzed_at     = Column(DateTime,    default=datetime.utcnow, index=True)
+    analyzed_at     = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
 
     def to_dict(self) -> dict:
         return {

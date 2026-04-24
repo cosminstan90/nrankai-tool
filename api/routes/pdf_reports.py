@@ -8,7 +8,8 @@ Uses ReportLab for server-side PDF generation.
 import os
 import io
 import shutil
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form, Query
@@ -34,6 +35,8 @@ from api.models.database import (
 )
 
 router = APIRouter(prefix="/api/reports", tags=["PDF Reports"])
+
+_MAX_LOGO_BYTES = 5 * 1024 * 1024  # 5 MB
 
 # Upload directory for logos
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "uploads", "logos")
@@ -62,20 +65,20 @@ async def create_branding(
     # Validate logo file type
     logo_path = None
     if logo:
-        if not logo.content_type in ["image/png", "image/jpeg", "image/jpg"]:
-            raise_bad_request("Logo must be PNG or JPEG")
-        
-        # Save logo
-        ext = logo.filename.split(".")[-1]
-        filename = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{name.replace(' ', '_')}.{ext}"
-        logo_path = os.path.join(UPLOAD_DIR, filename)
-        
+        content = await logo.read()
+        if len(content) > _MAX_LOGO_BYTES:
+            raise HTTPException(status_code=413, detail="Logo file too large (max 5MB)")
+        ext = (logo.filename or "").rsplit(".", 1)[-1].lower()
+        if ext not in {"png", "jpg", "jpeg", "webp", "gif", "svg"}:
+            raise HTTPException(status_code=400, detail="Invalid file type for logo")
+        safe_filename = f"logo_{uuid.uuid4().hex}.{ext}"
+        logo_path = os.path.join(UPLOAD_DIR, safe_filename)
+
         with open(logo_path, "wb") as f:
-            content = await logo.read()
             f.write(content)
-        
+
         # Store relative path
-        logo_path = f"/static/uploads/logos/{filename}"
+        logo_path = f"/static/uploads/logos/{safe_filename}"
     
     # If setting as default, unset all other defaults
     if is_default:
@@ -140,13 +143,12 @@ async def delete_branding(branding_id: int, db: AsyncSession = Depends(get_db)):
     
     # Delete logo file if exists
     if branding.logo_path:
-        full_path = os.path.join(
-            os.path.dirname(os.path.dirname(__file__)), 
-            "static", 
-            branding.logo_path.lstrip("/static/")
-        )
-        if os.path.exists(full_path):
-            os.remove(full_path)
+        from pathlib import Path
+        logo_filename = os.path.basename(branding.logo_path)
+        logo_path = Path(UPLOAD_DIR) / logo_filename
+        static_root = Path(os.path.dirname(os.path.dirname(__file__))) / "static"
+        if logo_path.exists() and str(logo_path.resolve()).startswith(str(static_root.resolve())):
+            logo_path.unlink()
     
     await db.execute(delete(BrandingConfig).where(BrandingConfig.id == branding_id))
     await db.commit()
@@ -420,7 +422,7 @@ async def _generate_audit_pdf(
     audit_info = [
         f"<b>Audit Type:</b> {audit.audit_type}",
         f"<b>Website:</b> {audit.website}",
-        f"<b>Generated:</b> {datetime.utcnow().strftime('%B %d, %Y')}",
+        f"<b>Generated:</b> {datetime.now(timezone.utc).strftime('%B %d, %Y')}",
         f"<b>Pages Analyzed:</b> {audit.pages_analyzed}",
     ]
     
@@ -668,12 +670,14 @@ async def _generate_audit_pdf(
         
         for brief in briefs[:20]:  # Limit to 20
             story.append(Paragraph(f"<b>{brief.page_url}</b>", heading2_style))
-            story.append(Paragraph(f"Score: {brief.current_score:.0f} | Priority: {brief.priority}", body_style))
+            _brief_score = getattr(brief, 'current_score', None)
+            _score_str = f"{_brief_score:.0f}" if _brief_score is not None else "N/A"
+            story.append(Paragraph(f"Score: {_score_str} | Priority: {brief.priority}", body_style))
             story.append(Spacer(1, 0.3*cm))
-            
-            if brief.executive_summary:
+
+            if getattr(brief, 'executive_summary', None):
                 story.append(Paragraph("<b>Summary:</b>", body_style))
-                story.append(Paragraph(brief.executive_summary[:500], body_style))
+                story.append(Paragraph(getattr(brief, 'executive_summary', '')[:500], body_style))
                 story.append(Spacer(1, 0.3*cm))
             
             story.append(Spacer(1, 0.5*cm))
@@ -786,7 +790,7 @@ async def generate_pdf_report(
     
     # Generate filename
     website_clean = audit.website.replace("https://", "").replace("http://", "").replace("/", "_")
-    date_str = datetime.utcnow().strftime("%Y%m%d")
+    date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
     filename = f"{website_clean}_{audit.audit_type}_{date_str}.pdf"
     
     # Return as streaming response

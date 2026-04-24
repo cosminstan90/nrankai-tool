@@ -136,8 +136,9 @@ def init_db():
                 conn.execute(sa_text("DROP TABLE IF EXISTS benchmark_projects"))
                 conn.commit()
                 print("✓ Migrated benchmark_projects to new schema")
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely already migrated): {_e}")
 
     Base.metadata.create_all(bind=sync_engine)
 
@@ -193,8 +194,9 @@ async def init_db_async():
             if col_names and "websites" in col_names:
                 await conn.execute(sa_text("DROP TABLE IF EXISTS benchmark_projects"))
                 print("✓ Migrated benchmark_projects to new schema")
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely already migrated): {_e}")
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -210,8 +212,9 @@ async def init_db_async():
             if col_names and "sync_type" not in col_names:
                 await conn.execute(sa_text("ALTER TABLE gsc_properties ADD COLUMN sync_type VARCHAR(10) NOT NULL DEFAULT 'csv'"))
                 print("✓ Migrated gsc_properties: added sync_type")
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely column already exists): {_e}")
 
     # Migrate url_guides: add reviewed column if missing
     async with engine.begin() as conn:
@@ -221,8 +224,9 @@ async def init_db_async():
             if col_names and "reviewed" not in col_names:
                 await conn.execute(sa_text("ALTER TABLE url_guides ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0"))
                 print("✓ Migrated url_guides: added reviewed")
-        except Exception:
-            pass
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely column already exists): {_e}")
 
     # Migrate fanout_sessions: add Prompt 15 enrichment columns if missing
     _fanout_session_migrations = [

@@ -1,0 +1,562 @@
+{% extends "base.html" %}
+
+{% block title %}Meta & Headings Generator - nrankai{% endblock %}
+
+{% block head %}
+<style>
+    .result-section {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.5rem;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+    }
+    .result-section h3 {
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #64748b;
+        margin-bottom: 0.75rem;
+    }
+    .variant-card {
+        border: 2px solid #e2e8f0;
+        border-radius: 0.375rem;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    .char-badge {
+        display: inline-block;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        margin-top: 0.4rem;
+    }
+    .copy-btn {
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        padding: 0.25rem 0.625rem;
+        background: #f1f5f9;
+        border: 1px solid #e2e8f0;
+        border-radius: 0.25rem;
+        color: #475569;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background 0.15s;
+    }
+    .copy-btn:hover {
+        background: #e2e8f0;
+    }
+    .tab-btn {
+        padding: 0.375rem 1rem;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+    .tab-btn-active {
+        background: #3b82f6;
+        color: white;
+    }
+    .tab-btn-inactive {
+        background: #f1f5f9;
+        color: #64748b;
+    }
+    .tab-btn-inactive:hover {
+        background: #e2e8f0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="metaGenerator()" x-init="init()">
+
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-slate-900">Meta &amp; Headings Generator</h1>
+        <p class="mt-2 text-slate-600">Generate optimized title tags, meta descriptions, H1 and H2 suggestions for any page.</p>
+    </div>
+
+    <!-- Two-column layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+
+        <!-- ── Left column: inputs ───────────────────────────────────────── -->
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-6 space-y-5">
+
+            <!-- Tab switcher -->
+            <div>
+                <div class="flex gap-2 mb-4">
+                    <button
+                        class="tab-btn"
+                        :class="activeTab === 'url' ? 'tab-btn-active' : 'tab-btn-inactive'"
+                        @click="activeTab = 'url'"
+                    >URL</button>
+                    <button
+                        class="tab-btn"
+                        :class="activeTab === 'paste' ? 'tab-btn-active' : 'tab-btn-inactive'"
+                        @click="activeTab = 'paste'"
+                    >Paste content</button>
+                </div>
+
+                <!-- URL tab -->
+                <div x-show="activeTab === 'url'" class="space-y-2">
+                    <label class="block text-sm font-medium text-slate-700">Page URL</label>
+                    <div class="flex gap-2">
+                        <input
+                            type="url"
+                            x-model="form.url"
+                            placeholder="https://example.com/page"
+                            class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            @keydown.enter="scrape()"
+                        />
+                        <button
+                            @click="scrape()"
+                            :disabled="scraping || !form.url"
+                            class="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        >
+                            <span x-show="!scraping">Scrape</span>
+                            <span x-show="scraping">Scraping...</span>
+                        </button>
+                    </div>
+
+                    <!-- Scraped content preview (collapsible) -->
+                    <div x-show="form.content && activeTab === 'url'" class="mt-2">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-xs font-medium text-slate-500">Content preview</span>
+                            <button @click="contentExpanded = !contentExpanded" class="text-xs text-primary-600 hover:text-primary-700">
+                                <span x-show="!contentExpanded">Expand</span>
+                                <span x-show="contentExpanded">Collapse</span>
+                            </button>
+                        </div>
+                        <div x-show="contentExpanded">
+                            <textarea
+                                x-model="form.content"
+                                rows="4"
+                                class="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs text-slate-500 focus:ring-2 focus:ring-primary-500 resize-y"
+                            ></textarea>
+                        </div>
+                        <div x-show="!contentExpanded" class="text-xs text-slate-400 italic">
+                            <span x-text="form.content.length + ' characters scraped'"></span>
+                        </div>
+                        <!-- Current values from scrape -->
+                        <div x-show="currentTitle || currentMeta || currentH1" class="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-1">
+                            <p class="text-xs font-semibold text-slate-500 mb-1">Current values on page:</p>
+                            <div x-show="currentTitle" class="text-xs">
+                                <span class="font-medium text-slate-600">Title:</span>
+                                <span class="text-slate-700" x-text="currentTitle"></span>
+                            </div>
+                            <div x-show="currentMeta" class="text-xs">
+                                <span class="font-medium text-slate-600">Meta:</span>
+                                <span class="text-slate-700" x-text="currentMeta"></span>
+                            </div>
+                            <div x-show="currentH1" class="text-xs">
+                                <span class="font-medium text-slate-600">H1:</span>
+                                <span class="text-slate-700" x-text="currentH1"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Paste tab -->
+                <div x-show="activeTab === 'paste'">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Page content</label>
+                    <textarea
+                        x-model="form.content"
+                        rows="8"
+                        placeholder="Paste page content here..."
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 resize-y"
+                    ></textarea>
+                </div>
+            </div>
+
+            <!-- Primary keyword -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">
+                    Primary keyword <span class="text-red-500">*</span>
+                </label>
+                <input
+                    type="text"
+                    x-model="form.primary_keyword"
+                    placeholder="audit SEO Romania"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                />
+            </div>
+
+            <!-- Keywords textarea + GSC import -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Keywords (one per line or comma-separated)</label>
+                <div class="flex items-center gap-2 mb-1">
+                    <button
+                        @click="importFromGsc()"
+                        :disabled="!form.url || gscLoading"
+                        class="text-sm px-3 py-1.5 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span x-show="!gscLoading">&#8595; Import din GSC</span>
+                        <span x-show="gscLoading">Se importă...</span>
+                    </button>
+                    <span x-show="gscKeywordsImported" class="text-green-600 text-sm">
+                        &#10003; <span x-text="gscCount"></span> keywords importate
+                    </span>
+                </div>
+                <textarea
+                    x-model="form.keywords_raw"
+                    rows="5"
+                    placeholder="cuvant cheie 1&#10;cuvant cheie 2&#10;..."
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 resize-y"
+                ></textarea>
+            </div>
+
+            <!-- Brand name -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Brand name</label>
+                <input
+                    type="text"
+                    x-model="form.brand_name"
+                    placeholder="nrankai"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                />
+            </div>
+
+            <!-- Language -->
+            <div>
+                <label class="block text-sm font-medium text-slate-700 mb-1">Language</label>
+                <select
+                    x-model="form.language"
+                    class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                >
+                    <option value="ro">Română</option>
+                    <option value="en">English</option>
+                    <option value="de">Deutsch</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                    <option value="it">Italiano</option>
+                </select>
+            </div>
+
+            <!-- Provider + Model -->
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+                    <select
+                        x-model="form.provider"
+                        @change="onProviderChange()"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    >
+                        <template x-for="[pid, p] in Object.entries(providersData)" :key="pid">
+                            <option :value="pid" :disabled="!p.available" x-text="p.name + (p.available ? '' : ' (no key)')"></option>
+                        </template>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                    <select
+                        x-model="form.model"
+                        class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
+                    >
+                        <template x-for="m in (providersData[form.provider]?.models || [])" :key="m.id">
+                            <option :value="m.id" x-text="m.tier_emoji + ' ' + m.name + ' (~$' + estimateCost(m) + ')'"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Generate button -->
+            <button
+                @click="generate()"
+                :disabled="generating || !form.primary_keyword || (!form.content && !form.url)"
+                class="w-full py-2.5 px-4 bg-primary-600 text-white font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+                <span x-show="!generating">Genereaza</span>
+                <span x-show="generating" class="flex items-center justify-center gap-2">
+                    <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                    </svg>
+                    Se genereaza...
+                </span>
+            </button>
+
+            <!-- Error -->
+            <div x-show="error" x-text="error" class="text-red-500 text-sm mt-1 p-3 bg-red-50 border border-red-200 rounded-lg"></div>
+
+        </div><!-- end left column -->
+
+        <!-- ── Right column: results ─────────────────────────────────────── -->
+        <div x-show="results || generating" class="space-y-0">
+
+            <!-- Loading skeleton -->
+            <div x-show="generating && !results" class="bg-white border border-slate-200 rounded-lg shadow-sm p-8 text-center">
+                <div class="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary-600 mb-3"></div>
+                <p class="text-slate-600 font-medium">Generating suggestions...</p>
+                <p class="text-slate-400 text-sm mt-1">This usually takes 5–15 seconds</p>
+            </div>
+
+            <!-- Actual results -->
+            <template x-if="results">
+                <div>
+
+                    <!-- Title tag -->
+                    <div class="result-section">
+                        <h3>Title Tag</h3>
+                        <template x-for="(t, i) in results.titles" :key="i">
+                            <div class="variant-card"
+                                 :class="{
+                                    'border-green-400': t.chars >= 50 && t.chars <= 60,
+                                    'border-yellow-400': (t.chars >= 40 && t.chars < 50) || (t.chars > 60 && t.chars <= 70),
+                                    'border-red-400': t.chars < 40 || t.chars > 70
+                                 }">
+                                <div class="flex justify-between items-start gap-2">
+                                    <p x-text="t.text" class="flex-1 text-sm text-slate-800 leading-relaxed"></p>
+                                    <button @click="copyText(t.text)" class="copy-btn">Copy</button>
+                                </div>
+                                <span class="char-badge"
+                                      :class="{
+                                          'bg-green-100 text-green-700': t.chars >= 50 && t.chars <= 60,
+                                          'bg-yellow-100 text-yellow-700': (t.chars >= 40 && t.chars < 50) || (t.chars > 60 && t.chars <= 70),
+                                          'bg-red-100 text-red-700': t.chars < 40 || t.chars > 70
+                                      }"
+                                      x-text="t.chars + ' chars'"></span>
+                            </div>
+                        </template>
+                        <p class="text-xs text-slate-400 mt-1">Target: 50–60 characters</p>
+                    </div>
+
+                    <!-- Meta description -->
+                    <div class="result-section">
+                        <h3>Meta Description</h3>
+                        <template x-for="(m, i) in results.meta_descriptions" :key="i">
+                            <div class="variant-card"
+                                 :class="{
+                                    'border-green-400': m.chars >= 150 && m.chars <= 160,
+                                    'border-yellow-400': (m.chars >= 140 && m.chars < 150) || (m.chars > 160 && m.chars <= 170),
+                                    'border-red-400': m.chars < 140 || m.chars > 170
+                                 }">
+                                <div class="flex justify-between items-start gap-2">
+                                    <p x-text="m.text" class="flex-1 text-sm text-slate-800 leading-relaxed"></p>
+                                    <button @click="copyText(m.text)" class="copy-btn">Copy</button>
+                                </div>
+                                <span class="char-badge"
+                                      :class="{
+                                          'bg-green-100 text-green-700': m.chars >= 150 && m.chars <= 160,
+                                          'bg-yellow-100 text-yellow-700': (m.chars >= 140 && m.chars < 150) || (m.chars > 160 && m.chars <= 170),
+                                          'bg-red-100 text-red-700': m.chars < 140 || m.chars > 170
+                                      }"
+                                      x-text="m.chars + ' chars'"></span>
+                            </div>
+                        </template>
+                        <p class="text-xs text-slate-400 mt-1">Target: 150–160 characters</p>
+                    </div>
+
+                    <!-- H1 -->
+                    <div class="result-section">
+                        <h3>H1</h3>
+                        <div class="variant-card border-slate-200">
+                            <div class="flex justify-between items-start gap-2">
+                                <p x-text="results.h1" class="flex-1 text-sm text-slate-800 leading-relaxed font-medium"></p>
+                                <button @click="copyText(results.h1)" class="copy-btn">Copy</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- H2 suggestions -->
+                    <div class="result-section">
+                        <h3>H2 Suggestions</h3>
+                        <div class="flex justify-end mb-2">
+                            <button @click="copyAllH2s()" class="copy-btn">Copy all as list</button>
+                        </div>
+                        <template x-for="(h, i) in results.h2_suggestions" :key="i">
+                            <div class="flex items-center gap-2 py-1.5 border-b border-slate-100 last:border-b-0">
+                                <span class="text-slate-400 text-sm w-5 text-right flex-shrink-0" x-text="(i+1) + '.'"></span>
+                                <span x-text="h" class="flex-1 text-sm text-slate-700"></span>
+                                <button @click="copyText(h)" class="copy-btn">Copy</button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Cost badge -->
+                    <div class="text-xs text-slate-400 mt-2 px-1 flex gap-3">
+                        <span x-text="(results.tokens_used || 0) + ' tokens'"></span>
+                        <span x-show="results.cost_usd != null" x-text="'$' + (results.cost_usd || 0).toFixed(4)"></span>
+                        <span x-text="'Model: ' + (results.model_used || form.model)"></span>
+                    </div>
+
+                </div>
+            </template>
+        </div><!-- end right column -->
+
+    </div><!-- end grid -->
+</div><!-- end x-data -->
+
+<script>
+function metaGenerator() {
+    return {
+        activeTab: 'url',
+        scraping: false,
+        generating: false,
+        gscLoading: false,
+        gscKeywordsImported: false,
+        gscCount: 0,
+        error: null,
+        contentExpanded: false,
+        currentTitle: '',
+        currentMeta: '',
+        currentH1: '',
+        form: {
+            url: '',
+            content: '',
+            primary_keyword: '',
+            keywords_raw: '',
+            brand_name: '',
+            language: 'ro',
+            provider: '',
+            model: '',
+        },
+        results: null,
+        providersData: {{ providers_ui | tojson }},
+
+        init() {
+            // Pick first available provider
+            for (const [pid, p] of Object.entries(this.providersData)) {
+                if (p.available) {
+                    this.form.provider = pid;
+                    break;
+                }
+            }
+            this.onProviderChange();
+        },
+
+        onProviderChange() {
+            const p = this.providersData[this.form.provider];
+            if (p && p.models && p.models.length) {
+                // Prefer cheap model as default
+                const cheap = p.models.find(m => m.tier === 'cheap') || p.models[0];
+                this.form.model = cheap.id;
+            } else {
+                this.form.model = '';
+            }
+        },
+
+        estimateCost(model) {
+            // ~1500 input + 500 output tokens average
+            const cost = (1500 * model.input_price + 500 * model.output_price) / 1_000_000;
+            return cost < 0.001 ? '<0.001' : cost.toFixed(3);
+        },
+
+        async scrape() {
+            if (!this.form.url) return;
+            this.scraping = true;
+            this.error = null;
+            this.currentTitle = '';
+            this.currentMeta = '';
+            this.currentH1 = '';
+            this.contentExpanded = false;
+            try {
+                const resp = await fetch('/api/meta-generator/scrape', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({url: this.form.url})
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Scrape failed');
+                this.form.content = data.content || '';
+                this.currentTitle = data.current_title || '';
+                this.currentMeta = data.current_meta || '';
+                this.currentH1 = data.current_h1 || '';
+            } catch(e) {
+                this.error = e.message;
+            } finally {
+                this.scraping = false;
+            }
+        },
+
+        async importFromGsc() {
+            if (!this.form.url) return;
+            this.gscLoading = true;
+            this.error = null;
+            try {
+                const resp = await fetch('/api/meta-generator/gsc-keywords?url=' + encodeURIComponent(this.form.url));
+                const data = await resp.json();
+                if (data.keywords && data.keywords.length > 0) {
+                    const kws = data.keywords.map(k => k.query).join('\n');
+                    this.form.keywords_raw = this.form.keywords_raw
+                        ? this.form.keywords_raw + '\n' + kws
+                        : kws;
+                    this.gscCount = data.keywords.length;
+                    this.gscKeywordsImported = true;
+                    setTimeout(() => { this.gscKeywordsImported = false; }, 3000);
+                } else {
+                    this.error = data.message || 'No GSC data available for this URL';
+                }
+            } catch(e) {
+                this.error = 'GSC import failed';
+            } finally {
+                this.gscLoading = false;
+            }
+        },
+
+        async generate() {
+            if (!this.form.primary_keyword) {
+                this.error = 'Completeaza keyword-ul principal.';
+                return;
+            }
+            if (!this.form.content && !this.form.url) {
+                this.error = 'Adauga un URL sau lipeste continutul paginii.';
+                return;
+            }
+            this.generating = true;
+            this.error = null;
+            this.results = null;
+            try {
+                const keywords = this.form.keywords_raw
+                    .split(/[\n,]+/)
+                    .map(k => k.trim())
+                    .filter(k => k.length > 0);
+
+                const resp = await fetch('/api/meta-generator/generate', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        url: this.form.url || null,
+                        content: this.form.content,
+                        primary_keyword: this.form.primary_keyword,
+                        keywords: keywords,
+                        brand_name: this.form.brand_name || null,
+                        language: this.form.language,
+                        provider: this.form.provider,
+                        model: this.form.model,
+                    })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || 'Generation failed');
+                this.results = data;
+            } catch(e) {
+                this.error = e.message;
+            } finally {
+                this.generating = false;
+            }
+        },
+
+        copyText(text) {
+            if (!text) return;
+            navigator.clipboard.writeText(text).catch(() => {
+                // Fallback for older browsers
+                const el = document.createElement('textarea');
+                el.value = text;
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            });
+        },
+
+        copyAllH2s() {
+            if (!this.results?.h2_suggestions) return;
+            const text = this.results.h2_suggestions.map(h => `## ${h}`).join('\n');
+            this.copyText(text);
+        },
+    };
+}
+</script>
+{% endblock %}

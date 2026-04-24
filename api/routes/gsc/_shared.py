@@ -114,7 +114,7 @@ async def _get_gsc_credentials():
             if row:
                 row.access_token = creds.token
                 row.token_expiry = creds.expiry.replace(tzinfo=None) if creds.expiry else None
-                row.updated_at   = datetime.utcnow()
+                row.updated_at   = datetime.now(timezone.utc)
                 await db.commit()
 
     return creds

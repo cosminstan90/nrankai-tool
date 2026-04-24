@@ -12,7 +12,7 @@ import json
 import os
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -69,7 +69,7 @@ async def _run_cross_ref(
         job = await session.get(CrossReferenceJob, job_id)
         if job:
             job.status = "running"
-            job.started_at = datetime.utcnow()
+            job.started_at = datetime.now(timezone.utc)
             await session.commit()
 
     try:
@@ -88,7 +88,7 @@ async def _run_cross_ref(
             if job:
                 job.status = "completed"
                 job.output_path = str(output_path) if output_path else None
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
                 await session.commit()
 
     except Exception as exc:
@@ -97,7 +97,7 @@ async def _run_cross_ref(
             if job:
                 job.status = "failed"
                 job.error = str(exc)
-                job.completed_at = datetime.utcnow()
+                job.completed_at = datetime.now(timezone.utc)
                 await session.commit()
 
 

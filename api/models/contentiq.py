@@ -1,7 +1,7 @@
 """ContentIQ ORM models — content audit engine (KUCD verdicts)."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column, String, Integer, Float, Text, DateTime, ForeignKey,
@@ -25,7 +25,7 @@ class CiqAudit(Base):
     scored_urls  = Column(Integer,     default=0)
     triggered_by = Column(String(20),  default="manual")                # manual|scheduled|api
     notes        = Column(Text,        nullable=True)
-    created_at   = Column(DateTime,    default=datetime.utcnow)
+    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
     finished_at  = Column(DateTime,    nullable=True)
 
     pages       = relationship("CiqPage",       back_populates="audit", cascade="all, delete-orphan")
@@ -143,7 +143,7 @@ class CiqCompetitor(Base):
     audit_id = Column(Integer,     ForeignKey("ciq_audits.id", ondelete="CASCADE"), nullable=False, index=True)
     domain   = Column(String(512), nullable=False)
     label    = Column(String(255), nullable=True)
-    added_at = Column(DateTime,    default=datetime.utcnow)
+    added_at = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     audit = relationship("CiqAudit", back_populates="competitors")
 
@@ -166,6 +166,6 @@ class CiqGscToken(Base):
     refresh_token = Column(Text,        nullable=True)
     expires_at    = Column(DateTime,    nullable=True)
     property_url  = Column(String(512), nullable=True)
-    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     audit = relationship("CiqAudit", back_populates="gsc_token")

@@ -14,7 +14,7 @@ import asyncio
 import json
 import uuid
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from difflib import SequenceMatcher
 
@@ -557,7 +557,7 @@ async def analyze_content_gaps_task(
                     status="identified",
                     provider=provider,
                     model=model,
-                    created_at=datetime.utcnow()
+                    created_at=datetime.now(timezone.utc)
                 )
                 
                 db.add(new_gap)
@@ -656,7 +656,7 @@ Generate the complete, detailed brief."""
             gap.brief_json = json.dumps(full_brief)
             gap.provider = provider
             gap.model = model
-            gap.updated_at = datetime.utcnow()
+            gap.updated_at = datetime.now(timezone.utc)
             
             await db.commit()
             print(f"[Full Brief Generation] Completed for gap {gap_id}")
@@ -863,7 +863,7 @@ async def update_content_gap(gap_id: int, request: UpdateGapStatusRequest):
         
         # Update
         gap.status = request.status
-        gap.updated_at = datetime.utcnow()
+        gap.updated_at = datetime.now(timezone.utc)
         
         await db.commit()
         
@@ -989,7 +989,7 @@ async def export_content_gaps(
                 "analysis_id": analysis_id,
                 "website": gaps[0].website,
                 "total_gaps": len(gaps),
-                "exported_at": datetime.utcnow().isoformat(),
+                "exported_at": datetime.now(timezone.utc).isoformat(),
                 "gaps": [gap.to_dict() for gap in gaps]
             }
             

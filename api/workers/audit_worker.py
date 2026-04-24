@@ -10,7 +10,7 @@ import sys
 import json
 import asyncio
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -24,12 +24,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Add parent directory to path for imports
 
 from api.models.database import Audit, AuditResult, AuditLog, AsyncSessionLocal
+from api.utils.url_validator import validate_external_url
 # track_cost imported lazily inside run_analysis_step to avoid circular import:
 # audit_worker → api.routes.costs → api.routes.__init__ → audits.py → audit_worker
+
+import logging
+logger = logging.getLogger("audit_worker")
 
 
 async def fire_webhook(webhook_url: str, payload: dict) -> None:
     """POST a JSON notification to webhook_url. Non-fatal — errors are only logged."""
+    try:
+        validate_external_url(webhook_url, "webhook_url")
+    except ValueError as e:
+        logger.warning(f"Webhook blocked (SSRF protection): {e}")
+        return  # silently skip — don't raise, webhooks are fire-and-forget
     try:
         import aiohttp
         async with aiohttp.ClientSession() as session:
@@ -94,9 +103,9 @@ async def update_audit_status(
         if status:
             audit.status = status
             if status == "scraping":
-                audit.started_at = datetime.utcnow()
+                audit.started_at = datetime.now(timezone.utc)
             elif status in ["completed", "failed"]:
-                audit.completed_at = datetime.utcnow()
+                audit.completed_at = datetime.now(timezone.utc)
         
         if current_step is not None:
             audit.current_step = current_step
@@ -168,11 +177,12 @@ async def _run_with_retry(coro_factory, *, max_attempts: int = 3, base_delay: fl
 
 
 def _safe_dir(url: str) -> str:
-    """Convert a URL like https://example.com into a Windows-safe directory name."""
-    import re
-    name = re.sub(r'^https?://', '', str(url)).rstrip('/')
-    # Replace characters invalid on Windows: < > : " | ? * and backslash
-    return re.sub(r'[<>:"|?*\\]', '_', name)
+    """Convert a URL like https://example.com into a safe filesystem directory name.
+
+    Uses sanitize_website_for_path to prevent path traversal via malicious input.
+    """
+    from api.utils.url_validator import sanitize_website_for_path
+    return sanitize_website_for_path(url)
 
 
 async def run_scraping_step(

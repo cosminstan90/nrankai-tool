@@ -12,6 +12,7 @@ from typing import List, Optional
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
 from api.utils.errors import raise_not_found, raise_bad_request
+from api.utils.url_validator import validate_external_url
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete, update as sql_update
@@ -90,6 +91,15 @@ def _extract_json(text: str, label: str = "") -> dict:
 
 # ── Page LLM Optimization ─────────────────────────────────────────────────────
 
+class PageOptimizeRequest(BaseModel):
+    url:              str
+    provider:         str             = "anthropic"
+    model:            str             = "claude-haiku-4-5-20251001"
+    audit_types:      List[str]       = ["SEO_AUDIT", "GEO_AUDIT", "FAQ_KEYWORDS", "SCHEMA_GEN"]
+    selected_queries: Optional[List[dict]] = None  # if provided, skip GSC API fetch
+    page_content:     Optional[str]   = None        # if provided, skip scraping
+
+
 async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: PageOptimizeRequest):
     """Background task: fetch page content, get GSC queries, run augmented audit prompts."""
     import json
@@ -109,6 +119,11 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
         else:
             import httpx
             from bs4 import BeautifulSoup
+
+            try:
+                validate_external_url(req.url, field_name="url")
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
 
             async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
                 resp = await client.get(req.url, headers={"User-Agent": "GEO-Analyzer/2.1"})
@@ -130,7 +145,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                     prop = await db.get(GscProperty, property_id)
                     site_url = prop.site_url
 
-                end_date   = datetime.utcnow().date()
+                end_date   = datetime.now(timezone.utc).date()
                 start_date = end_date - timedelta(days=90)
 
                 def _fetch_queries():
@@ -323,7 +338,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
                 "results":      results,
                 "queries_used": len(queries),
             })
-            guide.updated_at = datetime.utcnow()
+            guide.updated_at = datetime.now(timezone.utc)
             await db.commit()
 
     except Exception as exc:
@@ -331,7 +346,7 @@ async def _run_page_optimize(guide_id: int, property_id: Optional[str], req: Pag
             guide = await db.get(UrlGuide, guide_id)
             guide.status        = "failed"
             guide.error_message = str(exc)
-            guide.updated_at    = datetime.utcnow()
+            guide.updated_at    = datetime.now(timezone.utc)
             await db.commit()
 
 
@@ -419,7 +434,7 @@ async def page_optimize(property_id: str, req: PageOptimizeRequest):
                 if g and g.status in ("pending", "running"):
                     g.status = "failed"
                     g.error_message = "Timed out after 5 minutes"
-                    g.updated_at = datetime.utcnow()
+                    g.updated_at = datetime.now(timezone.utc)
                     await db.commit()
 
     asyncio.create_task(_guarded(guide_id, property_id, req))
@@ -452,7 +467,7 @@ async def detect_cannibalization(property_id: str, req: CannibalizationRequest):
             raise_not_found("Property")
         site_url = prop.site_url
 
-    end_date   = datetime.utcnow().date()
+    end_date   = datetime.now(timezone.utc).date()
     start_date = end_date - timedelta(days=req.days)
 
     def _fetch_page_query():
@@ -649,7 +664,7 @@ async def standalone_optimize(req: StandaloneOptimizeRequest):
                 if g and g.status in ("pending", "running"):
                     g.status = "failed"
                     g.error_message = "Timed out after 11 minutes"
-                    g.updated_at = datetime.utcnow()
+                    g.updated_at = datetime.now(timezone.utc)
                     await db.commit()
 
     asyncio.create_task(_guarded_standalone(guide_id, inner_req))

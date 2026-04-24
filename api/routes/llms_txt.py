@@ -20,7 +20,7 @@ DELETE /api/llms-txt/jobs/{id}          delete job
 import asyncio
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -276,7 +276,7 @@ async def _generate_llms_txt(job_id: str) -> None:
             # ── 6. Persist ────────────────────────────────────────────────
             job.generated_content = content
             job.page_count        = link_count
-            job.completed_at      = datetime.utcnow()
+            job.completed_at      = datetime.now(timezone.utc)
             await _upd(status="completed", progress=100, msg=f"Done — {link_count} pages indexed")
 
         except Exception as exc:

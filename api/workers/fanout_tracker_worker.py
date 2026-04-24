@@ -49,7 +49,7 @@ except ImportError:
 
 def _next_run_at(schedule: str, from_dt: Optional[datetime] = None) -> datetime:
     """Compute next scheduled run datetime from a schedule string."""
-    now = from_dt or datetime.utcnow()
+    now = from_dt or datetime.now(timezone.utc)
     if schedule == "daily":
         return now + timedelta(days=1)
     elif schedule == "monthly":
@@ -89,7 +89,7 @@ async def run_tracking(config_id: str) -> None:
             logger.error("TrackingConfig %s not found", config_id)
             return
 
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         # Check if a run for today already exists and is completed
         existing = await db.execute(
@@ -203,7 +203,7 @@ async def run_tracking(config_id: str) -> None:
             run.cost_usd = round(total_cost, 4)
 
             # Update config timestamps
-            config.last_run_at = datetime.utcnow()
+            config.last_run_at = datetime.now(timezone.utc)
             config.next_run_at = _next_run_at(config.schedule)
 
             await db.commit()
@@ -223,7 +223,7 @@ async def run_tracking(config_id: str) -> None:
             if _is_retryable(error_msg) and run.retry_count < run.max_retries:
                 delay_min = _next_retry_delay(run.retry_count)
                 run.retry_count += 1
-                run.next_retry_at = datetime.utcnow() + timedelta(minutes=delay_min)
+                run.next_retry_at = datetime.now(timezone.utc) + timedelta(minutes=delay_min)
                 logger.info(
                     "Will retry config %s in %d minutes (attempt %d/%d)",
                     config_id, delay_min, run.retry_count, run.max_retries,
@@ -242,7 +242,7 @@ async def check_and_run_due_trackings() -> None:
     Check for due tracking configs and retry-eligible failed runs.
     Called by the main scheduler loop every 15 minutes.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     async with AsyncSessionLocal() as db:
         # Normal scheduled runs
         due = await db.execute(

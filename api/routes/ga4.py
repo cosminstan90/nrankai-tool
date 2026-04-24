@@ -19,10 +19,11 @@ GET    /api/ga4/properties/{id}/cross-reference   cross-reference with GSC + aud
 import csv
 import io
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from api.limiter import limiter
 from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -38,6 +39,8 @@ from api.models.database import (
 )
 
 router = APIRouter(prefix="/api/ga4", tags=["ga4"])
+
+_MAX_CSV_BYTES = 20 * 1024 * 1024  # 20 MB
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -230,7 +233,8 @@ async def delete_property(property_id: str):
 # ── CSV upload ────────────────────────────────────────────────────────────────
 
 @router.post("/properties/{property_id}/upload")
-async def upload_csv(property_id: str, file: UploadFile = File(...)):
+@limiter.limit("30/hour")
+async def upload_csv(request: Request, property_id: str, file: UploadFile = File(...)):
     """
     Upload a GA4 CSV export (pages OR channels).
     Report type is auto-detected from column headers.
@@ -242,6 +246,8 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
             raise_not_found("Property")
 
         content = await file.read()
+        if len(content) > _MAX_CSV_BYTES:
+            raise HTTPException(status_code=413, detail="File too large (max 20MB)")
         try:
             report_type, rows = _parse_ga4_csv(content)
         except ValueError as exc:
@@ -284,7 +290,7 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
             ])
             prop.total_channels = len(rows)
 
-        prop.updated_at = datetime.utcnow()
+        prop.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
     return {

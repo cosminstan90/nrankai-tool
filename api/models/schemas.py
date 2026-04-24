@@ -2,6 +2,7 @@
 Pydantic schemas for API validation and serialization.
 """
 
+import re
 from typing import Optional, List, Any, Dict, Union
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -17,18 +18,30 @@ DateTimeField = Optional[Union[str, datetime]]
 
 class AuditCreate(BaseModel):
     """Schema for creating a new audit."""
-    website: str = Field(..., min_length=1)
-    sitemap_url: Optional[str] = None
-    audit_type: str = Field(..., min_length=1)
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    language: Optional[str] = "English"
+    website: str = Field(..., min_length=1, max_length=255)
+    sitemap_url: Optional[str] = Field(None, max_length=2048)
+    audit_type: str = Field(..., min_length=1, max_length=100)
+    provider: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    language: Optional[str] = Field("English", max_length=50)
     webhook_url: Optional[str] = None      # POST this URL on completion/failure
     max_chars: Optional[int] = Field(None, ge=1000)
     use_direct_mode: Optional[bool] = True
     concurrency: Optional[int] = Field(10, ge=1, le=50)
     use_perplexity: Optional[bool] = False
     prompt_version: Optional[str] = "v3"  # "v3" = prompts/, "v2" = prompts_backup/
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str) -> str:
+        v = v.strip()
+        bare = re.sub(r'^https?://', '', v.lower())
+        bare = bare.split('/')[0].split('?')[0]  # domain only
+        if not re.match(r'^[a-z0-9]([a-z0-9\-\.]{0,250}[a-z0-9])?$', bare):
+            raise ValueError("Invalid website format — must be a domain name")
+        if '..' in bare:
+            raise ValueError("Invalid website — path traversal not allowed")
+        return v
 
     @field_validator("webhook_url")
     @classmethod
@@ -40,16 +53,21 @@ class AuditCreate(BaseModel):
             raise ValueError("webhook_url must use http:// or https:// scheme")
         if len(v) > 2048:
             raise ValueError("webhook_url too long (max 2048 chars)")
+        from api.utils.url_validator import validate_external_url
+        try:
+            validate_external_url(v, "webhook_url")
+        except ValueError as e:
+            raise ValueError(str(e))
         return v
 
 
 class SingleAuditRequest(BaseModel):
     """Schema for single page audit request."""
-    url: str = Field(..., min_length=1, description="The specific URL to audit")
-    audit_type: str = Field(..., min_length=1, description="Specific audit type or 'god_mode'")
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    language: Optional[str] = "English"
+    url: str = Field(..., min_length=1, max_length=500, description="The specific URL to audit")
+    audit_type: str = Field(..., min_length=1, max_length=100, description="Specific audit type or 'god_mode'")
+    provider: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    language: Optional[str] = Field("English", max_length=50)
 
 
 
@@ -164,14 +182,14 @@ class HealthResponse(BaseModel):
 class AuditTemplateBase(BaseModel):
     """Base schema for audit template."""
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     icon: Optional[str] = Field(None, max_length=10)
-    
+
     # Audit config
-    audit_type: Optional[str] = None
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    language: Optional[str] = None
+    audit_type: Optional[str] = Field(None, max_length=100)
+    provider: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    language: Optional[str] = Field(None, max_length=50)
     use_perplexity: Optional[bool] = None
     concurrency: Optional[int] = Field(None, ge=1, le=50)
     max_chars: Optional[int] = Field(None, ge=1000)
@@ -207,14 +225,14 @@ class AuditTemplateCreate(AuditTemplateBase):
 class AuditTemplateUpdate(BaseModel):
     """Schema for updating an audit template."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     icon: Optional[str] = Field(None, max_length=10)
-    
+
     # Audit config
-    audit_type: Optional[str] = None
-    provider: Optional[str] = None
-    model: Optional[str] = None
-    language: Optional[str] = None
+    audit_type: Optional[str] = Field(None, max_length=100)
+    provider: Optional[str] = Field(None, max_length=100)
+    model: Optional[str] = Field(None, max_length=100)
+    language: Optional[str] = Field(None, max_length=50)
     use_perplexity: Optional[bool] = None
     concurrency: Optional[int] = Field(None, ge=1, le=50)
     max_chars: Optional[int] = Field(None, ge=1000)
@@ -242,25 +260,30 @@ class AuditTemplateResponse(AuditTemplateBase):
 
 class TemplateLaunchRequest(BaseModel):
     """Schema for launching an audit from a template."""
-    website: str = Field(..., min_length=1)
-    sitemap_url: Optional[str] = None
-    
+    website: str = Field(..., min_length=1, max_length=255)
+    sitemap_url: Optional[str] = Field(None, max_length=2048)
+
     @field_validator('website')
     @classmethod
-    def validate_website(cls, v):
+    def validate_website(cls, v: str) -> str:
         if not v or not v.strip():
             raise ValueError('Website URL is required')
-        # Basic URL validation
         v = v.strip()
         if not v.startswith(('http://', 'https://')):
             v = 'https://' + v
+        bare = re.sub(r'^https?://', '', v.lower())
+        bare = bare.split('/')[0].split('?')[0]  # domain only
+        if not re.match(r'^[a-z0-9]([a-z0-9\-\.]{0,250}[a-z0-9])?$', bare):
+            raise ValueError("Invalid website format — must be a domain name")
+        if '..' in bare:
+            raise ValueError("Invalid website — path traversal not allowed")
         return v
 
 
 class SaveFromAuditRequest(BaseModel):
     """Schema for creating a template from an existing audit."""
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+    description: Optional[str] = Field(None, max_length=2000)
     icon: Optional[str] = Field(None, max_length=10)
     is_default: bool = False
     

@@ -17,7 +17,7 @@ import asyncio
 import json
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from api.utils.task_runner import create_tracked_task
@@ -333,7 +333,7 @@ async def create_run(req: CreateRunRequest):
     async with AsyncSessionLocal() as db:
         run = InsightRun(
             id              = run_id,
-            name            = req.name.strip() or f"Insight Run {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}",
+            name            = req.name.strip() or f"Insight Run {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}",
             gsc_property_id = req.gsc_property_id or None,
             ga4_property_id = req.ga4_property_id or None,
             ads_account_id  = req.ads_account_id  or None,

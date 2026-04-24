@@ -10,10 +10,13 @@ import re
 import json
 import uuid
 import asyncio
-from datetime import datetime
+import logging
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
+from api.limiter import limiter
 from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, desc, func
@@ -25,6 +28,8 @@ from api.routes.costs import track_cost
 # LLM clients
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/citations", tags=["citations"])
 
@@ -38,34 +43,43 @@ LLM_SEMAPHORE = asyncio.Semaphore(3)
 
 class CreateTrackerRequest(BaseModel):
     """Request to create a new citation tracker."""
-    name: str
-    website: str
-    url_patterns: List[str]
-    tracking_queries: List[str]
+    name: str = Field(..., min_length=3, max_length=500)
+    website: str = Field(..., min_length=1, max_length=500)
+    url_patterns: List[str] = Field(..., max_length=100)
+    tracking_queries: List[str] = Field(..., max_length=100)
     providers_config: Dict[str, bool]
-    schedule_cron: Optional[str] = None
-    
+    schedule_cron: Optional[str] = Field(None, max_length=100)
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str) -> str:
         if not v or len(v) < 3:
             raise ValueError("Name must be at least 3 characters")
         return v
-    
+
     @field_validator("website")
     @classmethod
     def validate_website(cls, v: str) -> str:
-        if not v or "." not in v:
+        v = v.strip().lower()
+        bare = re.sub(r'^https?://', '', v)
+        bare = bare.split('/')[0]  # domain only
+        if not bare or "." not in bare:
             raise ValueError("Invalid website format")
-        return v.lower()
-    
+        if not re.match(r'^[a-z0-9]([a-z0-9\-\.]{0,250}[a-z0-9])?$', bare):
+            raise ValueError("Invalid website format — must be a domain name")
+        if '..' in bare:
+            raise ValueError("Invalid website — path traversal not allowed")
+        return v
+
     @field_validator("url_patterns")
     @classmethod
     def validate_url_patterns(cls, v: List[str]) -> List[str]:
         if not v or len(v) == 0:
             raise ValueError("At least one URL pattern required")
+        if len(v) > 100:
+            raise ValueError("Maximum 100 URL patterns allowed")
         return v
-    
+
     @field_validator("tracking_queries")
     @classmethod
     def validate_tracking_queries(cls, v: List[str]) -> List[str]:
@@ -74,7 +88,7 @@ class CreateTrackerRequest(BaseModel):
         if len(v) > 100:
             raise ValueError("Maximum 100 tracking queries allowed")
         return v
-    
+
     @field_validator("providers_config")
     @classmethod
     def validate_providers_config(cls, v: Dict[str, bool]) -> Dict[str, bool]:
@@ -86,8 +100,20 @@ class CreateTrackerRequest(BaseModel):
 
 class GenerateQueriesRequest(BaseModel):
     """Request to generate query suggestions."""
-    website: str
-    industry: Optional[str] = None
+    website: str = Field(..., min_length=1, max_length=500)
+    industry: Optional[str] = Field(None, max_length=200)
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, v: str) -> str:
+        v = v.strip().lower()
+        bare = re.sub(r'^https?://', '', v)
+        bare = bare.split('/')[0]  # domain only
+        if not bare or "." not in bare:
+            raise ValueError("Invalid website format")
+        if '..' in bare:
+            raise ValueError("Invalid website — path traversal not allowed")
+        return v
 
 
 class QuerySuggestion(BaseModel):
@@ -246,12 +272,73 @@ async def _query_provider(
                 out_tok = response.usage.completion_tokens if response.usage else 0
                 return response.choices[0].message.content or "", in_tok, out_tok, _model
 
+            elif provider == "gemini":
+                import google.generativeai as genai
+                _model = model or "gemini-2.0-flash"
+                api_key = os.getenv("GEMINI_API_KEY")
+                if not api_key:
+                    return "", 0, 0, _model
+                genai.configure(api_key=api_key)
+                gemini_model = genai.GenerativeModel(_model)
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: gemini_model.generate_content(query)
+                )
+                response_text = response.text
+                # Estimate tokens from word count (Gemini doesn't expose raw token counts easily)
+                input_tokens = int(len(query.split()) * 1.3)
+                output_tokens = int(len(response_text.split()) * 1.3)
+                return response_text, input_tokens, output_tokens, _model
+
             else:
                 return "", 0, 0, provider
 
         except Exception as e:
             print(f"Error querying {provider}: {e}")
             return "", 0, 0, model or provider
+
+
+async def _check_and_alert_citation_drop(tracker, current_scan, db: AsyncSession):
+    """Fire an alert if citation rate dropped significantly since the last scan."""
+    if not getattr(tracker, 'alert_webhook_url', None):
+        return  # No webhook configured — skip
+
+    # Get previous completed scan
+    result = await db.execute(
+        select(CitationScan)
+        .where(CitationScan.tracker_id == tracker.id)
+        .where(CitationScan.status == "completed")
+        .where(CitationScan.id != current_scan.id)
+        .order_by(CitationScan.completed_at.desc())
+        .limit(1)
+    )
+    prev = result.scalar_one_or_none()
+    if not prev or prev.citation_rate is None or current_scan.citation_rate is None:
+        return
+
+    threshold = getattr(tracker, 'alert_threshold', 15.0) or 15.0
+    drop = prev.citation_rate - current_scan.citation_rate
+    if drop < threshold:
+        return
+
+    # Fire webhook
+    payload = {
+        "type": "citation_drop",
+        "tracker_name": tracker.name,
+        "website": tracker.website,
+        "previous_rate": round(prev.citation_rate, 1),
+        "current_rate": round(current_scan.citation_rate, 1),
+        "drop": round(drop, 1),
+        "threshold": threshold,
+        "scan_url": f"/citations/trackers/{tracker.id}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            await client.post(tracker.alert_webhook_url, json=payload)
+        logger.info(f"Citation drop alert sent for {tracker.website}: -{drop:.1f}%")
+    except Exception as e:
+        logger.warning(f"Failed to send citation drop alert: {e}")
 
 
 async def _run_citation_scan(tracker_id: str):
@@ -296,7 +383,7 @@ async def _run_citation_scan(tracker_id: str):
                 tracker_id=tracker_id,
                 status="running",
                 total_queries=len(tracking_queries) * len(enabled_providers),
-                started_at=datetime.utcnow()
+                started_at=datetime.now(timezone.utc)
             )
             db.add(scan)
             await db.commit()
@@ -408,15 +495,17 @@ async def _run_citation_scan(tracker_id: str):
             scan.results_json = json.dumps(all_results)
             scan.provider_breakdown = json.dumps(provider_stats)
             scan.top_cited_urls = json.dumps(top_cited_urls)
-            scan.completed_at = datetime.utcnow()
+            scan.completed_at = datetime.now(timezone.utc)
             
             # Update tracker last_scan_at
-            tracker.last_scan_at = datetime.utcnow()
+            tracker.last_scan_at = datetime.now(timezone.utc)
             
             await db.commit()
-            
+
+            await _check_and_alert_citation_drop(tracker, scan, db)
+
             print(f"✓ Citation scan {scan_id} completed: {citation_rate:.1f}% citation rate")
-        
+
         except Exception as e:
             print(f"❌ Citation scan error: {e}")
             
@@ -611,7 +700,9 @@ async def get_tracker(tracker_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/trackers/{tracker_id}/scan")
+@limiter.limit("20/hour")
 async def start_scan(
+    request: Request,
     tracker_id: str,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db)
@@ -890,7 +981,7 @@ async def check_and_run_citation_scans():
     """
     async with AsyncSessionLocal() as db:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             # Get all active trackers with schedules
             result = await db.execute(

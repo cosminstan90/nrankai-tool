@@ -17,7 +17,8 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from api.limiter import limiter
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -279,7 +280,9 @@ async def _run_batch(
 # ============================================================================
 
 @router.post("/analyze")
+@limiter.limit("20/hour")
 async def analyze_single(
+    request: Request,
     req: AnalyzeRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -350,7 +353,9 @@ async def analyze_single(
 
 
 @router.post("/analyze-batch")
+@limiter.limit("10/hour")
 async def analyze_batch_endpoint(
+    request: Request,
     req: BatchAnalyzeRequest,
     background_tasks: BackgroundTasks,
 ):
@@ -378,7 +383,8 @@ async def analyze_batch_endpoint(
 
 
 @router.post("/analyze-multi")
-async def analyze_multi_endpoint(req: MultiEngineRequest):
+@limiter.limit("20/hour")
+async def analyze_multi_endpoint(request: Request, req: MultiEngineRequest):
     """
     Run fan-out analysis on multiple AI engines in parallel for a single prompt.
     Returns combined results with per-engine breakdown and source overlap.
@@ -448,7 +454,8 @@ class DiscoveryRequest(BaseModel):
 
 
 @router.post("/discover")
-async def discover_prompts(req: DiscoveryRequest):
+@limiter.limit("20/hour")
+async def discover_prompts(request: Request, req: DiscoveryRequest):
     """
     Discover which prompts trigger AI engines to mention a target domain/brand.
     Returns mention rate, strongest/weakest prompts, and competitor dominance.
@@ -777,7 +784,7 @@ async def create_tracking_config(
     from datetime import datetime, timedelta
 
     schedule_delays = {"daily": 1, "weekly": 7, "monthly": 30}
-    next_run = datetime.utcnow() + timedelta(days=schedule_delays[req.schedule])
+    next_run = datetime.now(timezone.utc) + timedelta(days=schedule_delays[req.schedule])
 
     config = FanoutTrackingConfig(
         name=req.name,
@@ -838,7 +845,7 @@ async def get_tracking_timeline(
     ).order_by(FanoutTrackingRun.run_date)
 
     if period_days:
-        cutoff = (datetime.utcnow() - timedelta(days=period_days)).strftime("%Y-%m-%d")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=period_days)).strftime("%Y-%m-%d")
         q = q.where(FanoutTrackingRun.run_date >= cutoff)
 
     runs = (await db.execute(q)).scalars().all()
@@ -1031,7 +1038,9 @@ async def _run_competitive(
 
 
 @router.post("/competitive")
+@limiter.limit("20/hour")
 async def create_competitive_report(
+    request: Request,
     req: CompetitiveRequest,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -1297,7 +1306,9 @@ class SerpValidateRequest(BaseModel):
 
 
 @router.post("/sessions/{session_id}/validate-serp")
+@limiter.limit("20/hour")
 async def validate_serp(
+    request: Request,
     session_id: str,
     req: SerpValidateRequest,
     db: AsyncSession = Depends(get_db),
@@ -1396,7 +1407,9 @@ class CrossRefRequest(BaseModel):
 
 
 @router.post("/crossref")
+@limiter.limit("20/hour")
 async def create_crossref(
+    request: Request,
     req: CrossRefRequest,
     db: AsyncSession = Depends(get_db),
 ):
@@ -1762,47 +1775,3 @@ async def create_all_cms_drafts(
     return {"created": len(results), "drafts": results}
 
 
-# ── Dead Letter Queue (Prompt 29) ─────────────────────────────────────────────
-
-@router.get("/tracking/dead-letters")
-async def list_dead_letters(db: AsyncSession = Depends(get_db)):
-    """Return all permanently-failed tracking runs."""
-    from api.models.database import FanoutTrackingRun
-    from sqlalchemy import select as _sel
-    runs = (await db.execute(
-        _sel(FanoutTrackingRun)
-        .where(FanoutTrackingRun.is_dead_letter == True)  # noqa: E712
-        .order_by(FanoutTrackingRun.created_at.desc())
-        .limit(100)
-    )).scalars().all()
-    return [r.to_dict() for r in runs]
-
-
-@router.post("/tracking/dead-letters/{run_id}/retry")
-async def retry_dead_letter(run_id: str, db: AsyncSession = Depends(get_db)):
-    """Reset a dead-letter run for manual retry."""
-    from api.models.database import FanoutTrackingRun
-    from datetime import datetime, timezone
-    run = await db.get(FanoutTrackingRun, run_id)
-    if not run:
-        raise_not_found("Tracking run")
-    run.is_dead_letter = False
-    run.status         = "pending"
-    run.retry_count    = 0
-    run.next_retry_at  = None
-    run.failure_reason = None
-    run.error_message  = None
-    await db.commit()
-    return {"ok": True, "run_id": run_id}
-
-
-@router.post("/tracking/dead-letters/{run_id}/dismiss")
-async def dismiss_dead_letter(run_id: str, db: AsyncSession = Depends(get_db)):
-    """Mark a dead-letter run as dismissed (keep as failed, don't retry)."""
-    from api.models.database import FanoutTrackingRun
-    run = await db.get(FanoutTrackingRun, run_id)
-    if not run:
-        raise_not_found("Tracking run")
-    run.failure_reason = (run.failure_reason or "") + " [dismissed]"
-    await db.commit()
-    return {"ok": True, "run_id": run_id}

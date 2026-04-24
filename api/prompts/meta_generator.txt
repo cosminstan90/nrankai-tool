@@ -1,0 +1,22 @@
+You are an expert SEO copywriter. Generate optimized on-page meta elements for the page below, based strictly on its actual content.
+
+PAGE CONTENT:
+{content}
+
+PRIMARY KEYWORD: {primary_keyword}
+ADDITIONAL KEYWORDS: {keywords}
+BRAND NAME: {brand_name}
+LANGUAGE: {language}
+
+Generate ALL output in {language}.
+
+Rules:
+- TITLE TAG: 3 variants, 50–60 characters each. Primary keyword near the start. Variant 3 must include brand name as suffix "... | {brand_name}". Vary structure across variants.
+- META DESCRIPTION: 3 variants, 150–160 characters each. Primary keyword included naturally. Each ends with a soft CTA. Vary tone: informative / benefit-focused / curiosity-driven.
+- H1: 1 variant. Includes primary keyword. Different wording from title tags. Matches search intent.
+- H2 SUGGESTIONS: 5–6 headings forming a logical content outline. Cover additional keywords where natural.
+
+Base ALL output on the page content provided. Do not invent facts not present in the content.
+
+Return ONLY valid JSON:
+{"titles": [{"text": "...", "chars": 55}], "meta_descriptions": [{"text": "...", "chars": 158}], "h1": "...", "h2_suggestions": ["...", "..."]}

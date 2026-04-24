@@ -9,10 +9,8 @@ import asyncio
 import json
 import os
 import yaml
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
-
-from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from api.utils.errors import raise_not_found
@@ -860,7 +858,7 @@ Review every question/answer and fill in "existing_faq_review"."""
         # ── Parse & save ──────────────────────────────────────────────────────
         cleaned = clean_json_response(response_text)
         faq_data = json.loads(cleaned)
-        faq_data["generated_at"] = datetime.utcnow().isoformat()
+        faq_data["generated_at"] = datetime.now(timezone.utc).isoformat()
         faq_data["has_existing_schema"] = faq_schema is not None
 
         brief_data["faq_analysis"] = faq_data
@@ -898,7 +896,7 @@ async def export_briefs(audit_id: str):
             "audit_id": audit_id,
             "website": audit.website,
             "audit_type": audit.audit_type,
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "total_briefs": len(briefs),
             "briefs": [brief.to_dict() for brief in briefs]
         }

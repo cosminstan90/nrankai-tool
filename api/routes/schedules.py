@@ -8,7 +8,7 @@ with automatic execution based on cron schedules.
 import uuid
 import json
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 from api.utils.task_runner import create_tracked_task
@@ -250,7 +250,7 @@ async def check_and_run_schedules():
             )
             schedules = result.scalars().all()
             
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             
             for schedule in schedules:
                 # Check if cron matches current time
@@ -607,7 +607,7 @@ async def update_schedule(
     if request.concurrency is not None:
         schedule.concurrency = request.concurrency
     
-    schedule.updated_at = datetime.utcnow()
+    schedule.updated_at = datetime.now(timezone.utc)
     
     await db.commit()
     await db.refresh(schedule)
@@ -667,7 +667,7 @@ async def trigger_schedule_run(
     db.add(audit)
     
     # Update schedule
-    schedule.last_run_at = datetime.utcnow()
+    schedule.last_run_at = datetime.now(timezone.utc)
     schedule.last_audit_id = audit_id
     schedule.run_count += 1
     

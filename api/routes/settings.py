@@ -13,7 +13,7 @@ PUT  /api/settings/weights        → upsert new weights (validates sum ≈ 1.0)
 POST /api/settings/weights/reset  → delete all rows → revert to hardcoded defaults
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -151,7 +151,7 @@ async def update_weights(payload: WeightsPayload, db: AsyncSession = Depends(get
         row = AuditWeightConfig(
             audit_type=atype,
             weight=weight,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(row)
 

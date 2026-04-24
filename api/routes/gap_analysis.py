@@ -9,7 +9,7 @@ specific gaps and generate actionable recommendations.
 import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -847,7 +847,7 @@ Analyze the above data and generate a comprehensive gap analysis following the J
             gap.gaps_json = json.dumps(gap_data.get("criteria_gaps", []))
             gap.strengths_json = json.dumps(gap_data.get("strengths", []))
             gap.recommendations_json = json.dumps(gap_data.get("recommendations", {}))
-            gap.completed_at = datetime.utcnow()
+            gap.completed_at = datetime.now(timezone.utc)
             
             await db.commit()
             print(f"[Gap Analysis {gap_id}] Completed successfully. Overall gap score: {overall_gap_score}")
@@ -932,7 +932,7 @@ async def generate_gap_analysis(
             status="pending",
             provider=request.provider,
             model=model,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(timezone.utc)
         )
         
         db.add(new_gap)
@@ -1024,7 +1024,7 @@ async def export_gap_analysis(gap_id: str):
         
         # Add metadata
         export_data["export_metadata"] = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "format_version": "1.0"
         }
         

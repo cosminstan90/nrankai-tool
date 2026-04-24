@@ -7,7 +7,8 @@ Each card contains 3-5 specific actions with exact text to implement.
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import List, Optional
 import asyncio
@@ -671,7 +672,7 @@ async def toggle_action(
     # Update card
     card.actions_json = json.dumps(actions, ensure_ascii=False)
     card.completed_actions = sum(1 for a in actions if a.get("completed"))
-    card.updated_at = datetime.utcnow()
+    card.updated_at = datetime.now(timezone.utc)
     
     # Auto-update status
     if card.completed_actions == 0:
@@ -707,7 +708,7 @@ async def update_card_status(
         raise_not_found("Action card")
     
     card.status = request.status
-    card.updated_at = datetime.utcnow()
+    card.updated_at = datetime.now(timezone.utc)
     
     await db.commit()
     await db.refresh(card)
@@ -804,7 +805,7 @@ async def export_json(cards: List[ActionCard], audit: Audit) -> dict:
     return {
         "audit_id": audit.id,
         "website": audit.website,
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
         "cards": [card.to_dict() for card in cards]
     }
 
@@ -1095,10 +1096,10 @@ async def export_html(cards: List[ActionCard], audit: Audit, db: AsyncSession) -
         html += f"""
         <div class="card">
             <div class="card-header">
-                <div class="card-url">{card.page_url}</div>
-                <span class="priority-badge priority-{card.priority}">{card.priority}</span>
+                <div class="card-url">{escape(card.page_url or "")}</div>
+                <span class="priority-badge priority-{escape(card.priority or "")}">{escape(card.priority or "")}</span>
             </div>
-            
+
             <div class="score-section">
                 <div class="score-item">
                     <div class="score-label">Current Score</div>
@@ -1114,36 +1115,36 @@ async def export_html(cards: List[ActionCard], audit: Audit, db: AsyncSession) -
                 </div>
             </div>
 """
-        
+
         for action in actions:
-            difficulty_class = f"difficulty-{action.get('difficulty', 'medium')}"
-            
+            difficulty_class = f"difficulty-{escape(action.get('difficulty', 'medium') or 'medium')}"
+
             html += f"""
             <div class="action">
                 <div class="action-header">
-                    <div class="action-title">{"✓ " if action.get('completed') else "☐ "}{action.get('action')}</div>
-                    <span class="action-difficulty {difficulty_class}">{action.get('difficulty')}</span>
+                    <div class="action-title">{"✓ " if action.get('completed') else "☐ "}{escape(action.get('action') or "")}</div>
+                    <span class="action-difficulty {difficulty_class}">{escape(action.get('difficulty') or "")}</span>
                 </div>
-                
+
                 <div class="action-content">
 """
-            
+
             if action.get('current'):
                 html += f"""
                     <div class="action-section">
                         <div class="action-label">Current:</div>
-                        <div class="action-text">{action.get('current')}</div>
+                        <div class="action-text">{escape(action.get('current') or "")}</div>
                     </div>
 """
-            
+
             html += f"""
                     <div class="action-section">
                         <div class="action-label">Recommended:</div>
-                        <div class="action-text">{action.get('recommended')}</div>
+                        <div class="action-text">{escape(action.get('recommended') or "")}</div>
                     </div>
-                    
+
                     <div class="action-reason">
-                        💡 {action.get('reason')}
+                        💡 {escape(action.get('reason') or "")}
                     </div>
                 </div>
             </div>

@@ -21,6 +21,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+from api.utils.url_validator import validate_external_url
+
 logger = logging.getLogger("webhook_sender")
 
 _TOOL = "nrankai-fanout-analyzer"
@@ -46,6 +48,12 @@ async def send(
     POST a signed event payload to *webhook_url*.
     Returns True on success, False on failure. Never raises.
     """
+    try:
+        validate_external_url(webhook_url, "webhook_url")
+    except ValueError as e:
+        logger.warning("Webhook blocked (SSRF protection): %s", e)
+        return False
+
     try:
         import httpx
     except ImportError:

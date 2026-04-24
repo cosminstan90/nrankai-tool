@@ -1,7 +1,7 @@
 """Analytics ORM models (Keywords, GSC, GA4, Ads, Insights)."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -30,7 +30,7 @@ class KeywordSession(Base):
     progress_message = Column(String(500), nullable=True)
     total_keywords   = Column(Integer,     nullable=False, default=0)
     total_questions  = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
     completed_at     = Column(DateTime,    nullable=True)
     error            = Column(Text,        nullable=True)
 
@@ -51,7 +51,7 @@ class KeywordResult(Base):
     intent         = Column(String(30), nullable=True)   # informational|commercial|transactional|navigational
     cluster        = Column(String(200),nullable=True)   # topic cluster label
     priority_score = Column(Float,      nullable=True)   # 1–10
-    created_at     = Column(DateTime,   default=datetime.utcnow)
+    created_at     = Column(DateTime,   default=lambda: datetime.now(timezone.utc))
 
 
 # ── Google Search Console models ─────────────────────────────────────────────
@@ -70,8 +70,8 @@ class GscProperty(Base):
     total_pages      = Column(Integer,     nullable=False, default=0)
     last_synced_at   = Column(DateTime,    nullable=True)   # last OAuth API sync
     sync_type        = Column(String(10),  nullable=False, default="csv", server_default="csv")  # csv|api
-    created_at       = Column(DateTime,    default=datetime.utcnow)
-    updated_at       = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 
@@ -120,8 +120,8 @@ class Ga4Property(Base):
     date_range_end   = Column(String(10),  nullable=True)
     total_pages      = Column(Integer,     nullable=False, default=0)
     total_channels   = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=datetime.utcnow)
-    updated_at       = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     page_rows     = relationship("Ga4PageRow",    back_populates="property", cascade="all, delete-orphan")
     channel_rows  = relationship("Ga4ChannelRow", back_populates="property", cascade="all, delete-orphan")
@@ -179,8 +179,8 @@ class AdsAccount(Base):
     currency        = Column(String(10),  nullable=True)
     total_terms     = Column(Integer,     nullable=False, default=0)
     total_campaigns = Column(Integer,     nullable=False, default=0)
-    created_at      = Column(DateTime,    default=datetime.utcnow)
-    updated_at      = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     search_term_rows = relationship("AdsSearchTermRow", back_populates="account", cascade="all, delete-orphan")
     campaign_rows    = relationship("AdsCampaignRow",   back_populates="account", cascade="all, delete-orphan")
@@ -247,7 +247,7 @@ class InsightRun(Base):
     progress         = Column(Integer,     nullable=False, default=0)
     progress_message = Column(Text,        nullable=True)
     total_cards      = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=datetime.utcnow)
+    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
 
     cards = relationship("InsightCard", back_populates="run", cascade="all, delete-orphan")
 
@@ -298,8 +298,8 @@ class GoogleOAuthToken(Base):
     access_token  = Column(Text,        nullable=False)
     refresh_token = Column(Text,        nullable=False)
     token_expiry  = Column(DateTime,    nullable=True)    # UTC expiry of access_token
-    created_at    = Column(DateTime,    default=datetime.utcnow)
-    updated_at    = Column(DateTime,    default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------

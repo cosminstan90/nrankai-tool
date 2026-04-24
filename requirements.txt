@@ -1,21 +1,55 @@
 # Master unified dependencies (CLI + analyzers)
+
+# Web framework & server
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+starlette>=0.37.0
+python-multipart>=0.0.9
+sse-starlette>=2.1.0
+
+# Rate limiting
+slowapi>=0.1.9
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+aiosqlite>=0.20.0
+alembic>=1.13.0
+
+# Validation & settings
+pydantic>=2.7.0
+python-dotenv>=1.0.0
+
+# Templates
+jinja2>=3.1.0
+
+# AI providers
 anthropic>=0.40.0
 openai>=1.50.0
 mistralai>=1.0.0
 google-genai>=1.0.0
-selenium>=4.25.0
-undetected-chromedriver>=3.5.0
-beautifulsoup4>=4.12.0
-html2text>=2024.2.26
-pandas>=2.2.0
-openpyxl>=3.1.0
-python-dotenv>=1.0.0
-tqdm>=4.66.0
+
+# HTTP clients
+httpx>=0.27.0
 requests>=2.31.0
 aiohttp>=3.9.0
-certifi>=2024.0.0
-pyyaml>=6.0.0
+
+# Scraping & parsing
+beautifulsoup4>=4.12.0
+html2text>=2024.2.26
+selenium>=4.25.0
+undetected-chromedriver>=3.5.0
+
+# Data & exports
+pandas>=2.2.0
+openpyxl>=3.1.0
 reportlab>=4.0.0
-json-repair>=0.30.0
+
+# Google integrations
 google-auth-oauthlib>=1.0.0
 google-api-python-client>=2.0.0
+
+# Utilities
+tqdm>=4.66.0
+certifi>=2024.0.0
+pyyaml>=6.0.0
+json-repair>=0.30.0
