@@ -18,7 +18,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from api.limiter import limiter
 from api.utils.errors import raise_not_found, raise_bad_request
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 

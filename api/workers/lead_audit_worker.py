@@ -62,7 +62,7 @@ POLL_INTERVAL = 30  # seconds between polls when idle
 async def _fetch_page_text(url: str) -> str:
     """Fetch a URL and extract clean text content."""
     _assert_safe_url(url)
-    async with httpx.AsyncClient(timeout=20.0, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         response = await client.get(url, headers={"User-Agent": "GEO-Analyzer/2.1 (nrankai)"})
         response.raise_for_status()
         html = response.text
@@ -75,7 +75,8 @@ async def _fetch_page_text(url: str) -> str:
 
 async def _run_geo_audit(text: str, language: str) -> dict:
     """Run the GEO_AUDIT prompt against extracted page text."""
-    from core.prompt_loader import load_prompt
+    import os as _os
+    from core.prompt_loader import PromptLoader
     from core.direct_analyzer import AsyncLLMClient, clean_json_response
     from api.provider_registry import get_cheapest_available_model
 
@@ -83,7 +84,10 @@ async def _run_geo_audit(text: str, language: str) -> dict:
     provider = cheapest.provider.upper()
     model = cheapest.id
 
-    system_msg = load_prompt("GEO_AUDIT")
+    # Prompts live at <project_root>/prompts/, not core/prompts/
+    _project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    _loader = PromptLoader(prompts_dir=_os.path.join(_project_root, "prompts"))
+    system_msg = _loader.load_prompt("GEO_AUDIT")
     if language == "ro":
         system_msg += (
             "\n\nLANGUAGE INSTRUCTION: Write all text values in Romanian. "
