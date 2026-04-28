@@ -66,9 +66,9 @@ class PromptLoader:
             prompts_dir: Path to the prompts directory. If None, uses ./prompts/
         """
         if prompts_dir is None:
-            # Default to prompts/ directory relative to this file
+            # prompts/ lives at project root (one level above core/)
             current_dir = os.path.dirname(os.path.abspath(__file__))
-            prompts_dir = os.path.join(current_dir, "prompts")
+            prompts_dir = os.path.join(current_dir, "..", "prompts")
         
         self.prompts_dir = prompts_dir
         self._cache: Dict[str, str] = {}
