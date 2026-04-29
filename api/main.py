@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE citation_trackers ADD COLUMN alert_webhook_url VARCHAR(500)",
             "ALTER TABLE geo_monitor_projects ADD COLUMN competitors JSON",
             "ALTER TABLE geo_monitor_scans ADD COLUMN competitor_scores JSON",
+            "ALTER TABLE audits ADD COLUMN prompt_version VARCHAR(10) DEFAULT 'v3'",
         ]:
             try:
                 await _mdb.execute(_sa_text(_stmt))

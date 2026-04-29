@@ -41,6 +41,7 @@ class Audit(Base):
     # v2.1 additions — safe to add to existing DBs (nullable with sensible defaults)
     language = Column(String(30), nullable=True)           # Output language, e.g. "English"
     webhook_url = Column(String(512), nullable=True)       # Optional completion webhook
+    prompt_version = Column(String(10), nullable=True, default="v3")
 
     # Relationship to results
     results = relationship("AuditResult", back_populates="audit", cascade="all, delete-orphan")
