@@ -209,7 +209,7 @@
                         <span x-show="!optimizing">⚡ Optimize Page</span>
                         <span x-show="optimizing" style="display:none" class="inline-flex items-center gap-2">
                             <span class="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin"></span>
-                            <span x-text="jobStatus === 'running' ? 'Running LLM…' : 'Starting…'"></span>
+                            <span x-text="jobStatus === 'running' ? 'Analysing… ' + elapsed + 's' : 'Starting…'"></span>
                         </span>
                     </button>
                     <span x-show="optimizing && jobStatus === 'running'" style="display:none" class="text-xs text-slate-400">
@@ -275,12 +275,45 @@
     <!-- Spinner while running -->
     <div x-show="optimizing" style="display:none"
          class="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-sm">
-        <div class="flex flex-col items-center gap-3">
+        <div class="flex flex-col items-center gap-4">
             <div class="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin"></div>
-            <p class="text-sm font-medium text-slate-700">
-                <span x-text="jobStatus === 'running' ? 'LLM is analysing the page…' : 'Queued…'"></span>
+
+            <!-- Status + elapsed time -->
+            <div>
+                <p class="text-sm font-semibold text-slate-800">
+                    <span x-show="jobStatus !== 'running'">⏳ Starting job…</span>
+                    <span x-show="jobStatus === 'running'" style="display:none">🤖 LLM analysing the page…</span>
+                </p>
+                <p class="text-xs text-slate-400 mt-1">
+                    <span x-text="elapsed + 's elapsed'"></span>
+                    <span x-show="jobStatus === 'running'" style="display:none"> · <span x-text="form.audit_types.length"></span> audit type(s) running in parallel</span>
+                </p>
+            </div>
+
+            <!-- Progress steps -->
+            <div class="flex items-center gap-2 text-xs flex-wrap justify-center">
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full"
+                      :class="elapsed > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'">
+                    <span x-show="elapsed > 0">✓</span> Job queued
+                </span>
+                <span class="text-slate-300">→</span>
+                <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full"
+                      :class="jobStatus === 'running' ? 'bg-violet-100 text-violet-700 font-semibold' : elapsed > 0 ? 'bg-slate-100 text-slate-400' : 'bg-slate-50 text-slate-300'">
+                    <span x-show="jobStatus === 'running'" class="w-2 h-2 rounded-full bg-violet-500 animate-pulse inline-block mr-0.5"></span>
+                    Scrape + LLM
+                </span>
+                <span class="text-slate-300">→</span>
+                <span class="px-2.5 py-1 rounded-full bg-slate-50 text-slate-300">Done</span>
+            </div>
+
+            <p class="text-xs text-slate-400">
+                Typical time: ~30s (Haiku) · ~60s (Sonnet) · depends on page size and audit count.
             </p>
-            <p class="text-xs text-slate-400">Usually takes 15–45 seconds per audit type.</p>
+
+            <!-- Cancel hint after 90s -->
+            <p x-show="elapsed > 90" style="display:none" class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-sm">
+                ⏱ This is taking longer than usual. The job is still running in the background — you can wait or refresh the page (the result will appear in "Past Reports" when done).
+            </p>
         </div>
     </div>
 
@@ -588,11 +621,13 @@ function standaloneOptimize() {
         activeGuideIdx: -1,
         activeGuide:    null,
 
-        optimizing:  false,
-        guideId:     null,
-        jobStatus:   null,
-        jobError:    '',
-        pollTimer:   null,
+        optimizing:   false,
+        guideId:      null,
+        jobStatus:    null,
+        jobError:     '',
+        pollTimer:    null,
+        elapsed:      0,
+        elapsedTimer: null,
 
         init() {
             if (this.pastGuides.length > 0) this.loadGuideByIdx(0);
@@ -717,7 +752,10 @@ function standaloneOptimize() {
             this.jobStatus   = null;
             this.activeGuide = null;
             this.jobError    = '';
-            if (this.pollTimer) clearInterval(this.pollTimer);
+            this.elapsed     = 0;
+            if (this.pollTimer)    clearInterval(this.pollTimer);
+            if (this.elapsedTimer) clearInterval(this.elapsedTimer);
+            this.elapsedTimer = setInterval(() => this.elapsed++, 1000);
             try {
                 const res = await fetch('/api/gsc/optimize', {
                     method:  'POST',
@@ -747,6 +785,7 @@ function standaloneOptimize() {
                     this.jobStatus = data.status;
                     if (data.status === 'completed') {
                         clearInterval(this.pollTimer);
+                        clearInterval(this.elapsedTimer);
                         this.optimizing = false;
                         const gj = data.guide_json;
                         if (gj && gj.type === 'optimization') {
@@ -765,6 +804,7 @@ function standaloneOptimize() {
                         }
                     } else if (data.status === 'failed') {
                         clearInterval(this.pollTimer);
+                        clearInterval(this.elapsedTimer);
                         this.optimizing = false;
                         this.jobError = data.error_message || 'Optimization failed';
                     }
