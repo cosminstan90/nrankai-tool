@@ -44,7 +44,7 @@ def get_system_message():
     Raises:
         PromptNotFoundError: If prompt file doesn't exist
     """
-    from prompt_loader import load_prompt, list_available_audits, PromptNotFoundError
+    from core.prompt_loader import load_prompt, list_available_audits, PromptNotFoundError
     
     question_type = config.get_question_type()
     
@@ -254,7 +254,7 @@ def start_batch_job(batch_filename=None):
 
 def get_available_audits():
     """Get list of available audit types for argparse choices."""
-    from prompt_loader import list_available_audits
+    from core.prompt_loader import list_available_audits
     audits = list_available_audits()
     return [audit['type'] for audit in audits]
 

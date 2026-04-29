@@ -28,7 +28,7 @@ try:
         get_registry,
         get_score_buckets as get_custom_buckets
     )
-    from prompt_loader import is_custom_audit, get_audit_definition
+    from core.prompt_loader import is_custom_audit, get_audit_definition
     AUDIT_BUILDER_AVAILABLE = True
 except ImportError:
     AUDIT_BUILDER_AVAILABLE = False

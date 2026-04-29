@@ -814,7 +814,7 @@ class DirectAnalyzer:
         
         # Load system message — use custom prompts_dir if specified (for prompt version switching)
         if self.prompts_dir:
-            from prompt_loader import PromptLoader
+            from core.prompt_loader import PromptLoader
             _loader = PromptLoader(prompts_dir=self.prompts_dir)
             self.system_message = _loader.load_prompt(question_type)
         else:
