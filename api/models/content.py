@@ -1271,3 +1271,56 @@ class MultilingualGapReport(Base):
             "coverage_score": self.coverage_score,
             "analyzed_at":    self.analyzed_at.isoformat() if self.analyzed_at else None,
         }
+
+
+class DraftOptimization(Base):
+    """Pre-publication content optimizer — analyzes draft text without a live URL."""
+    __tablename__ = "draft_optimizations"
+
+    id               = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    title            = Column(String(255), nullable=True)
+    content_text     = Column(Text, nullable=False)
+    target_keyword   = Column(String(255), nullable=True)
+    page_type        = Column(String(50), nullable=True)   # article, landing, product, service, faq
+    language         = Column(String(50), default="Romanian")
+    focus_areas      = Column(JSON, nullable=True)          # ["seo", "geo", "content_quality", ...]
+    status           = Column(String(20), default="pending")  # pending, running, completed, failed
+    # Scores (0-100)
+    score_overall    = Column(Float, nullable=True)
+    score_seo        = Column(Float, nullable=True)
+    score_geo        = Column(Float, nullable=True)
+    score_content    = Column(Float, nullable=True)
+    score_readability= Column(Float, nullable=True)
+    score_eeat       = Column(Float, nullable=True)
+    # Result payload
+    result_json      = Column(JSON, nullable=True)
+    error_message    = Column(Text, nullable=True)
+    provider         = Column(String(20), nullable=True)
+    model            = Column(String(100), nullable=True)
+    word_count       = Column(Integer, nullable=True)
+    created_at       = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    completed_at     = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "id":              self.id,
+            "title":           self.title,
+            "target_keyword":  self.target_keyword,
+            "page_type":       self.page_type,
+            "language":        self.language,
+            "focus_areas":     self.focus_areas,
+            "status":          self.status,
+            "score_overall":   self.score_overall,
+            "score_seo":       self.score_seo,
+            "score_geo":       self.score_geo,
+            "score_content":   self.score_content,
+            "score_readability": self.score_readability,
+            "score_eeat":      self.score_eeat,
+            "result":          self.result_json,
+            "error_message":   self.error_message,
+            "provider":        self.provider,
+            "model":           self.model,
+            "word_count":      self.word_count,
+            "created_at":      self.created_at.isoformat() if self.created_at else None,
+            "completed_at":    self.completed_at.isoformat() if self.completed_at else None,
+        }
