@@ -29,6 +29,7 @@ from api.models.analytics import (
 )
 from api.models.content import (
     ContentBrief, SchemaMarkup, CitationTracker, CitationScan,
+    DraftOptimization,
     CompetitorGapAnalysis, ContentGap, ActionCard, CrossReferenceJob,
     UrlGuide, LlmsTxtJob,
     FanoutSession, FanoutQuery, FanoutSource,

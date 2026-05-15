@@ -1,0 +1,758 @@
+{% extends "base.html" %}
+
+{% block title %}Draft Optimizer{% endblock %}
+
+{% block content %}
+<div x-data="draftApp()" x-init="init()" class="space-y-6">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-slate-900">Draft Page Optimizer</h1>
+            <p class="mt-1 text-sm text-slate-500">Optimizează conținut înainte de publicare — fără URL, fără scraping</p>
+        </div>
+        <button @click="showHistory = !showHistory"
+                class="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1.5">
+            <span>📋</span>
+            <span x-text="showHistory ? 'Ascunde istoric' : `Istoric ({{ drafts|length }})`"></span>
+        </button>
+    </div>
+
+    <!-- History panel -->
+    <div x-show="showHistory" x-cloak class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h2 class="text-sm font-semibold text-slate-700">Analize anterioare</h2>
+        </div>
+        {% if drafts %}
+        <div class="divide-y divide-slate-100">
+            {% for d in drafts %}
+            <div class="px-4 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer"
+                 @click="loadHistoryItem('{{ d.id }}')">
+                <div class="min-w-0 flex-1">
+                    <p class="text-sm font-medium text-slate-800 truncate">{{ d.title or 'Draft' }}</p>
+                    <p class="text-xs text-slate-400 mt-0.5">
+                        {{ d.target_keyword or '—' }} · {{ d.page_type }} · {{ d.word_count or '?' }} cuvinte
+                    </p>
+                </div>
+                <div class="flex items-center gap-3 ml-4 flex-shrink-0">
+                    {% if d.score_overall is not none %}
+                    <span class="text-lg font-bold
+                        {% if d.score_overall >= 80 %}text-green-600
+                        {% elif d.score_overall >= 60 %}text-blue-600
+                        {% elif d.score_overall >= 40 %}text-yellow-600
+                        {% else %}text-red-600{% endif %}">
+                        {{ d.score_overall|int }}
+                    </span>
+                    {% endif %}
+                    <span class="badge badge-{{ d.status }}">{{ d.status }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="px-4 py-6 text-sm text-slate-400 text-center">Nicio analiză anterioară</p>
+        {% endif %}
+    </div>
+
+    <!-- Two-column layout: Form + Results -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+
+        <!-- ── LEFT: Form ────────────────────────────────────────────────── -->
+        <div class="space-y-4">
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-6 space-y-5">
+
+                <!-- Title (optional) -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Titlu draft <span class="text-slate-400">(opțional)</span></label>
+                    <input type="text" x-model="form.title" placeholder="ex: Ghid complet WordPress 2025"
+                           class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                </div>
+
+                <!-- Target keyword -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Keyword țintă <span class="text-slate-400">(recomandat)</span></label>
+                    <input type="text" x-model="form.target_keyword" placeholder="ex: cum să faci SEO pentru blog"
+                           class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                </div>
+
+                <!-- Page type + Language -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Tip pagină</label>
+                        <select x-model="form.page_type"
+                                class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                            <option value="article">Articol / Blog</option>
+                            <option value="landing">Landing Page</option>
+                            <option value="product">Produs</option>
+                            <option value="service">Serviciu</option>
+                            <option value="faq">FAQ</option>
+                            <option value="guide">Ghid</option>
+                            <option value="category">Categorie</option>
+                            <option value="about">Despre noi</option>
+                            <option value="other">Altul</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Limbă</label>
+                        <select x-model="form.language"
+                                class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                            <option value="Romanian">Română</option>
+                            <option value="English">Engleză</option>
+                            <option value="French">Franceză</option>
+                            <option value="German">Germană</option>
+                            <option value="Spanish">Spaniolă</option>
+                            <option value="Italian">Italiană</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Focus areas -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Focus areas</label>
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="area in availableAreas" :key="area.key">
+                            <label class="flex items-center gap-1.5 cursor-pointer">
+                                <input type="checkbox" :value="area.key"
+                                       x-model="form.focus_areas"
+                                       class="rounded border-slate-300 text-primary-600 focus:ring-primary-500">
+                                <span class="text-sm text-slate-700" x-text="area.label"></span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Provider / Model -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Provider</label>
+                        <select x-model="form.provider" @change="updateModels()"
+                                class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                            {% for p in providers_ui %}
+                            <option value="{{ p.id }}" {% if not providers[p.id] %}disabled{% endif %}>
+                                {{ p.name }}{% if not providers[p.id] %} (no key){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Model</label>
+                        <select x-model="form.model"
+                                class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
+                            <template x-for="m in currentModels" :key="m.id">
+                                <option :value="m.id" x-text="m.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Content tabs: textarea / file upload -->
+                <div>
+                    <div class="flex border-b border-slate-200 mb-3">
+                        <button @click="inputMode='text'"
+                                :class="inputMode==='text' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2 text-sm font-medium -mb-px">Paste text</button>
+                        <button @click="inputMode='file'"
+                                :class="inputMode==='file' ? 'border-b-2 border-primary-500 text-primary-600' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2 text-sm font-medium -mb-px">Upload fișier</button>
+                    </div>
+
+                    <!-- Text area -->
+                    <div x-show="inputMode==='text'">
+                        <textarea x-model="form.content_text" rows="14"
+                                  placeholder="Paste conținutul draft aici... (minimum 50 caractere)"
+                                  class="w-full rounded-lg border-slate-300 shadow-sm text-sm font-mono focus:border-primary-500 focus:ring-primary-500 resize-y"></textarea>
+                        <p class="mt-1 text-xs text-slate-400" x-text="wordCount + ' cuvinte estimate'"></p>
+                    </div>
+
+                    <!-- File upload -->
+                    <div x-show="inputMode==='file'" x-cloak>
+                        <label class="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
+                            <div class="flex flex-col items-center gap-2 text-slate-500">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                                </svg>
+                                <span class="text-sm" x-text="uploadFile ? uploadFile.name : 'Trage fișierul aici sau click'"></span>
+                                <span class="text-xs text-slate-400">.txt, .md, .docx — max 500KB</span>
+                            </div>
+                            <input type="file" class="hidden" accept=".txt,.md,.docx"
+                                   @change="handleFileSelect($event)">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Submit -->
+                <button @click="submitAnalysis()"
+                        :disabled="isSubmitting || (inputMode==='text' && form.content_text.length < 50) || (inputMode==='file' && !uploadFile)"
+                        class="w-full py-2.5 px-4 rounded-lg font-medium text-sm transition-colors
+                               bg-primary-600 text-white hover:bg-primary-700
+                               disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!isSubmitting">✍️ Analizează draft</span>
+                    <span x-show="isSubmitting" class="flex items-center justify-center gap-2">
+                        <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                        Se analizează...
+                    </span>
+                </button>
+
+                <!-- Error -->
+                <div x-show="errorMsg" x-cloak class="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p class="text-sm text-red-700" x-text="errorMsg"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── RIGHT: Results ─────────────────────────────────────────────── -->
+        <div>
+            <!-- Waiting state -->
+            <div x-show="!currentDraft && !isPolling" class="bg-white border border-slate-200 rounded-lg shadow-sm p-12 text-center">
+                <div class="text-5xl mb-4">✍️</div>
+                <p class="text-slate-500 text-sm">Paste conținutul draft și apasă <strong>Analizează draft</strong> pentru a primi recomandări de optimizare.</p>
+            </div>
+
+            <!-- Polling / running state -->
+            <div x-show="isPolling" x-cloak class="bg-white border border-slate-200 rounded-lg shadow-sm p-12 text-center">
+                <svg class="animate-spin h-10 w-10 text-primary-500 mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <p class="text-slate-600 font-medium text-sm">LLM analizează conținutul...</p>
+                <p class="text-slate-400 text-xs mt-1">~15-30 secunde</p>
+            </div>
+
+            <!-- Results -->
+            <div x-show="currentDraft && currentDraft.status === 'completed'" x-cloak class="space-y-4">
+
+                <!-- Score overview -->
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-sm font-semibold text-slate-700">Score-uri</h2>
+                        <span class="text-xs text-slate-400" x-text="currentDraft ? currentDraft.model : ''"></span>
+                    </div>
+
+                    <!-- Overall score big -->
+                    <div class="flex items-center gap-4 mb-5">
+                        <div class="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold border-4"
+                             :class="{
+                                'border-green-400 text-green-600 bg-green-50': overallScore >= 80,
+                                'border-blue-400 text-blue-600 bg-blue-50': overallScore >= 60 && overallScore < 80,
+                                'border-yellow-400 text-yellow-600 bg-yellow-50': overallScore >= 40 && overallScore < 60,
+                                'border-red-400 text-red-600 bg-red-50': overallScore < 40
+                             }"
+                             x-text="overallScore">
+                        </div>
+                        <div>
+                            <p class="font-semibold text-slate-800" x-text="scoreLabel(overallScore)"></p>
+                            <p class="text-xs text-slate-400 mt-0.5">Score general / 100</p>
+                            <p class="text-xs text-slate-500 mt-1"
+                               x-text="currentDraft?.result?.executive_summary || ''"></p>
+                        </div>
+                    </div>
+
+                    <!-- Sub-scores grid -->
+                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        <template x-for="dim in scoreDimensions" :key="dim.key">
+                            <div class="rounded-lg p-3 border"
+                                 :class="{
+                                     'border-green-200 bg-green-50': dim.value >= 80,
+                                     'border-blue-200 bg-blue-50': dim.value >= 60 && dim.value < 80,
+                                     'border-yellow-200 bg-yellow-50': dim.value >= 40 && dim.value < 60,
+                                     'border-red-200 bg-red-50': dim.value < 40
+                                 }">
+                                <p class="text-[10px] font-semibold uppercase tracking-wide text-slate-500" x-text="dim.label"></p>
+                                <p class="text-xl font-bold mt-0.5"
+                                   :class="{
+                                       'text-green-600': dim.value >= 80,
+                                       'text-blue-600': dim.value >= 60 && dim.value < 80,
+                                       'text-yellow-600': dim.value >= 40 && dim.value < 60,
+                                       'text-red-600': dim.value < 40
+                                   }"
+                                   x-text="dim.value ?? '—'">
+                                </p>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Quick wins -->
+                <div x-show="currentDraft?.result?.quick_wins?.length" class="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                    <h3 class="text-sm font-semibold text-emerald-800 mb-2">⚡ Quick Wins</h3>
+                    <ul class="space-y-1.5">
+                        <template x-for="win in (currentDraft?.result?.quick_wins || [])" :key="win">
+                            <li class="text-sm text-emerald-700 flex items-start gap-2">
+                                <span class="mt-0.5 flex-shrink-0">✓</span>
+                                <span x-text="win"></span>
+                            </li>
+                        </template>
+                    </ul>
+                </div>
+
+                <!-- Meta suggestions -->
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">🏷️ Meta & Structură</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Title Tag</p>
+                            <p class="text-sm text-slate-800 font-medium mt-0.5"
+                               x-text="currentDraft?.result?.meta_suggestions?.title_tag || '—'"></p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Meta Description</p>
+                            <p class="text-sm text-slate-600 mt-0.5"
+                               x-text="currentDraft?.result?.meta_suggestions?.meta_description || '—'"></p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">H1</p>
+                                <p class="text-sm text-slate-700 mt-0.5"
+                                   x-text="currentDraft?.result?.meta_suggestions?.h1 || '—'"></p>
+                            </div>
+                            <div>
+                                <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">URL Slug</p>
+                                <p class="text-sm text-slate-500 font-mono mt-0.5"
+                                   x-text="currentDraft?.result?.meta_suggestions?.url_slug || '—'"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Improvements list -->
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+                    <h3 class="text-sm font-semibold text-slate-700 mb-3">🔧 Îmbunătățiri recomandate</h3>
+                    <div class="space-y-3" x-show="currentDraft?.result?.improvements?.length">
+                        <template x-for="(imp, idx) in (currentDraft?.result?.improvements || [])" :key="idx">
+                            <div class="border rounded-lg p-3"
+                                 :class="{
+                                     'border-red-200 bg-red-50': imp.priority === 'high',
+                                     'border-yellow-200 bg-yellow-50': imp.priority === 'medium',
+                                     'border-slate-200 bg-slate-50': imp.priority === 'low'
+                                 }">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div>
+                                        <span class="inline-block text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded mr-1.5"
+                                              :class="{
+                                                  'bg-red-200 text-red-800': imp.priority === 'high',
+                                                  'bg-yellow-200 text-yellow-800': imp.priority === 'medium',
+                                                  'bg-slate-200 text-slate-600': imp.priority === 'low'
+                                              }"
+                                              x-text="imp.priority"></span>
+                                        <span class="text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+                                              x-text="imp.dimension"></span>
+                                    </div>
+                                </div>
+                                <p class="text-sm font-medium text-slate-800 mt-1.5" x-text="imp.issue"></p>
+                                <p class="text-sm text-slate-600 mt-1" x-text="imp.recommendation"></p>
+                                <p x-show="imp.example" class="text-xs text-slate-500 italic mt-1.5 border-l-2 border-slate-300 pl-2"
+                                   x-text="imp.example"></p>
+                            </div>
+                        </template>
+                    </div>
+                    <p x-show="!currentDraft?.result?.improvements?.length" class="text-sm text-slate-400">Nicio îmbunătățire identificată.</p>
+                </div>
+
+                <!-- GEO + Keywords + E-E-A-T tabs -->
+                <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                    <div class="flex border-b border-slate-200">
+                        <button @click="detailTab='geo'"
+                                :class="detailTab==='geo' ? 'border-b-2 border-primary-500 text-primary-600 bg-white' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2.5 text-sm font-medium -mb-px">GEO</button>
+                        <button @click="detailTab='keywords'"
+                                :class="detailTab==='keywords' ? 'border-b-2 border-primary-500 text-primary-600 bg-white' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2.5 text-sm font-medium -mb-px">Keywords</button>
+                        <button @click="detailTab='eeat'"
+                                :class="detailTab==='eeat' ? 'border-b-2 border-primary-500 text-primary-600 bg-white' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2.5 text-sm font-medium -mb-px">E-E-A-T</button>
+                        <button @click="detailTab='readability'"
+                                :class="detailTab==='readability' ? 'border-b-2 border-primary-500 text-primary-600 bg-white' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2.5 text-sm font-medium -mb-px">Readability</button>
+                        <button @click="detailTab='schema'"
+                                :class="detailTab==='schema' ? 'border-b-2 border-primary-500 text-primary-600 bg-white' : 'text-slate-500 hover:text-slate-700'"
+                                class="px-4 py-2.5 text-sm font-medium -mb-px">Schema</button>
+                    </div>
+
+                    <div class="p-5">
+                        <!-- GEO tab -->
+                        <div x-show="detailTab==='geo'">
+                            <div class="space-y-4">
+                                <div class="flex gap-6 text-sm">
+                                    <div>
+                                        <span class="text-slate-500">Citation worthiness:</span>
+                                        <span class="font-semibold ml-1"
+                                              :class="{
+                                                  'text-green-600': currentDraft?.result?.geo_readiness?.citation_worthiness === 'high',
+                                                  'text-yellow-600': currentDraft?.result?.geo_readiness?.citation_worthiness === 'medium',
+                                                  'text-red-600': currentDraft?.result?.geo_readiness?.citation_worthiness === 'low'
+                                              }"
+                                              x-text="currentDraft?.result?.geo_readiness?.citation_worthiness || '—'"></span>
+                                    </div>
+                                    <div>
+                                        <span class="text-slate-500">Format conversational:</span>
+                                        <span class="font-semibold ml-1 text-slate-800"
+                                              x-text="(currentDraft?.result?.geo_readiness?.conversational_format_score ?? '—') + '/100'"></span>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.geo_readiness?.citation_worthiness_reason">
+                                    <p class="text-xs text-slate-400 mb-1">Motiv</p>
+                                    <p class="text-sm text-slate-600" x-text="currentDraft?.result?.geo_readiness?.citation_worthiness_reason"></p>
+                                </div>
+                                <div x-show="currentDraft?.result?.geo_readiness?.entities_missing?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Entități lipsă</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="e in (currentDraft?.result?.geo_readiness?.entities_missing || [])" :key="e">
+                                            <span class="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs" x-text="e"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.geo_readiness?.faq_suggestions?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Sugestii FAQ</p>
+                                    <div class="space-y-2">
+                                        <template x-for="faq in (currentDraft?.result?.geo_readiness?.faq_suggestions || [])" :key="faq.question">
+                                            <div class="border-l-2 border-primary-300 pl-3">
+                                                <p class="text-sm font-medium text-slate-800" x-text="faq.question"></p>
+                                                <p class="text-xs text-slate-500 mt-0.5" x-text="faq.why"></p>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Keywords tab -->
+                        <div x-show="detailTab==='keywords'" x-cloak>
+                            <div class="space-y-4">
+                                <div class="flex gap-4 text-sm">
+                                    <div>
+                                        <span class="text-slate-500">Keyword primar găsit:</span>
+                                        <span class="font-semibold ml-1"
+                                              :class="currentDraft?.result?.keyword_analysis?.primary_keyword_found ? 'text-green-600' : 'text-red-600'"
+                                              x-text="currentDraft?.result?.keyword_analysis?.primary_keyword_found ? '✓ Da' : '✗ Nu'"></span>
+                                    </div>
+                                    <div>
+                                        <span class="text-slate-500">Densitate:</span>
+                                        <span class="font-semibold ml-1 text-slate-800"
+                                              x-text="currentDraft?.result?.keyword_analysis?.primary_keyword_density || '—'"></span>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.keyword_analysis?.missing_lsi_terms?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Termeni LSI lipsă</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="term in (currentDraft?.result?.keyword_analysis?.missing_lsi_terms || [])" :key="term">
+                                            <span class="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs" x-text="term"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.keyword_analysis?.suggested_secondary_keywords?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Keyword-uri secundare sugerate</p>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <template x-for="kw in (currentDraft?.result?.keyword_analysis?.suggested_secondary_keywords || [])" :key="kw">
+                                            <span class="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs" x-text="kw"></span>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.keyword_analysis?.notes">
+                                    <p class="text-sm text-slate-600 italic" x-text="currentDraft?.result?.keyword_analysis?.notes"></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- E-E-A-T tab -->
+                        <div x-show="detailTab==='eeat'" x-cloak>
+                            <div class="space-y-4">
+                                <div x-show="currentDraft?.result?.eeat_analysis?.signals_present?.length">
+                                    <p class="text-xs font-semibold text-green-600 uppercase tracking-wide mb-1.5">✓ Semnale prezente</p>
+                                    <ul class="space-y-1">
+                                        <template x-for="s in (currentDraft?.result?.eeat_analysis?.signals_present || [])" :key="s">
+                                            <li class="text-sm text-slate-700 flex items-start gap-1.5">
+                                                <span class="text-green-500 flex-shrink-0">✓</span>
+                                                <span x-text="s"></span>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                                <div x-show="currentDraft?.result?.eeat_analysis?.signals_missing?.length">
+                                    <p class="text-xs font-semibold text-red-600 uppercase tracking-wide mb-1.5">✗ Semnale lipsă</p>
+                                    <ul class="space-y-1">
+                                        <template x-for="s in (currentDraft?.result?.eeat_analysis?.signals_missing || [])" :key="s">
+                                            <li class="text-sm text-slate-700 flex items-start gap-1.5">
+                                                <span class="text-red-400 flex-shrink-0">✗</span>
+                                                <span x-text="s"></span>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                                <div x-show="currentDraft?.result?.eeat_analysis?.recommendations?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Recomandări</p>
+                                    <ul class="space-y-1.5">
+                                        <template x-for="r in (currentDraft?.result?.eeat_analysis?.recommendations || [])" :key="r">
+                                            <li class="text-sm text-slate-600 flex items-start gap-1.5">
+                                                <span class="flex-shrink-0 text-primary-500">→</span>
+                                                <span x-text="r"></span>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Readability tab -->
+                        <div x-show="detailTab==='readability'" x-cloak>
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                                    <div class="bg-slate-50 rounded-lg p-3">
+                                        <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Flesch Score</p>
+                                        <p class="text-lg font-bold text-slate-800 mt-0.5"
+                                           x-text="currentDraft?.result?.readability_details?.flesch_score_estimate ?? '—'"></p>
+                                        <p class="text-xs text-slate-500"
+                                           x-text="currentDraft?.result?.readability_details?.flesch_label || ''"></p>
+                                    </div>
+                                    <div class="bg-slate-50 rounded-lg p-3">
+                                        <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Lung. medie fraza</p>
+                                        <p class="text-lg font-bold text-slate-800 mt-0.5"
+                                           x-text="(currentDraft?.result?.readability_details?.avg_sentence_length_words ?? '—') + ' cuvinte'"></p>
+                                    </div>
+                                    <div class="bg-slate-50 rounded-lg p-3">
+                                        <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Diateza pasivă</p>
+                                        <p class="text-lg font-bold text-slate-800 mt-0.5"
+                                           x-text="currentDraft?.result?.readability_details?.passive_voice_estimate ?? '—'"></p>
+                                    </div>
+                                </div>
+                                <div x-show="currentDraft?.result?.readability_details?.improvements?.length">
+                                    <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Îmbunătățiri readability</p>
+                                    <ul class="space-y-1.5">
+                                        <template x-for="imp in (currentDraft?.result?.readability_details?.improvements || [])" :key="imp">
+                                            <li class="text-sm text-slate-600 flex items-start gap-1.5">
+                                                <span class="flex-shrink-0 text-primary-500">→</span>
+                                                <span x-text="imp"></span>
+                                            </li>
+                                        </template>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Schema tab -->
+                        <div x-show="detailTab==='schema'" x-cloak>
+                            <div class="space-y-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm font-medium text-slate-700">Tip recomandat:</span>
+                                    <span class="px-2 py-0.5 rounded bg-primary-100 text-primary-700 text-sm font-semibold"
+                                          x-text="currentDraft?.result?.schema_recommendation?.recommended_type || '—'"></span>
+                                </div>
+                                <p class="text-sm text-slate-600"
+                                   x-text="currentDraft?.result?.schema_recommendation?.reason || ''"></p>
+                                <div x-show="currentDraft?.result?.schema_recommendation?.json_ld">
+                                    <div class="flex items-center justify-between mb-1.5">
+                                        <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">JSON-LD generat</p>
+                                        <button @click="copySchema()"
+                                                class="text-xs text-primary-600 hover:text-primary-800 font-medium">Copiază</button>
+                                    </div>
+                                    <pre class="bg-slate-900 text-green-300 text-xs rounded-lg p-4 overflow-x-auto max-h-64"
+                                         x-text="formatSchema()"></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Failed state -->
+            <div x-show="currentDraft && currentDraft.status === 'failed'" x-cloak
+                 class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+                <p class="text-red-700 font-medium">Analiza a eșuat</p>
+                <p class="text-red-500 text-sm mt-1" x-text="currentDraft?.error_message || ''"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function draftApp() {
+    return {
+        showHistory: false,
+        inputMode: 'text',
+        uploadFile: null,
+        isSubmitting: false,
+        isPolling: false,
+        errorMsg: '',
+        currentDraft: null,
+        detailTab: 'geo',
+        pollTimer: null,
+
+        form: {
+            title: '',
+            target_keyword: '',
+            page_type: 'article',
+            language: 'Romanian',
+            focus_areas: ['seo', 'geo', 'content_quality', 'readability', 'eeat'],
+            content_text: '',
+            provider: '',
+            model: '',
+        },
+
+        availableAreas: [
+            { key: 'seo',             label: 'SEO' },
+            { key: 'geo',             label: 'GEO' },
+            { key: 'content_quality', label: 'Content' },
+            { key: 'readability',     label: 'Readability' },
+            { key: 'eeat',            label: 'E-E-A-T' },
+        ],
+
+        providerModels: {
+            {% for p in providers_ui %}
+            '{{ p.id }}': [{% for m in p.models %}{ id: '{{ m.id }}', name: '{{ m.name }}' }{% if not loop.last %},{% endif %}{% endfor %}],
+            {% endfor %}
+        },
+
+        currentModels: [],
+
+        init() {
+            // pick first available provider
+            {% for p in providers_ui %}
+            {% if providers[p.id] %}
+            if (!this.form.provider) {
+                this.form.provider = '{{ p.id }}';
+            }
+            {% endif %}
+            {% endfor %}
+            this.updateModels();
+        },
+
+        updateModels() {
+            this.currentModels = this.providerModels[this.form.provider] || [];
+            if (this.currentModels.length) this.form.model = this.currentModels[0].id;
+        },
+
+        get wordCount() {
+            return this.form.content_text.trim().split(/\s+/).filter(Boolean).length;
+        },
+
+        get overallScore() {
+            return this.currentDraft?.score_overall ?? 0;
+        },
+
+        get scoreDimensions() {
+            if (!this.currentDraft) return [];
+            return [
+                { key: 'seo',         label: 'SEO',         value: this.currentDraft.score_seo },
+                { key: 'geo',         label: 'GEO',         value: this.currentDraft.score_geo },
+                { key: 'content',     label: 'Content',     value: this.currentDraft.score_content },
+                { key: 'readability', label: 'Readability', value: this.currentDraft.score_readability },
+                { key: 'eeat',        label: 'E-E-A-T',     value: this.currentDraft.score_eeat },
+            ];
+        },
+
+        scoreLabel(s) {
+            if (s >= 80) return 'Excelent — gata de publicare';
+            if (s >= 60) return 'Bun — câteva îmbunătățiri';
+            if (s >= 40) return 'Mediu — necesită muncă';
+            return 'Slab — revizuire completă';
+        },
+
+        handleFileSelect(e) {
+            this.uploadFile = e.target.files[0] || null;
+        },
+
+        async submitAnalysis() {
+            this.errorMsg = '';
+            this.isSubmitting = true;
+            this.currentDraft = null;
+
+            try {
+                let response;
+
+                if (this.inputMode === 'file' && this.uploadFile) {
+                    const fd = new FormData();
+                    fd.append('file', this.uploadFile);
+                    if (this.form.target_keyword) fd.append('target_keyword', this.form.target_keyword);
+                    fd.append('page_type', this.form.page_type);
+                    fd.append('language', this.form.language);
+                    fd.append('focus_areas', this.form.focus_areas.join(','));
+                    if (this.form.provider) fd.append('provider', this.form.provider);
+                    if (this.form.model) fd.append('model', this.form.model);
+
+                    response = await fetch('/api/draft-optimizer/upload', { method: 'POST', body: fd });
+                } else {
+                    response = await fetch('/api/draft-optimizer/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            content_text:   this.form.content_text,
+                            title:          this.form.title || undefined,
+                            target_keyword: this.form.target_keyword || undefined,
+                            page_type:      this.form.page_type,
+                            language:       this.form.language,
+                            focus_areas:    this.form.focus_areas,
+                            provider:       this.form.provider || undefined,
+                            model:          this.form.model || undefined,
+                        }),
+                    });
+                }
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                this.startPolling(data.id);
+
+            } catch (e) {
+                this.errorMsg = e.message;
+            } finally {
+                this.isSubmitting = false;
+            }
+        },
+
+        startPolling(id) {
+            this.isPolling = true;
+            const poll = async () => {
+                try {
+                    const r = await fetch(`/api/draft-optimizer/${id}`);
+                    if (!r.ok) throw new Error('Polling error');
+                    const data = await r.json();
+                    if (data.status === 'completed' || data.status === 'failed') {
+                        this.currentDraft = data;
+                        this.isPolling = false;
+                        clearInterval(this.pollTimer);
+                    }
+                } catch {
+                    this.isPolling = false;
+                    clearInterval(this.pollTimer);
+                }
+            };
+            this.pollTimer = setInterval(poll, 2000);
+            poll();
+        },
+
+        async loadHistoryItem(id) {
+            try {
+                const r = await fetch(`/api/draft-optimizer/${id}`);
+                if (r.ok) {
+                    this.currentDraft = await r.json();
+                    this.showHistory = false;
+                }
+            } catch {}
+        },
+
+        formatSchema() {
+            try {
+                const raw = this.currentDraft?.result?.schema_recommendation?.json_ld;
+                if (!raw) return '';
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                return JSON.stringify(parsed, null, 2);
+            } catch {
+                return this.currentDraft?.result?.schema_recommendation?.json_ld || '';
+            }
+        },
+
+        async copySchema() {
+            const text = this.formatSchema();
+            if (text) await navigator.clipboard.writeText(text);
+        },
+    };
+}
+</script>
+{% endblock %}
