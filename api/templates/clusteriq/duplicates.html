@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}ClusterIQ — Duplicates — {{ project.domain }}{% endblock %}
+{% block content %}
+
+<div x-data="clusteriqDuplicates()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition
+       class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm"
+       x-text="toast"></div>
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
+    <div>
+      <h1 class="text-xl font-bold text-slate-800">{{ project.domain }}</h1>
+      <p class="text-sm text-slate-500 mt-0.5">ClusterIQ &mdash; Duplicate Cohorts</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Export dev brief (redirects only) -->
+      <a href="/api/clusteriq/projects/{{ project.id }}/export/dev-brief.txt"
+         class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        </svg>
+        Export Dev Brief
+      </a>
+    </div>
+  </div>
+
+  <!-- ───────── Tabs ───────── -->
+  <div class="flex items-center space-x-1 px-6 pt-4 pb-0 border-b border-slate-100 bg-white flex-shrink-0 overflow-x-auto">
+    {% set tabs = [
+      ('overview',  'Overview',   '/clusteriq/' ~ project.id),
+      ('clusters',  'All Clusters', '/clusteriq/' ~ project.id ~ '/clusters'),
+      ('issues',    'Issues',     '/clusteriq/' ~ project.id ~ '/clusters?verdict_filter=Fix'),
+      ('dupes',     'Duplicates', '/clusteriq/' ~ project.id ~ '/duplicates'),
+      ('decisions', 'Decisions',  '/clusteriq/' ~ project.id ~ '/decisions'),
+    ] %}
+    {% for key, label, href in tabs %}
+    <a href="{{ href }}"
+       class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors
+              {% if key == 'dupes' %}border-primary-600 text-primary-700{% else %}border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ───────── Body ───────── -->
+  <div class="flex-1 overflow-auto p-6">
+
+    {% if not duplicates %}
+    <!-- Empty state -->
+    <div class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <svg class="w-12 h-12 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <p class="text-sm font-medium text-slate-500">No duplicate cohorts detected</p>
+      <p class="text-xs text-slate-400 mt-1">Run the pipeline to discover consolidation opportunities.</p>
+    </div>
+
+    {% else %}
+
+    <!-- Summary bar -->
+    <div class="flex items-center gap-4 mb-5 text-sm text-slate-600">
+      <span><span class="font-semibold text-slate-800">{{ duplicates | length }}</span> redirect pair{{ 's' if duplicates | length != 1 else '' }}</span>
+      <span class="text-slate-300">&bull;</span>
+      <span class="text-xs text-slate-400">Click "Dev Brief" on any row to expand the full handoff text.</span>
+    </div>
+
+    <div class="space-y-3">
+      {% for dup in duplicates %}
+      <div x-data="{ open: false, copied: false }" class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+
+        <!-- Main row -->
+        <div class="px-5 py-4">
+          <div class="flex items-start gap-4">
+
+            <!-- URL pair -->
+            <div class="flex-1 min-w-0 space-y-2.5">
+
+              <!-- Winner -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-700">
+                  Winner ✓
+                </span>
+                <a href="{{ dup.winner_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-sm font-medium text-slate-700 hover:text-primary-600 hover:underline break-all">
+                  {{ dup.winner_url }}
+                </a>
+                {% if dup.winner_reason %}
+                <span class="text-xs text-emerald-600 italic">— {{ dup.winner_reason }}</span>
+                {% endif %}
+              </div>
+
+              <!-- Arrow -->
+              <div class="flex items-center gap-2 pl-1">
+                <div class="w-0.5 h-4 bg-slate-200 ml-1"></div>
+                <svg class="w-3.5 h-3.5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                </svg>
+                <span class="text-xs text-slate-400 font-medium">301 redirect</span>
+              </div>
+
+              <!-- Duplicate (loser) -->
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="flex-shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-600">
+                  Redirect
+                </span>
+                <span class="text-sm text-slate-500 break-all line-through decoration-red-300">{{ dup.duplicate_url }}</span>
+              </div>
+
+            </div>
+
+            <!-- Right side: similarity + actions -->
+            <div class="flex-shrink-0 flex flex-col items-end gap-2">
+              {% if dup.similarity_score %}
+              <div class="text-center">
+                <div class="text-2xl font-bold text-slate-700">{{ (dup.similarity_score * 100) | round | int }}%</div>
+                <div class="text-xs text-slate-400">similarity</div>
+              </div>
+              {% endif %}
+
+              {% if dup.overlap_keywords %}
+              <div class="text-xs text-slate-400 text-right">
+                {{ dup.overlap_keywords | length }} shared keyword{{ 's' if dup.overlap_keywords | length != 1 else '' }}
+              </div>
+              {% endif %}
+
+              {% if dup.action %}
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                {{ dup.action }}
+              </span>
+              {% endif %}
+
+              {% if dup.dev_brief %}
+              <!-- Toggle brief button -->
+              <button @click="open = !open"
+                      class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border transition-colors"
+                      :class="open ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'">
+                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="open ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                </svg>
+                Dev Brief
+              </button>
+              {% endif %}
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Expandable dev brief -->
+        {% if dup.dev_brief %}
+        <div x-show="open" x-transition:enter="transition ease-out duration-150"
+             x-transition:enter-start="opacity-0 -translate-y-1"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             class="border-t border-slate-100 bg-amber-50 px-5 py-4">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex-1 min-w-0">
+              <p class="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-2">Dev Handoff Brief</p>
+              <p class="text-sm text-amber-900 leading-relaxed whitespace-pre-wrap font-mono">{{ dup.dev_brief }}</p>
+            </div>
+            <button @click="navigator.clipboard.writeText(`{{ dup.dev_brief | replace('`', "'") | replace('\n', '\\n') }}`); copied = true; setTimeout(() => copied = false, 2000)"
+                    class="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors"
+                    :class="copied ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white border-amber-200 text-amber-700 hover:bg-amber-100'">
+              <svg x-show="!copied" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              <svg x-show="copied" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              <span x-text="copied ? 'Copied!' : 'Copy Brief'"></span>
+            </button>
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+  </div><!-- /body -->
+</div>
+
+<script>
+function clusteriqDuplicates() {
+  return {
+    toast: '',
+    init() {},
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 3500);
+    },
+  };
+}
+</script>
+
+{% endblock %}

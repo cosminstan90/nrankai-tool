@@ -122,6 +122,68 @@ class AhrefsClient:
             logger.warning("Ahrefs get_keywords_for_url error for %s: %s", url, exc)
             return []
 
+    async def get_domain_organic_keywords(
+        self,
+        domain: str,
+        limit: int = 1000,
+        country: str = "us",
+    ) -> List[dict]:
+        """
+        Return the top organic keywords for an entire domain (mode=domain).
+        Used by ClusterIQ competitor analysis.
+
+        Each row: {keyword, position, volume, url, traffic}
+        """
+        import httpx
+        results: List[dict] = []
+        offset = 0
+        batch  = min(limit, 1000)   # Ahrefs max per request is 1000
+
+        try:
+            async with httpx.AsyncClient(timeout=60, base_url=_BASE_URL) as client:
+                while len(results) < limit:
+                    r = await client.get(
+                        "/site-explorer/organic-keywords",
+                        headers=self._headers(),
+                        params={
+                            "select":  "keyword,position,volume,traffic,url",
+                            "target":  domain,
+                            "mode":    "domain",
+                            "country": country,
+                            "limit":   batch,
+                            "offset":  offset,
+                            "order_by": "volume:desc",
+                        },
+                    )
+                    if r.status_code == 429:
+                        logger.warning(
+                            "Ahrefs rate limit fetching keywords for %s — sleeping 15 s", domain
+                        )
+                        await asyncio.sleep(15)
+                        continue
+                    r.raise_for_status()
+                    data = r.json()
+                    rows = data.get("keywords", data.get("organic_keywords", []))
+                    if not rows:
+                        break
+                    for k in rows:
+                        results.append({
+                            "keyword":  k.get("keyword", ""),
+                            "position": float(k.get("position", 99) or 99),
+                            "volume":   int(k.get("volume",   0) or 0),
+                            "traffic":  int(k.get("traffic",  0) or 0),
+                            "url":      k.get("url", ""),
+                        })
+                    if len(rows) < batch:
+                        break   # last page
+                    offset += batch
+        except Exception as exc:
+            logger.warning(
+                "Ahrefs get_domain_organic_keywords error for %s: %s", domain, exc
+            )
+
+        return results[:limit]
+
     async def batch_url_metrics(self, urls: List[str], concurrency: int = 3) -> Dict[str, dict]:
         """Fetch metrics for multiple URLs with concurrency control."""
         sem     = asyncio.Semaphore(concurrency)

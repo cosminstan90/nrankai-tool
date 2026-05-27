@@ -14,6 +14,8 @@ from .contentiq_views import router as _contentiq_router
 from .meta_generator import router as _meta_generator_router
 from .ai_visibility import router as _ai_visibility_router
 from .draft_optimizer import router as _draft_optimizer_router
+from .clusteriq_views import router as _clusteriq_router
+from .serpiq_views import router as _serpiq_router
 
 router = APIRouter()
 router.include_router(_dashboard_router)
@@ -27,3 +29,5 @@ router.include_router(_contentiq_router)
 router.include_router(_meta_generator_router)
 router.include_router(_ai_visibility_router)
 router.include_router(_draft_optimizer_router)
+router.include_router(_clusteriq_router)
+router.include_router(_serpiq_router)

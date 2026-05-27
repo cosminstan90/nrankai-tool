@@ -194,9 +194,9 @@ async def check_prospect(prospect: dict) -> list[dict]:
 async def fetch_prospects(segment: str, limit: int) -> list[dict]:
     """Fetch prospects that haven't been AI-checked yet."""
     headers = {"Authorization": f"Bearer {API_KEY}"}
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
         r = await client.get(
-            f"{CLOUD_URL}/prospects",
+            f"{CLOUD_URL}/prospects/",
             params={"segment": segment, "limit": limit, "offset": 0},
             headers=headers,
         )

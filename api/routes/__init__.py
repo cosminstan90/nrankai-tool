@@ -44,5 +44,7 @@ from .meta_generator import router as meta_generator_router
 from .query_suggestions import router as query_suggestions_router
 from .ai_visibility import router as ai_visibility_router
 from .draft_optimizer import router as draft_optimizer_router
+from app.modules.clusteriq.router import router as clusteriq_router
+from app.modules.serpiq.router import router as serpiq_router
 
 __all__ = [name for name in globals() if name.endswith('_router')]

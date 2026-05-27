@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}ClusterIQ — Decisions — {{ project.domain }}{% endblock %}
+{% block content %}
+
+<div x-data="clusteriqDecisions()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition
+       class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm"
+       x-text="toast"></div>
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0 gap-3 flex-wrap">
+    <div>
+      <h1 class="text-xl font-bold text-slate-800">{{ project.domain }}</h1>
+      <p class="text-sm text-slate-500 mt-0.5">ClusterIQ &mdash; KUCD Decisions</p>
+    </div>
+    <!-- Export buttons -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <a href="/api/clusteriq/projects/{{ project.id }}/export/decisions.csv"
+         class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+        </svg>
+        All Decisions CSV
+      </a>
+      <a href="/api/clusteriq/projects/{{ project.id }}/export/prune-list.csv"
+         class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+        Prune List CSV
+      </a>
+      <a href="/api/clusteriq/projects/{{ project.id }}/export/dev-brief.txt"
+         class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+        </svg>
+        Dev Brief Pack
+      </a>
+    </div>
+  </div>
+
+  <!-- ───────── Tabs ───────── -->
+  <div class="flex items-center space-x-1 px-6 pt-4 pb-0 border-b border-slate-100 bg-white flex-shrink-0 overflow-x-auto">
+    {% set tabs = [
+      ('overview',  'Overview',   '/clusteriq/' ~ project.id),
+      ('clusters',  'All Clusters', '/clusteriq/' ~ project.id ~ '/clusters'),
+      ('issues',    'Issues',     '/clusteriq/' ~ project.id ~ '/clusters?verdict_filter=Fix'),
+      ('dupes',     'Duplicates', '/clusteriq/' ~ project.id ~ '/duplicates'),
+      ('decisions', 'Decisions',  '/clusteriq/' ~ project.id ~ '/decisions'),
+    ] %}
+    {% for key, label, href in tabs %}
+    <a href="{{ href }}"
+       class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors
+              {% if key == 'decisions' %}border-primary-600 text-primary-700{% else %}border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ───────── Filter bar ───────── -->
+  <div class="flex flex-wrap items-center gap-3 px-6 py-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
+    <!-- Search -->
+    <div class="relative flex-1 min-w-[180px] max-w-xs">
+      <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+      </svg>
+      <input x-model="search" type="text" placeholder="Search cluster, keyword, URL…"
+             class="w-full pl-8 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+    </div>
+
+    <!-- Verdict filter chips -->
+    <div class="flex items-center gap-1.5 flex-wrap">
+      <template x-for="v in ['All','Fix','Consolidate','Optimize','Keep','Prune']" :key="v">
+        <button @click="verdictFilter = v === 'All' ? '' : v; selected = []"
+                class="px-3 py-1.5 text-xs font-medium rounded-full border transition-colors"
+                :class="(verdictFilter === v || (v === 'All' && verdictFilter === ''))
+                        ? 'bg-primary-600 border-primary-600 text-white'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'"
+                x-text="v"></button>
+      </template>
+    </div>
+
+    <!-- Results count -->
+    <span class="ml-auto text-xs text-slate-400" x-text="filtered.length + ' decisions'"></span>
+  </div>
+
+  <!-- ───────── Bulk-select toolbar (Prune only) ───────── -->
+  <div x-show="verdictFilter === 'Prune' && filtered.length > 0"
+       class="flex items-center gap-3 px-6 py-2.5 bg-red-50 border-b border-red-100 flex-shrink-0">
+    <label class="flex items-center gap-2 text-xs font-medium text-red-700 cursor-pointer">
+      <input type="checkbox"
+             :checked="selected.length === filtered.length && filtered.length > 0"
+             @change="toggleAll($event)"
+             class="rounded border-red-300 text-red-600 focus:ring-red-500"/>
+      Select all (<span x-text="filtered.length"></span>)
+    </label>
+    <span class="text-red-200">|</span>
+    <span class="text-xs text-red-600" x-show="selected.length > 0" x-text="selected.length + ' selected'"></span>
+    <button x-show="selected.length > 0"
+            @click="exportSelectedCsv()"
+            class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+      </svg>
+      Export Selected CSV
+    </button>
+  </div>
+
+  <!-- ───────── List ───────── -->
+  <div class="flex-1 overflow-auto p-6">
+
+    {% if not decisions %}
+    <div class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <svg class="w-12 h-12 mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      <p class="text-sm font-medium text-slate-500">No decisions yet</p>
+      <p class="text-xs text-slate-400 mt-1">Complete the pipeline to generate KUCD verdicts.</p>
+    </div>
+
+    {% else %}
+
+    <div x-show="filtered.length === 0" class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <p class="text-sm">No decisions match the current filter.</p>
+    </div>
+
+    <div class="space-y-2" x-show="filtered.length > 0">
+      <template x-for="d in filtered" :key="d.id">
+        <div x-data="{ open: false }"
+             class="bg-white border rounded-xl shadow-sm transition-colors"
+             :class="isSelected(d.id) ? 'border-primary-300 ring-1 ring-primary-200' : 'border-slate-200'">
+
+          <div class="flex items-start gap-3 px-4 py-3.5">
+
+            <!-- Checkbox (Prune filter only) -->
+            <div x-show="verdictFilter === 'Prune'" class="flex-shrink-0 pt-0.5">
+              <input type="checkbox"
+                     :checked="isSelected(d.id)"
+                     @change="toggleSelect(d.id)"
+                     class="rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer"/>
+            </div>
+
+            <!-- Verdict badge -->
+            <div class="flex-shrink-0 pt-0.5">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold"
+                    :class="verdictClass(d.verdict)"
+                    x-text="d.verdict || '—'"></span>
+            </div>
+
+            <!-- Content -->
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center flex-wrap gap-2 mb-0.5">
+                <span class="font-semibold text-slate-800 text-sm"
+                      x-text="d.cluster_label || d.primary_keyword || ('Cluster #' + d.cluster_id)"></span>
+                <template x-if="d.primary_keyword && d.cluster_label && d.primary_keyword !== d.cluster_label">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700"
+                        x-text="d.primary_keyword"></span>
+                </template>
+              </div>
+
+              <!-- Primary URL (small) -->
+              <template x-if="d.primary_url">
+                <p class="text-xs text-slate-400 truncate mb-1" x-text="d.primary_url"></p>
+              </template>
+
+              <!-- Evidence preview (first bullet, rest on expand) -->
+              <template x-if="d.evidence && d.evidence.length">
+                <div>
+                  <p class="text-xs text-slate-500 leading-relaxed" x-text="'• ' + d.evidence[0]"></p>
+                  <template x-if="d.evidence.length > 1 && !open">
+                    <button @click.stop="open = true"
+                            class="text-xs text-primary-500 hover:text-primary-700 mt-0.5"
+                            x-text="'+ ' + (d.evidence.length - 1) + ' more reason' + (d.evidence.length > 2 ? 's' : '')"></button>
+                  </template>
+                  <template x-if="open">
+                    <ul class="space-y-0.5 mt-1">
+                      <template x-for="(bullet, i) in d.evidence.slice(1)" :key="i">
+                        <li class="text-xs text-slate-500 leading-relaxed" x-text="'• ' + bullet"></li>
+                      </template>
+                    </ul>
+                  </template>
+                </div>
+              </template>
+            </div>
+
+            <!-- Right: impressions + confidence + link -->
+            <div class="flex-shrink-0 flex flex-col items-end gap-1.5 min-w-[110px]">
+              <!-- Impressions -->
+              <template x-if="d.total_impressions > 0">
+                <span class="text-xs text-slate-500">
+                  <span class="font-semibold text-slate-700" x-text="fmtNum(d.total_impressions)"></span> imp.
+                </span>
+              </template>
+
+              <!-- Confidence bar -->
+              <template x-if="d.confidence != null">
+                <div class="flex items-center gap-2 w-full justify-end">
+                  <div class="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-1.5 rounded-full transition-all"
+                         :class="confBarClass(d.confidence)"
+                         :style="'width:' + Math.round(d.confidence * 100) + '%'"></div>
+                  </div>
+                  <span class="text-xs text-slate-500 w-8 text-right"
+                        x-text="Math.round(d.confidence * 100) + '%'"></span>
+                </div>
+              </template>
+
+              <a :href="'/clusteriq/{{ project.id }}/clusters/' + d.cluster_id"
+                 class="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap">
+                Cluster →
+              </a>
+            </div>
+
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Embed decisions JSON -->
+    <script>window.__CLUSTERIQ_DECISIONS__ = {{ decisions | tojson }};</script>
+    {% endif %}
+
+  </div><!-- /body -->
+</div>
+
+<script>
+function clusteriqDecisions() {
+  return {
+    all:           [],
+    filtered:      [],
+    selected:      [],   // IDs of selected Prune rows
+    search:        '',
+    verdictFilter: '',
+    toast:         '',
+
+    init() {
+      this.all = window.__CLUSTERIQ_DECISIONS__ || [];
+      this.applyFilter();
+      this.$watch('search',        () => { this.selected = []; this.applyFilter(); });
+      this.$watch('verdictFilter', () => { this.selected = []; this.applyFilter(); });
+    },
+
+    applyFilter() {
+      const q = this.search.trim().toLowerCase();
+      const v = this.verdictFilter;
+      this.filtered = this.all.filter(d => {
+        if (v && d.verdict !== v) return false;
+        if (q) {
+          const hay = [
+            d.cluster_label    || '',
+            d.primary_keyword  || '',
+            d.primary_url      || '',
+            d.verdict          || '',
+            ...(d.evidence     || []),
+          ].join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+    },
+
+    // ── Selection helpers ─────────────────────────────────────────────
+    isSelected(id) { return this.selected.includes(id); },
+
+    toggleSelect(id) {
+      const i = this.selected.indexOf(id);
+      if (i >= 0) this.selected.splice(i, 1);
+      else         this.selected.push(id);
+    },
+
+    toggleAll(evt) {
+      if (evt.target.checked) {
+        this.selected = this.filtered.map(d => d.id);
+      } else {
+        this.selected = [];
+      }
+    },
+
+    // ── Client-side CSV export of selected Prune rows ─────────────────
+    exportSelectedCsv() {
+      const rows = this.filtered.filter(d => this.selected.includes(d.id));
+      if (!rows.length) return;
+
+      const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+      const header = ['url', 'primary_keyword', 'cluster_label', 'impressions', 'confidence_pct', 'reason'];
+      const lines  = [header.join(',')];
+      for (const d of rows) {
+        lines.push([
+          esc(d.primary_url      || ''),
+          esc(d.primary_keyword  || ''),
+          esc(d.cluster_label    || ''),
+          esc(d.total_impressions || 0),
+          esc(Math.round((d.confidence || 0) * 100) + '%'),
+          esc((d.evidence || []).join(' | ')),
+        ].join(','));
+      }
+
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `clusteriq_prune_selected_${rows.length}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      this.showToast(`Exported ${rows.length} URLs as CSV`);
+    },
+
+    // ── Styling helpers ───────────────────────────────────────────────
+    verdictClass(v) {
+      const map = {
+        Fix:         'bg-red-100 text-red-700',
+        Consolidate: 'bg-orange-100 text-orange-700',
+        Optimize:    'bg-yellow-100 text-yellow-700',
+        Keep:        'bg-emerald-100 text-emerald-700',
+        Prune:       'bg-slate-100 text-slate-600',
+        Create:      'bg-sky-100 text-sky-700',
+      };
+      return v ? (map[v] || 'bg-slate-100 text-slate-600') : 'bg-slate-100 text-slate-400';
+    },
+
+    confBarClass(c) {
+      if (c >= 0.85) return 'bg-emerald-500';
+      if (c >= 0.65) return 'bg-yellow-500';
+      return 'bg-red-400';
+    },
+
+    fmtNum(n) {
+      if (n == null) return '—';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 3500);
+    },
+  };
+}
+</script>
+
+{% endblock %}

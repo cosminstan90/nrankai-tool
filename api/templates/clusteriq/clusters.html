@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+{% block title %}ClusterIQ — Clusters — {{ project.domain }}{% endblock %}
+{% block content %}
+
+<div x-data="clusteriqClusters()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm" x-text="toast"></div>
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0">
+    <div>
+      <div class="flex items-center space-x-2.5">
+        <h1 class="text-xl font-bold text-slate-800">{{ project.domain }}</h1>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+              :class="statusClass('{{ project.status }}')">
+          <span x-show="['ingesting_gsc','ingesting_serp','clustering','deciding'].includes('{{ project.status }}')"
+                class="w-1.5 h-1.5 rounded-full bg-current mr-1.5 animate-pulse"></span>
+          {{ project.status }}
+        </span>
+      </div>
+      <p class="text-sm text-slate-500 mt-0.5">ClusterIQ &mdash; All Clusters</p>
+    </div>
+    <div class="flex items-center space-x-2">
+      <a href="/clusteriq/{{ project.id }}"
+         class="inline-flex items-center space-x-1.5 text-sm font-medium text-slate-600 hover:text-slate-800 px-3 py-2 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12"/>
+        </svg>
+        <span>Overview</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- ───────── Tabs ───────── -->
+  <div class="flex items-center space-x-1 px-6 pt-4 pb-0 border-b border-slate-100 bg-white flex-shrink-0 overflow-x-auto">
+    {% set tabs = [
+      ('overview',  'Overview',   '/clusteriq/' ~ project.id),
+      ('clusters',  'All Clusters', '/clusteriq/' ~ project.id ~ '/clusters'),
+      ('issues',    'Issues',     '/clusteriq/' ~ project.id ~ '/clusters?verdict_filter=Fix'),
+      ('dupes',     'Duplicates', '/clusteriq/' ~ project.id ~ '/duplicates'),
+      ('decisions', 'Decisions',  '/clusteriq/' ~ project.id ~ '/decisions'),
+    ] %}
+    {% for key, label, href in tabs %}
+    <a href="{{ href }}"
+       class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors
+              {% if key == 'clusters' %}border-primary-600 text-primary-700{% else %}border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ───────── Filter bar ───────── -->
+  <div class="flex flex-wrap items-center gap-3 px-6 py-3 bg-slate-50 border-b border-slate-200 flex-shrink-0">
+
+    <!-- Search -->
+    <div class="relative flex-1 min-w-[180px] max-w-xs">
+      <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+      </svg>
+      <input x-model="search" @input.debounce.300ms="applyFilters()"
+             type="text" placeholder="Search keyword or URL…"
+             class="w-full pl-8 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"/>
+    </div>
+
+    <!-- Verdict filter -->
+    <select x-model="verdictFilter" @change="applyFilters()"
+            class="text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500">
+      <option value="">All Verdicts</option>
+      <option value="Fix">Fix</option>
+      <option value="Consolidate">Consolidate</option>
+      <option value="Optimize">Optimize</option>
+      <option value="Keep">Keep</option>
+      <option value="Prune">Prune</option>
+    </select>
+
+    <!-- Min impressions -->
+    <div class="flex items-center space-x-2">
+      <label class="text-xs text-slate-500 whitespace-nowrap">Min impressions</label>
+      <input x-model.number="minImpressions" @input.debounce.400ms="applyFilters()"
+             type="number" min="0" placeholder="0"
+             class="w-20 text-sm bg-white border border-slate-300 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+    </div>
+
+    <!-- Results count -->
+    <span class="ml-auto text-xs text-slate-400" x-text="total + ' clusters'"></span>
+  </div>
+
+  <!-- ───────── Table ───────── -->
+  <div class="flex-1 overflow-auto">
+    <table class="w-full text-sm border-collapse">
+      <thead class="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <tr>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-8">#</th>
+          <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cluster</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-16">URLs</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Impressions</th>
+          <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Avg Pos.</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Verdict</th>
+          <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-32">Confidence</th>
+          <th class="px-4 py-3 w-20"></th>
+        </tr>
+      </thead>
+      <tbody>
+
+        <!-- Loading state -->
+        <template x-if="loading">
+          <tr>
+            <td colspan="8" class="text-center py-16 text-slate-400">
+              <div class="inline-flex items-center space-x-2">
+                <div class="w-5 h-5 border-4 border-slate-300 border-t-primary-500 rounded-full animate-spin"></div>
+                <span class="text-sm">Loading clusters…</span>
+              </div>
+            </td>
+          </tr>
+        </template>
+
+        <!-- Empty state -->
+        <template x-if="!loading && clusters.length === 0">
+          <tr>
+            <td colspan="8" class="text-center py-16 text-slate-400">
+              <svg class="w-10 h-10 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                      d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <p class="text-sm font-medium text-slate-500">No clusters found</p>
+              <p class="text-xs text-slate-400 mt-1">Try adjusting your filters</p>
+            </td>
+          </tr>
+        </template>
+
+        <!-- Rows -->
+        <template x-for="(cluster, index) in clusters" :key="cluster.id">
+          <tr class="border-b border-slate-100 hover:bg-slate-50 transition-colors">
+            <!-- Row number -->
+            <td class="px-4 py-3 text-xs text-slate-400" x-text="(page - 1) * perPage + index + 1"></td>
+
+            <!-- Cluster name + primary URL -->
+            <td class="px-4 py-3 max-w-0">
+              <div class="truncate font-medium text-slate-800" x-text="cluster.cluster_label || cluster.primary_keyword || '—'"></div>
+              <div class="truncate text-xs text-slate-400 mt-0.5" x-text="cluster.primary_url || ''"></div>
+            </td>
+
+            <!-- URL count -->
+            <td class="px-4 py-3 text-center">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-semibold"
+                    :class="cluster.url_count > 3 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'"
+                    x-text="cluster.url_count || 0"></span>
+            </td>
+
+            <!-- Impressions -->
+            <td class="px-4 py-3 text-right font-medium text-slate-700" x-text="fmtNum(cluster.total_impressions)"></td>
+
+            <!-- Avg position -->
+            <td class="px-4 py-3 text-right" :class="posClass(cluster.avg_position)">
+              <span x-text="cluster.avg_position ? cluster.avg_position.toFixed(1) : '—'"></span>
+            </td>
+
+            <!-- Verdict badge -->
+            <td class="px-4 py-3 text-center">
+              <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold"
+                    :class="verdictClass(cluster.verdict)"
+                    x-text="cluster.verdict || '—'"></span>
+            </td>
+
+            <!-- Confidence bar -->
+            <td class="px-4 py-3">
+              <template x-if="cluster.confidence != null">
+                <div class="flex items-center space-x-2">
+                  <div class="flex-1 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-1.5 rounded-full transition-all duration-500"
+                         :class="confidenceBarClass(cluster.confidence)"
+                         :style="'width:' + Math.round((cluster.confidence || 0) * 100) + '%'"></div>
+                  </div>
+                  <span class="text-xs text-slate-500 w-8 text-right"
+                        x-text="Math.round((cluster.confidence || 0) * 100) + '%'"></span>
+                </div>
+              </template>
+              <template x-if="cluster.confidence == null">
+                <span class="text-xs text-slate-300">—</span>
+              </template>
+            </td>
+
+            <!-- Action -->
+            <td class="px-4 py-3 text-right">
+              <a :href="'/clusteriq/{{ project.id }}/clusters/' + cluster.id"
+                 class="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap">
+                Details →
+              </a>
+            </td>
+          </tr>
+        </template>
+
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ───────── Pagination ───────── -->
+  <div class="flex items-center justify-between px-6 py-3 border-t border-slate-200 bg-white flex-shrink-0">
+    <span class="text-xs text-slate-500">
+      Showing <span x-text="Math.min((page-1)*perPage+1, total)"></span>–<span x-text="Math.min(page*perPage, total)"></span>
+      of <span x-text="total"></span> clusters
+    </span>
+    <div class="flex items-center space-x-1">
+      <button @click="prevPage()" :disabled="page <= 1"
+              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        ← Prev
+      </button>
+      <span class="px-3 py-1.5 text-xs font-medium text-slate-600"
+            x-text="'Page ' + page + ' / ' + Math.max(1, Math.ceil(total / perPage))"></span>
+      <button @click="nextPage()" :disabled="page >= Math.ceil(total / perPage)"
+              class="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 hover:border-slate-300 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+        Next →
+      </button>
+    </div>
+  </div>
+
+</div><!-- /x-data -->
+
+<script>
+function clusteriqClusters() {
+  return {
+    clusters:      [],
+    total:         0,
+    page:          1,
+    perPage:       50,
+    loading:       false,
+    toast:         '',
+    search:        '{{ verdict_filter_init | default("") }}',
+    verdictFilter: '{{ verdict_filter_init | default("") }}',
+    minImpressions: 0,
+
+    init() {
+      // Read verdict filter from URL query param
+      const params = new URLSearchParams(window.location.search);
+      const vf = params.get('verdict_filter');
+      if (vf) {
+        this.verdictFilter = vf;
+      }
+      this.loadClusters();
+    },
+
+    async loadClusters() {
+      this.loading = true;
+      try {
+        const qs = new URLSearchParams({
+          page:     this.page,
+          per_page: this.perPage,
+        });
+        if (this.verdictFilter) qs.set('verdict_filter', this.verdictFilter);
+        if (this.minImpressions > 0) qs.set('min_impressions', this.minImpressions);
+
+        const resp = await fetch('/api/clusteriq/projects/{{ project.id }}/clusters?' + qs);
+        if (!resp.ok) throw new Error('Failed to fetch clusters');
+        const data = await resp.json();
+
+        // Client-side search filter (keyword/URL)
+        let items = data.clusters || [];
+        if (this.search.trim()) {
+          const q = this.search.trim().toLowerCase();
+          items = items.filter(c =>
+            (c.cluster_label  || '').toLowerCase().includes(q) ||
+            (c.primary_keyword || '').toLowerCase().includes(q) ||
+            (c.primary_url     || '').toLowerCase().includes(q)
+          );
+        }
+
+        this.clusters = items;
+        this.total    = data.total || 0;
+      } catch (e) {
+        this.showToast('Error loading clusters');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    applyFilters() {
+      this.page = 1;
+      this.loadClusters();
+    },
+
+    prevPage() {
+      if (this.page > 1) { this.page--; this.loadClusters(); }
+    },
+
+    nextPage() {
+      if (this.page < Math.ceil(this.total / this.perPage)) {
+        this.page++;
+        this.loadClusters();
+      }
+    },
+
+    statusClass(s) {
+      const map = {
+        done: 'bg-green-100 text-green-800',
+        error: 'bg-red-100 text-red-800',
+        ingesting_gsc: 'bg-yellow-100 text-yellow-800',
+        ingesting_serp: 'bg-yellow-100 text-yellow-800',
+        clustering: 'bg-blue-100 text-blue-800',
+        deciding: 'bg-purple-100 text-purple-800',
+        pending: 'bg-slate-100 text-slate-600',
+      };
+      return map[s] || 'bg-slate-100 text-slate-600';
+    },
+
+    verdictClass(v) {
+      const map = {
+        Fix:         'bg-red-100 text-red-700',
+        Consolidate: 'bg-orange-100 text-orange-700',
+        Optimize:    'bg-yellow-100 text-yellow-700',
+        Keep:        'bg-emerald-100 text-emerald-700',
+        Prune:       'bg-slate-100 text-slate-600',
+        Create:      'bg-sky-100 text-sky-700',
+      };
+      return v ? (map[v] || 'bg-slate-100 text-slate-600') : 'bg-slate-100 text-slate-400';
+    },
+
+    confidenceBarClass(c) {
+      if (c >= 0.85) return 'bg-emerald-500';
+      if (c >= 0.65) return 'bg-yellow-500';
+      return 'bg-red-400';
+    },
+
+    posClass(pos) {
+      if (!pos) return 'text-slate-400';
+      if (pos <= 3)  return 'text-emerald-700 font-semibold';
+      if (pos <= 10) return 'text-yellow-700';
+      return 'text-slate-500';
+    },
+
+    fmtNum(n) {
+      if (n == null) return '—';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000)    return (n / 1000).toFixed(1) + 'K';
+      return String(n);
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 3500);
+    },
+  };
+}
+</script>
+
+{% endblock %}

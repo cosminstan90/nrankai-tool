@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block title %}ClusterIQ — Gap vs {{ competitor_domain }} — {{ project.domain }}{% endblock %}
+{% block content %}
+
+<div x-data="competitorGap()" x-init="init()" class="h-full flex flex-col">
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition
+       class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm"
+       x-text="toast"></div>
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0 gap-3 flex-wrap">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+        <a href="/clusteriq/{{ project.id }}"
+           class="text-sm text-slate-400 hover:text-slate-600 flex-shrink-0">{{ project.domain }}</a>
+        <span class="text-slate-300 flex-shrink-0">/</span>
+        <h1 class="text-xl font-bold text-slate-800">vs {{ competitor_domain }}</h1>
+        <!-- Job status pill -->
+        {% if job_status == 'done' %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+          Done
+        </span>
+        {% elif job_status in ('pending', 'running') %}
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+          <span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+          Analyzing…
+        </span>
+        {% elif job_status == 'error' %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+          Error
+        </span>
+        {% else %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-500">
+          Not started
+        </span>
+        {% endif %}
+      </div>
+      <p class="text-sm text-slate-500">ClusterIQ — Competitor Gap Analysis</p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- Re-run analysis -->
+      <button @click="openRunModal = true"
+              class="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-primary-300 hover:text-primary-700 hover:bg-primary-50 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+        {% if job_status == 'not_started' %}Run Analysis{% else %}Re-run{% endif %}
+      </button>
+    </div>
+  </div>
+
+  <!-- ───────── Tabs ───────── -->
+  <div class="flex items-center space-x-1 px-6 pt-4 pb-0 border-b border-slate-100 bg-white flex-shrink-0 overflow-x-auto">
+    {% set tabs = [
+      ('overview',  'Overview',   '/clusteriq/' ~ project.id),
+      ('clusters',  'All Clusters', '/clusteriq/' ~ project.id ~ '/clusters'),
+      ('issues',    'Issues',     '/clusteriq/' ~ project.id ~ '/clusters?verdict_filter=Fix'),
+      ('dupes',     'Duplicates', '/clusteriq/' ~ project.id ~ '/duplicates'),
+      ('decisions', 'Decisions',  '/clusteriq/' ~ project.id ~ '/decisions'),
+    ] %}
+    {% for key, label, href in tabs %}
+    <a href="{{ href }}"
+       class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- ───────── Body ───────── -->
+  <div class="flex-1 overflow-auto p-6 space-y-6">
+
+    <!-- ── Loading state ───────────────────────────────────────── -->
+    {% if job_status in ('pending', 'running') %}
+    <div class="bg-amber-50 border border-amber-200 rounded-xl px-5 py-5 flex items-center gap-4">
+      <div class="w-6 h-6 border-4 border-amber-400 border-t-transparent rounded-full animate-spin flex-shrink-0"></div>
+      <div class="flex-1">
+        <p class="text-sm font-semibold text-amber-800">Analiza în desfășurare…</p>
+        <p class="text-xs text-amber-600 mt-0.5" id="progress-label">
+          {% if job %}
+            {% if job.keywords_fetched %}{{ job.keywords_fetched }} keywords preluate de la Ahrefs
+            {% else %}Se preiau keyword-urile competitor…{% endif %}
+          {% endif %}
+        </p>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if job_status == 'error' %}
+    <div class="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+      <p class="text-sm font-semibold text-red-800">Analiza a eșuat</p>
+      {% if job and job.error_message %}
+      <p class="text-xs text-red-600 mt-1 font-mono">{{ job.error_message }}</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if job_status == 'not_started' %}
+    <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+      <svg class="w-14 h-14 mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+      </svg>
+      <p class="text-sm font-medium text-slate-500 mb-1">Nicio analiză efectuată</p>
+      <p class="text-xs text-slate-400 mb-4">Apasă "Run Analysis" pentru a prelua datele Ahrefs și a genera raportul de gap.</p>
+      <button @click="openRunModal = true"
+              class="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Run Analysis
+      </button>
+    </div>
+    {% endif %}
+
+    {% if job_status == 'done' and gap_report %}
+
+    <!-- ── Summary bar ───────────────────────────────────────────── -->
+    <div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      <div class="flex flex-wrap items-center gap-6 mb-4">
+        <div class="text-center">
+          <p class="text-2xl font-bold text-slate-800">{{ gap_report.total_overlap_keywords }}</p>
+          <p class="text-xs text-slate-500">Keyword-uri în comun</p>
+        </div>
+        <div class="text-center">
+          <p class="text-2xl font-bold text-emerald-700">{{ gap_report.clusters_you_win | length }}</p>
+          <p class="text-xs text-slate-500">Câștigăm</p>
+        </div>
+        <div class="text-center">
+          <p class="text-2xl font-bold text-red-600">{{ gap_report.clusters_you_lose | length }}</p>
+          <p class="text-xs text-slate-500">Pierdem</p>
+        </div>
+        <div class="text-center">
+          <p class="text-2xl font-bold text-sky-600">{{ gap_report.total_missing_keywords }}</p>
+          <p class="text-xs text-slate-500">Ne lipsesc complet</p>
+        </div>
+      </div>
+
+      <!-- Impression share bar -->
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between text-xs font-medium">
+          <span class="text-emerald-700">{{ project.domain }} — {{ gap_report.impression_share_you }}%</span>
+          <span class="text-red-600">{{ competitor_domain }} — {{ gap_report.impression_share_competitor }}%</span>
+        </div>
+        <div class="flex rounded-full overflow-hidden h-4 bg-slate-100">
+          {% set your_pct = gap_report.impression_share_you | round | int %}
+          {% set their_pct = gap_report.impression_share_competitor | round | int %}
+          {% if your_pct > 0 %}
+          <div class="bg-emerald-500 h-4 flex items-center justify-center transition-all"
+               style="width: {{ your_pct }}%">
+            {% if your_pct > 12 %}<span class="text-xs font-semibold text-white">{{ your_pct }}%</span>{% endif %}
+          </div>
+          {% endif %}
+          {% if their_pct > 0 %}
+          <div class="bg-red-400 h-4 flex items-center justify-center transition-all"
+               style="width: {{ their_pct }}%">
+            {% if their_pct > 12 %}<span class="text-xs font-semibold text-white">{{ their_pct }}%</span>{% endif %}
+          </div>
+          {% endif %}
+        </div>
+        <p class="text-xs text-slate-400">
+          Cotă estimată de trafic organic (model CTR × volum) pe keyword-urile comune.
+          {% if gap_report.fetched_at %}
+          Date din {{ gap_report.fetched_at[:10] }}.
+          {% endif %}
+        </p>
+      </div>
+    </div>
+
+    <!-- ── Three-column grid ─────────────────────────────────────── -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+
+      <!-- Col 1: Câștigăm -->
+      <div class="bg-white border border-emerald-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-emerald-100 bg-emerald-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">✅</span>
+            <h2 class="text-sm font-semibold text-emerald-800">Câștigăm</h2>
+          </div>
+          <span class="text-xs font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+            {{ gap_report.clusters_you_win | length }}
+          </span>
+        </div>
+        <div class="divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
+          {% if gap_report.clusters_you_win %}
+          {% for row in gap_report.clusters_you_win %}
+          <div class="px-4 py-3 hover:bg-slate-50 transition-colors">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-slate-800 truncate" title="{{ row.keyword }}">{{ row.keyword }}</p>
+                {% if row.cluster_label and row.cluster_label != row.keyword %}
+                <p class="text-xs text-slate-400 truncate">{{ row.cluster_label }}</p>
+                {% endif %}
+              </div>
+              {% if row.volume %}
+              <span class="flex-shrink-0 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
+                {{ row.volume | int | string | replace('000', 'K') if row.volume >= 1000 else row.volume }}
+              </span>
+              {% endif %}
+            </div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <span class="text-xs font-semibold text-emerald-700">
+                Tău: #{{ row.your_position | round(1) if row.your_position else '—' }}
+              </span>
+              <span class="text-xs text-red-400">
+                Lor: #{{ row.their_position | round(1) if row.their_position else '—' }}
+              </span>
+              {% if row.cluster_id %}
+              <a href="/clusteriq/{{ project.id }}/clusters/{{ row.cluster_id }}"
+                 class="text-xs text-primary-500 hover:underline ml-auto">Cluster →</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="px-4 py-8 text-center text-slate-400 text-sm">Nicio intersecție găsită.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Col 2: Pierdem -->
+      <div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-red-100 bg-red-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">📉</span>
+            <h2 class="text-sm font-semibold text-red-700">Pierdem</h2>
+          </div>
+          <span class="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+            {{ gap_report.clusters_you_lose | length }}
+          </span>
+        </div>
+        <div class="divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
+          {% if gap_report.clusters_you_lose %}
+          {% for row in gap_report.clusters_you_lose %}
+          <div class="px-4 py-3 hover:bg-slate-50 transition-colors">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-slate-800 truncate" title="{{ row.keyword }}">{{ row.keyword }}</p>
+                {% if row.cluster_label and row.cluster_label != row.keyword %}
+                <p class="text-xs text-slate-400 truncate">{{ row.cluster_label }}</p>
+                {% endif %}
+              </div>
+              {% if row.volume %}
+              <span class="flex-shrink-0 text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-medium">
+                {{ (row.volume / 1000) | round(1) | string + 'K' if row.volume >= 1000 else row.volume }}
+              </span>
+              {% endif %}
+            </div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <span class="text-xs text-slate-500">
+                Tău: #{{ row.your_position | round(1) if row.your_position else '—' }}
+              </span>
+              <span class="text-xs font-semibold text-red-600">
+                Lor: #{{ row.their_position | round(1) if row.their_position else '—' }}
+              </span>
+              {% if row.cluster_id %}
+              <a href="/clusteriq/{{ project.id }}/clusters/{{ row.cluster_id }}"
+                 class="text-xs text-primary-500 hover:underline ml-auto">Optimize →</a>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="px-4 py-8 text-center text-slate-400 text-sm">Nicio intersecție găsită.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Col 3: Ne lipsesc complet -->
+      <div class="bg-white border border-sky-200 rounded-xl shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-sky-100 bg-sky-50 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">🔍</span>
+            <h2 class="text-sm font-semibold text-sky-800">Ne lipsesc complet</h2>
+          </div>
+          <span class="text-xs font-semibold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full">
+            {{ gap_report.clusters_missing_entirely | length }}
+          </span>
+        </div>
+        <div class="divide-y divide-slate-100 max-h-[540px] overflow-y-auto">
+          {% if gap_report.clusters_missing_entirely %}
+          {% for row in gap_report.clusters_missing_entirely %}
+          <div class="px-4 py-3 hover:bg-slate-50 transition-colors" x-data="{ adding: false, added: false }">
+            <div class="flex items-start justify-between gap-2 mb-1.5">
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium text-slate-800 truncate" title="{{ row.keyword }}">{{ row.keyword }}</p>
+                {% if row.competitor_url %}
+                <a href="{{ row.competitor_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-xs text-slate-400 hover:text-primary-600 hover:underline truncate block">
+                  {{ row.competitor_url | truncate(50) }}
+                </a>
+                {% endif %}
+              </div>
+              <div class="flex-shrink-0 text-right">
+                {% if row.volume %}
+                <div class="text-xs font-semibold text-sky-700">
+                  {{ (row.volume / 1000) | round(1) | string + 'K' if row.volume >= 1000 else row.volume }}/mo
+                </div>
+                {% endif %}
+                {% if row.their_position %}
+                <div class="text-xs text-slate-400">#{{ row.their_position | round(1) }}</div>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Add to Content Calendar button -->
+            <button
+              x-show="!added"
+              :disabled="adding"
+              @click="
+                adding = true;
+                fetch('/api/clusteriq/projects/{{ project.id }}/competitors/{{ competitor_domain }}/add-to-calendar', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({
+                    keyword: '{{ row.keyword | replace("'", "\\'") | replace('"', '\\"') }}',
+                    competitor_url: '{{ (row.competitor_url or '') | replace("'", "\\'") }}',
+                    volume: {{ row.volume or 'null' }},
+                    their_position: {{ row.their_position or 'null' }}
+                  })
+                })
+                .then(r => r.json())
+                .then(d => { adding = false; added = true; $dispatch('calendar-add', {keyword: '{{ row.keyword | replace("'", "\\'") }}', brief_id: d.brief_id}); })
+                .catch(() => { adding = false; })
+              "
+              class="w-full flex items-center justify-center gap-1.5 text-xs font-medium py-1.5 rounded-lg border transition-colors mt-1"
+              :class="adding
+                ? 'border-sky-200 bg-sky-50 text-sky-400 cursor-wait'
+                : 'border-sky-200 text-sky-700 hover:bg-sky-50 hover:border-sky-300'">
+              <svg x-show="!adding" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              <svg x-show="adding" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              <span x-text="adding ? 'Se adaugă…' : '📅 Adaugă la Content Calendar'"></span>
+            </button>
+
+            <!-- Added confirmation -->
+            <div x-show="added"
+                 class="flex items-center gap-1.5 text-xs font-medium text-emerald-600 py-1.5 pl-1 mt-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              Adăugat în Content Calendar
+            </div>
+          </div>
+          {% endfor %}
+          {% else %}
+          <div class="px-4 py-8 text-center text-slate-400 text-sm">
+            Nu există keyword-uri lipsă față de competitor.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+    </div><!-- /three-column grid -->
+
+    {% endif %}<!-- /job done -->
+
+  </div><!-- /body -->
+
+  <!-- ───────── Run Analysis modal ─────────────────────────────── -->
+  <div x-show="openRunModal" x-transition:enter="transition ease-out duration-200"
+       x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+       class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+       @click.self="openRunModal = false">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6" @click.stop>
+      <h2 class="text-base font-bold text-slate-800 mb-1">Run Competitor Analysis</h2>
+      <p class="text-sm text-slate-500 mb-5">
+        Preia keyword-urile organice ale lui <strong>{{ competitor_domain }}</strong> via Ahrefs
+        și compară-le cu datele SERP ale proiectului.
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Keyword limit</label>
+          <input x-model.number="runLimit" type="number" min="10" max="5000" step="100"
+                 class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"/>
+          <p class="text-xs text-slate-400 mt-1">
+            Est. <span x-text="(Math.ceil(runLimit / 1000) * 0.5).toFixed(1)"></span> Ahrefs credits.
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 mt-6">
+        <button @click="openRunModal = false"
+                class="flex-1 text-sm font-medium px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+        <button @click="startAnalysis()"
+                :disabled="running"
+                class="flex-1 text-sm font-medium px-4 py-2 rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50 transition-colors">
+          <span x-text="running ? 'Se lansează…' : 'Start Analysis'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /x-data -->
+
+<script>
+function competitorGap() {
+  return {
+    toast:        '',
+    openRunModal: false,
+    runLimit:     1000,
+    running:      false,
+
+    init() {
+      // Listen for "add to calendar" success events from child components
+      window.addEventListener('calendar-add', (e) => {
+        this.showToast(`✅ „${e.detail.keyword}" adăugat în Content Calendar (brief #${e.detail.brief_id})`);
+      });
+
+      {% if job_status in ('pending', 'running') %}
+      this.pollJobStatus();
+      {% endif %}
+    },
+
+    async startAnalysis() {
+      this.running = true;
+      try {
+        const resp = await fetch('/api/clusteriq/projects/{{ project.id }}/competitors', {
+          method:  'POST',
+          headers: {'Content-Type': 'application/json'},
+          body:    JSON.stringify({
+            competitor_domain: '{{ competitor_domain }}',
+            keyword_limit:     this.runLimit,
+          }),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        this.openRunModal = false;
+        this.showToast('Analiza a pornit. Pagina se va reîncărca când e gata.');
+        this.pollJobStatus();
+      } catch (e) {
+        this.showToast('Eroare la lansarea analizei: ' + e.message);
+      } finally {
+        this.running = false;
+      }
+    },
+
+    async pollJobStatus() {
+      const resp = await fetch('/api/clusteriq/projects/{{ project.id }}/competitors/{{ competitor_domain }}/status');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      if (data.status === 'done' || data.status === 'error') {
+        window.location.reload();
+      } else {
+        if (data.keywords_fetched) {
+          const el = document.getElementById('progress-label');
+          if (el) el.textContent = `${data.keywords_fetched} keywords preluate de la Ahrefs…`;
+        }
+        setTimeout(() => this.pollJobStatus(), 4000);
+      }
+    },
+
+    showToast(msg) {
+      this.toast = msg;
+      setTimeout(() => this.toast = '', 4000);
+    },
+  };
+}
+</script>
+
+{% endblock %}

@@ -54,6 +54,12 @@ from api.models.content import (
     MultilingualGapReport,
 )
 from api.models.contentiq import CiqAudit, CiqPage, CiqCompetitor, CiqGscToken
+from api.models.clusteriq import (
+    CluProject, CluUrl, CluSerpData, CluCluster,
+    CluUrlCluster, CluDecision, CluDuplicate,
+    CluCompetitorCache, CluCompetitorJob,
+)
+from api.models.serpiq import SiqSnapshot, SiqSerpItem
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,

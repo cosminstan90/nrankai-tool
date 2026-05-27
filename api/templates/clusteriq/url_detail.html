@@ -1,0 +1,341 @@
+{% extends "base.html" %}
+{% block title %}ClusterIQ — URL — {{ url_data.url | truncate(60) }}{% endblock %}
+{% block content %}
+
+<div x-data="{ toast: '', copiedUrl: false }" class="h-full flex flex-col">
+
+  <!-- ───────── Toast ───────── -->
+  <div x-show="toast" x-transition class="fixed top-4 right-4 z-50 bg-slate-800 text-white text-sm px-4 py-3 rounded-lg shadow-lg max-w-sm" x-text="toast"></div>
+
+  <!-- ───────── Top bar ───────── -->
+  <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white flex-shrink-0 gap-4">
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2 flex-wrap mb-0.5">
+        <a href="/clusteriq/{{ project.id }}/clusters"
+           class="text-sm text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0">All Clusters</a>
+        <span class="text-slate-300 flex-shrink-0">/</span>
+        <span class="text-sm font-semibold text-slate-700 truncate">URL Detail</span>
+
+        {% if is_multi_topic %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-violet-100 text-violet-700 flex-shrink-0">
+          ⭐ Multi-topic
+        </span>
+        {% endif %}
+
+        {% if not url_data.is_indexable %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 flex-shrink-0">
+          Not Indexable
+        </span>
+        {% endif %}
+
+        {% if url_data.status_code and url_data.status_code != 200 %}
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold
+                     {% if url_data.status_code >= 400 %}bg-red-100 text-red-700{% else %}bg-amber-100 text-amber-700{% endif %} flex-shrink-0">
+          HTTP {{ url_data.status_code }}
+        </span>
+        {% endif %}
+      </div>
+
+      <!-- URL row with copy + external link -->
+      <div class="flex items-center gap-2">
+        <p class="text-sm text-slate-600 break-all leading-relaxed">{{ url_data.url }}</p>
+        <button @click="navigator.clipboard.writeText('{{ url_data.url }}'); copiedUrl = true; setTimeout(() => copiedUrl = false, 2000)"
+                class="flex-shrink-0 p-1 rounded hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
+                title="Copy URL">
+          <svg x-show="!copiedUrl" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+          </svg>
+          <svg x-show="copiedUrl" class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+          </svg>
+        </button>
+        <a href="{{ url_data.url }}" target="_blank" rel="noopener noreferrer"
+           class="flex-shrink-0 p-1 rounded hover:bg-slate-100 transition-colors text-slate-400 hover:text-slate-600"
+           title="Open URL">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+          </svg>
+        </a>
+      </div>
+
+      {% if url_data.title %}
+      <p class="text-xs text-slate-400 mt-0.5 truncate">{{ url_data.title }}</p>
+      {% endif %}
+    </div>
+
+    <!-- External tool links -->
+    <div class="flex-shrink-0 flex items-center gap-2">
+      <a href="https://search.google.com/search-console" target="_blank" rel="noopener noreferrer"
+         class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 1C5.93 1 1 5.93 1 12s4.93 11 11 11 11-4.93 11-11S18.07 1 12 1zm0 2c4.96 0 9 4.04 9 9s-4.04 9-9 9-9-4.04-9-9 4.04-9 9-9z"/>
+        </svg>
+        GSC
+      </a>
+      <a href="https://ahrefs.com/site-explorer/overview/v2/subdomains/live?target={{ url_data.url | urlencode }}"
+         target="_blank" rel="noopener noreferrer"
+         class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+        </svg>
+        Ahrefs
+      </a>
+    </div>
+  </div>
+
+  <!-- ───────── Body ───────── -->
+  <div class="flex-1 overflow-auto p-6 space-y-6">
+
+    <!-- ── GSC Stats ─────────────────────────────────────────────────── -->
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+        <p class="text-2xl font-bold text-slate-800">
+          {% if url_data.total_impressions >= 1000 %}
+            {{ (url_data.total_impressions / 1000) | round(1) }}K
+          {% else %}
+            {{ url_data.total_impressions }}
+          {% endif %}
+        </p>
+        <p class="text-xs text-slate-500 mt-0.5">GSC Impressions</p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+        <p class="text-2xl font-bold text-slate-800">
+          {% if url_data.total_clicks >= 1000 %}
+            {{ (url_data.total_clicks / 1000) | round(1) }}K
+          {% else %}
+            {{ url_data.total_clicks }}
+          {% endif %}
+        </p>
+        <p class="text-xs text-slate-500 mt-0.5">GSC Clicks</p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+        <p class="text-2xl font-bold
+                  {% if url_data.avg_position and url_data.avg_position <= 3 %}text-emerald-700
+                  {% elif url_data.avg_position and url_data.avg_position <= 10 %}text-yellow-700
+                  {% else %}text-slate-800{% endif %}">
+          {{ url_data.avg_position if url_data.avg_position else '—' }}
+        </p>
+        <p class="text-xs text-slate-500 mt-0.5">Avg Position</p>
+      </div>
+      <div class="bg-white border border-slate-200 rounded-xl p-4 text-center shadow-sm">
+        <p class="text-2xl font-bold text-slate-800">{{ url_data.keyword_count }}</p>
+        <p class="text-xs text-slate-500 mt-0.5">Keywords</p>
+      </div>
+    </div>
+
+    <!-- ── Cluster Memberships ────────────────────────────────────────── -->
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-700">Cluster Memberships</h2>
+        <span class="text-xs text-slate-400">{{ memberships | length }} cluster{{ 's' if memberships | length != 1 else '' }}</span>
+      </div>
+
+      {% if memberships %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 border-b border-slate-100">
+            <tr>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Cluster</th>
+              <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Role</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Cluster Imp.</th>
+              <th class="text-right px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Avg Pos.</th>
+              <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Imp. Share</th>
+              <th class="text-center px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Verdict</th>
+              <th class="px-4 py-3 w-20"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for m in memberships %}
+            <tr class="hover:bg-slate-50 transition-colors">
+              <!-- Cluster name -->
+              <td class="px-4 py-3 max-w-0">
+                <div class="font-medium text-slate-800 truncate">{{ m.cluster_label or m.primary_keyword or ('Cluster #' ~ m.cluster_id) }}</div>
+                {% if m.primary_keyword and m.cluster_label and m.primary_keyword != m.cluster_label %}
+                <div class="text-xs text-slate-400 mt-0.5 truncate">{{ m.primary_keyword }}</div>
+                {% endif %}
+              </td>
+
+              <!-- Role -->
+              <td class="px-4 py-3 text-center">
+                {% if m.role == 'primary' %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                  Primary
+                </span>
+                {% else %}
+                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                  Collateral
+                </span>
+                {% endif %}
+                {% if m.is_multi_topic %}
+                <div class="mt-1">
+                  <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs bg-violet-100 text-violet-700">⭐ MT</span>
+                </div>
+                {% endif %}
+              </td>
+
+              <!-- Cluster impressions -->
+              <td class="px-4 py-3 text-right font-medium text-slate-700">
+                {% if m.cluster_impressions %}
+                  {% if m.cluster_impressions >= 1000 %}{{ (m.cluster_impressions / 1000) | round(1) }}K{% else %}{{ m.cluster_impressions }}{% endif %}
+                {% else %}—{% endif %}
+              </td>
+
+              <!-- Avg position -->
+              <td class="px-4 py-3 text-right
+                         {% if m.avg_position and m.avg_position <= 3 %}text-emerald-700 font-semibold
+                         {% elif m.avg_position and m.avg_position <= 10 %}text-yellow-700
+                         {% else %}text-slate-500{% endif %}">
+                {{ m.avg_position | round(1) if m.avg_position else '—' }}
+              </td>
+
+              <!-- Impression share bar -->
+              <td class="px-4 py-3">
+                {% if m.impression_share_pct is not none %}
+                <div class="flex items-center justify-center gap-2">
+                  <div class="w-16 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                    <div class="{% if m.role == 'primary' %}bg-emerald-500{% else %}bg-slate-400{% endif %} h-1.5 rounded-full"
+                         style="width: {{ [m.impression_share_pct | round | int, 100] | min }}%"></div>
+                  </div>
+                  <span class="text-xs text-slate-500 w-8 text-right">{{ m.impression_share_pct | round(1) }}%</span>
+                </div>
+                {% else %}
+                <span class="text-xs text-slate-300 block text-center">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Verdict -->
+              <td class="px-4 py-3 text-center">
+                {% if m.decision %}
+                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold
+                             {% if m.decision.verdict == 'Fix' %}bg-red-100 text-red-700
+                             {% elif m.decision.verdict == 'Consolidate' %}bg-orange-100 text-orange-700
+                             {% elif m.decision.verdict == 'Optimize' %}bg-yellow-100 text-yellow-700
+                             {% elif m.decision.verdict == 'Keep' %}bg-emerald-100 text-emerald-700
+                             {% elif m.decision.verdict == 'Prune' %}bg-slate-100 text-slate-600
+                             {% elif m.decision.verdict == 'Create' %}bg-sky-100 text-sky-700
+                             {% else %}bg-slate-100 text-slate-500{% endif %}">
+                  {{ m.decision.verdict }}
+                </span>
+                {% if m.decision.confidence %}
+                <div class="text-xs text-slate-400 mt-0.5">{{ (m.decision.confidence * 100) | round | int }}%</div>
+                {% endif %}
+                {% else %}
+                <span class="text-xs text-slate-300">—</span>
+                {% endif %}
+              </td>
+
+              <!-- Link -->
+              <td class="px-4 py-3 text-right">
+                <a href="/clusteriq/{{ project.id }}/clusters/{{ m.cluster_id }}"
+                   class="text-xs font-medium text-primary-600 hover:text-primary-800 hover:underline whitespace-nowrap">
+                  View →
+                </a>
+              </td>
+            </tr>
+
+            <!-- Expandable evidence row -->
+            {% if m.decision and m.decision.evidence %}
+            <tr class="bg-slate-50">
+              <td colspan="7" class="px-4 pb-3 pt-0">
+                <ul class="space-y-1 pl-4">
+                  {% for bullet in m.decision.evidence %}
+                  <li class="flex items-start gap-2">
+                    <span class="mt-1.5 w-1 h-1 rounded-full bg-slate-400 flex-shrink-0"></span>
+                    <span class="text-xs text-slate-500 leading-relaxed">{{ bullet }}</span>
+                  </li>
+                  {% endfor %}
+                </ul>
+              </td>
+            </tr>
+            {% endif %}
+
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% else %}
+      <div class="px-5 py-10 text-center text-slate-400">
+        <p class="text-sm">This URL has no cluster memberships.</p>
+        <p class="text-xs mt-1">It may not appear in any SERP result set.</p>
+      </div>
+      {% endif %}
+    </div><!-- /cluster memberships -->
+
+    <!-- ── Duplicate Status ───────────────────────────────────────────── -->
+    {% if duplicates.as_winner or duplicates.as_loser %}
+    <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100">
+        <h2 class="text-sm font-semibold text-slate-700">Duplicate Status</h2>
+      </div>
+      <div class="px-5 py-4 space-y-4">
+
+        {% if duplicates.as_winner %}
+        <div>
+          <p class="text-xs font-semibold text-emerald-700 uppercase tracking-wide mb-2">
+            This URL is the Winner — other URLs should redirect here
+          </p>
+          <div class="space-y-2">
+            {% for d in duplicates.as_winner %}
+            <div class="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2.5">
+              <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+              </svg>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs text-slate-600">Redirect from:</p>
+                <p class="text-xs font-medium text-slate-700 break-all">{{ d.duplicate_url }}</p>
+                {% if d.winner_reason %}
+                <p class="text-xs text-emerald-700 mt-1">Why you win: {{ d.winner_reason }}</p>
+                {% endif %}
+              </div>
+              {% if d.similarity_score %}
+              <span class="flex-shrink-0 text-xs font-semibold text-emerald-700">
+                {{ (d.similarity_score * 100) | round | int }}%
+              </span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+        {% if duplicates.as_loser %}
+        <div>
+          <p class="text-xs font-semibold text-red-700 uppercase tracking-wide mb-2">
+            This URL should be redirected — another URL is the winner
+          </p>
+          <div class="space-y-2">
+            {% for d in duplicates.as_loser %}
+            <div class="flex items-start gap-3 bg-red-50 border border-red-100 rounded-lg px-3 py-2.5">
+              <svg class="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+              </svg>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs text-slate-600">Redirect this URL to:</p>
+                <a href="{{ d.winner_url }}" target="_blank" rel="noopener noreferrer"
+                   class="text-xs font-medium text-primary-600 hover:underline break-all">{{ d.winner_url }}</a>
+                {% if d.dev_brief %}
+                <p class="text-xs text-slate-500 mt-1 leading-relaxed">{{ d.dev_brief }}</p>
+                {% endif %}
+              </div>
+              {% if d.similarity_score %}
+              <span class="flex-shrink-0 text-xs font-semibold text-red-600">
+                {{ (d.similarity_score * 100) | round | int }}%
+              </span>
+              {% endif %}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+
+      </div>
+    </div><!-- /duplicate status -->
+    {% endif %}
+
+  </div><!-- /body -->
+</div><!-- /x-data -->
+
+{% endblock %}
