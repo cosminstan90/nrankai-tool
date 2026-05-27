@@ -106,16 +106,29 @@ async def _get_gsc_credentials():
     except TypeError:
         is_expired = True   # can't determine, force a refresh
     if is_expired and creds.refresh_token:
-        await asyncio.get_event_loop().run_in_executor(None, creds.refresh, GoogleRequest())
-        # Persist updated token
-        async with AsyncSessionLocal() as db:
-            row = await db.execute(select(GoogleOAuthToken).limit(1))
-            row = row.scalar_one_or_none()
-            if row:
-                row.access_token = creds.token
-                row.token_expiry = creds.expiry.replace(tzinfo=None) if creds.expiry else None
-                row.updated_at   = datetime.now(timezone.utc)
+        try:
+            await asyncio.get_event_loop().run_in_executor(None, creds.refresh, GoogleRequest())
+            # Persist updated token
+            async with AsyncSessionLocal() as db:
+                row = await db.execute(select(GoogleOAuthToken).limit(1))
+                row = row.scalar_one_or_none()
+                if row:
+                    row.access_token = creds.token
+                    row.token_expiry = creds.expiry.replace(tzinfo=None) if creds.expiry else None
+                    row.updated_at   = datetime.now(timezone.utc)
+                    await db.commit()
+        except Exception as refresh_err:
+            # invalid_grant or any other refresh failure — token is dead,
+            # delete it from DB so the UI shows "reconnect" instead of 500.
+            import logging as _logging
+            _logging.getLogger("gsc.oauth").warning(
+                "OAuth token refresh failed (%s) — clearing stored token", refresh_err
+            )
+            async with AsyncSessionLocal() as db:
+                from sqlalchemy import delete as _del
+                await db.execute(_del(GoogleOAuthToken))
                 await db.commit()
+            return None
 
     return creds
 
