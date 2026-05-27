@@ -362,9 +362,12 @@ class SerpIQOrchestrator:
                 .order_by(SiqSerpItem.position)
             )
             loaded_items = items_result.scalars().all()
-            snapshot.serp_items = loaded_items
 
-            result = snapshot.to_dict(include_items=True)
+            # Build result dict manually — do NOT access snapshot.serp_items
+            # (the relationship), as accessing it post-commit triggers lazy
+            # loading outside a greenlet context.
+            result = snapshot.to_dict(include_items=False)
+            result["serp_items"] = [item.to_dict() for item in loaded_items]
 
         logger.info(
             "[SerpIQOrchestrator] snapshot #%d saved (verdict=%s, pos=%s, items=%d, %d ms)",
