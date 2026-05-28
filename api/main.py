@@ -261,11 +261,17 @@ import traceback
 from starlette.responses import PlainTextResponse
 from fastapi.responses import JSONResponse
 
+_exc_logger = logging.getLogger("app.exceptions")
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
     tb = traceback.format_exc()
-    # Always log full traceback server-side; NEVER expose it in HTTP responses.
-    print(f"\n{'='*60}\n[ERROR] UNHANDLED EXCEPTION on {request.url}\n{'='*60}\n{tb}\n{'='*60}")
+    # Use logging (not print) — avoids UnicodeEncodeError on Windows cp1252
+    # when tracebacks/log lines contain emoji from route handlers.
+    _exc_logger.error(
+        "\n%s\n[ERROR] UNHANDLED EXCEPTION on %s\n%s\n%s",
+        "=" * 60, request.url, tb, "=" * 60,
+    )
     return JSONResponse({"detail": "Internal server error"}, status_code=500)
 
 # Add security headers middleware

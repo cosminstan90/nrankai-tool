@@ -6,6 +6,7 @@ Generates valid Schema.org structured data ready for implementation.
 
 import asyncio
 import json
+import logging
 import os
 import re as re_module
 from datetime import datetime
@@ -28,6 +29,7 @@ from api.models.database import AsyncSessionLocal, Audit, AuditResult, SchemaMar
 from api.routes.costs import track_cost
 
 router = APIRouter(prefix="/api/schema", tags=["schema"])
+logger = logging.getLogger("schema_gen")
 
 
 # ============================================================================
@@ -416,7 +418,7 @@ async def generate_schema_for_page(
             # Load page content
             page_content = _find_page_text_file(audit.website, result)
             if not page_content:
-                print(f"⚠️ No text content found for {result.page_url}")
+                logger.warning("No text content found for %s", result.page_url)
                 return None
             
             # Build prompts
@@ -459,7 +461,7 @@ Generate appropriate JSON-LD schema markup for this page."""
             try:
                 llm_output = json.loads(response)
             except json.JSONDecodeError as e:
-                print(f"❌ JSON parse error for {result.page_url}: {e}")
+                logger.error("JSON parse error for %s: %s", result.page_url, e)
                 return None
             
             # Extract main schema
@@ -503,12 +505,12 @@ Generate appropriate JSON-LD schema markup for this page."""
             await db.commit()
             await db.refresh(markup)
 
-            print(f"✅ Generated {schema_type} schema for {result.page_url} - Status: {validation_result['status']}")
+            logger.info("Generated %s schema for %s - Status: %s", schema_type, result.page_url, validation_result['status'])
 
             return markup
             
         except Exception as e:
-            print(f"❌ Error generating schema for {result.page_url}: {e}")
+            logger.error("Error generating schema for %s: %s", result.page_url, e)
             return None
 
 
@@ -607,7 +609,7 @@ async def _generate_schemas_background(
     schema_types_hint: Optional[List[str]]
 ):
     """Background task to generate schemas for all pages."""
-    print(f"🚀 Starting schema generation for {len(results)} pages...")
+    logger.info("Starting schema generation for %d pages...", len(results))
 
     success_count = 0
     for result in results:
@@ -620,7 +622,7 @@ async def _generate_schemas_background(
         # Small delay to avoid rate limits
         await asyncio.sleep(0.5)
 
-    print(f"✅ Schema generation completed: {success_count}/{len(results)} successful")
+    logger.info("Schema generation completed: %d/%d successful", success_count, len(results))
 
 
 async def generate_schemas_for_url(
@@ -671,7 +673,7 @@ Generate ALL applicable JSON-LD schema types for this page. The primary schema s
             try:
                 llm_output = json.loads(response)
             except json.JSONDecodeError as e:
-                print(f"❌ JSON parse error for {url}: {e}")
+                logger.error("JSON parse error for %s: %s", url, e)
                 return []
 
             saved_dicts = []
@@ -712,11 +714,11 @@ Generate ALL applicable JSON-LD schema types for this page. The primary schema s
                 await db.refresh(m)
                 saved_dicts.append(m.to_dict())
 
-            print(f"✅ URL schema generation: {len(saved_dicts)} schema(s) for {url}")
+            logger.info("URL schema generation: %d schema(s) for %s", len(saved_dicts), url)
             return saved_dicts
 
         except Exception as e:
-            print(f"❌ Error generating schemas for {url}: {e}")
+            logger.error("Error generating schemas for %s: %s", url, e)
             return []
 
 
