@@ -33,6 +33,7 @@ from core import config
 from core.prompt_loader import load_prompt, is_custom_audit, get_audit_definition
 from core.logger import get_logger, setup_logging
 from core.content_chunker import ContentChunker, ChunkMetadata, AuditResultMerger
+from core.output_schemas import get_output_schema
 
 # Import audit_builder for custom audit support
 try:
@@ -224,24 +225,37 @@ class AsyncLLMClient:
             raise ValueError(f"Unknown provider: {self.provider}")
     
     async def complete(
-        self, 
-        system_message: str, 
+        self,
+        system_message: str,
         user_content: str,
-        max_tokens: int = 8192
+        max_tokens: int = 8192,
+        output_schema: Optional[dict] = None,
     ) -> Tuple[str, int, int]:
         """
         Send a completion request to the LLM.
-        
+
+        output_schema: optional JSON Schema (Anthropic structured outputs,
+            output_config.format) enforcing the response shape at the API
+            level instead of relying on prompt instructions + best-effort
+            repair (clean_json_response). Only wired in for ANTHROPIC so
+            far — see core/output_schemas.py for which audit types have a
+            schema; other providers ignore this parameter unchanged.
+
         Returns:
             Tuple of (response_text, input_tokens, output_tokens)
         """
         if self.provider == "ANTHROPIC":
-            response = await self._client.messages.create(
+            create_kwargs = dict(
                 model=self.model_name,
                 max_tokens=max_tokens,
                 system=system_message,
-                messages=[{"role": "user", "content": f"CONTENT: {user_content}"}]
+                messages=[{"role": "user", "content": f"CONTENT: {user_content}"}],
             )
+            if output_schema is not None:
+                create_kwargs["output_config"] = {
+                    "format": {"type": "json_schema", "schema": output_schema}
+                }
+            response = await self._client.messages.create(**create_kwargs)
             text = response.content[0].text
             input_tokens = response.usage.input_tokens
             output_tokens = response.usage.output_tokens
@@ -909,7 +923,8 @@ class DirectAnalyzer:
                                 self.client.complete,
                                 self.system_message,
                                 chunk_result.chunks[0],
-                                self.max_tokens
+                                self.max_tokens,
+                                output_schema=get_output_schema(self.question_type),
                             ),
                             timeout=PAGE_TIMEOUT_SECONDS
                         )
@@ -953,7 +968,8 @@ class DirectAnalyzer:
                                     self.client.complete,
                                     self.system_message,
                                     chunk_text,
-                                    self.max_tokens
+                                    self.max_tokens,
+                                    output_schema=get_output_schema(self.question_type),
                                 ),
                                 timeout=PAGE_TIMEOUT_SECONDS
                             )

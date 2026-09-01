@@ -50,6 +50,7 @@ async def _run_geo_audit(text: str, language: str) -> dict:
     import os as _os
     from core.prompt_loader import PromptLoader
     from core.direct_analyzer import AsyncLLMClient, clean_json_response
+    from core.output_schemas import get_output_schema
     from api.provider_registry import get_cheapest_available_model
 
     cheapest = get_cheapest_available_model()
@@ -67,7 +68,11 @@ async def _run_geo_audit(text: str, language: str) -> dict:
         )
 
     llm = AsyncLLMClient(provider=provider, model_name=model)
-    raw, _, _ = await llm.complete(system_message=system_msg, user_content=text)
+    raw, _, _ = await llm.complete(
+        system_message=system_msg,
+        user_content=text,
+        output_schema=get_output_schema("GEO_AUDIT"),
+    )
     await llm.close()
 
     return json.loads(clean_json_response(raw))
