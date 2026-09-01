@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -28,13 +28,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import get_db, GscFanoutConnection, FanoutSession, FanoutQuery
 from api.utils.errors import raise_not_found, raise_bad_request
+from api.utils.google_oauth import (
+    exchange_code_for_tokens,
+    refresh_google_token,
+    GoogleOAuthInvalidGrantError,
+)
 
 logger = logging.getLogger("gsc_fanout")
 router = APIRouter(prefix="/api/gsc-fanout", tags=["gsc-fanout"])
 
 _SCOPES = ["https://www.googleapis.com/auth/webmasters.readonly"]
 _AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def _client_id()     -> str: return os.getenv("GOOGLE_CLIENT_ID", "")
@@ -65,6 +69,38 @@ def _verify_oauth_state(state: str) -> str:
     if not secrets.compare_digest(sig, expected):
         raise ValueError("OAuth state signature mismatch — possible CSRF")
     return project_id
+
+
+async def _get_valid_access_token(conn: GscFanoutConnection, db: AsyncSession) -> str:
+    """Return a valid access token for this connection, refreshing if near expiry.
+
+    Previously this connection's access_token was used as-is with no refresh
+    at all, so cross-reference calls would silently start failing with 401s
+    roughly an hour after connecting. Raises ValueError (via raise_bad_request
+    at the call site) if the refresh token itself is dead.
+    """
+    now = datetime.now(timezone.utc)
+    expiry = conn.token_expiry
+    if expiry and expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+
+    if expiry and expiry > now + timedelta(minutes=5):
+        return conn.access_token
+
+    if not conn.refresh_token:
+        raise GoogleOAuthInvalidGrantError("No refresh token stored — reconnect required.")
+
+    tokens = await refresh_google_token(
+        refresh_token=conn.refresh_token,
+        client_id=_client_id(),
+        client_secret=_client_secret(),
+    )
+    conn.access_token = tokens["access_token"]
+    if "expires_in" in tokens:
+        conn.token_expiry = now + timedelta(seconds=tokens["expires_in"])
+    conn.updated_at = now
+    await db.commit()
+    return conn.access_token
 
 
 @router.get("/connect/{project_id}")
@@ -99,17 +135,12 @@ async def gsc_callback(
         raise_bad_request(f"OAuth error: {error or 'no code'}")
 
     try:
-        import httpx
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(_TOKEN_URL, data={
-                "code":          code,
-                "client_id":     _client_id(),
-                "client_secret": _client_secret(),
-                "redirect_uri":  _redirect_uri(),
-                "grant_type":    "authorization_code",
-            })
-            resp.raise_for_status()
-            tokens = resp.json()
+        tokens = await exchange_code_for_tokens(
+            code=code,
+            client_id=_client_id(),
+            client_secret=_client_secret(),
+            redirect_uri=_redirect_uri(),
+        )
     except Exception as exc:
         raise_bad_request(f"Token exchange failed: {exc}")
 
@@ -224,8 +255,16 @@ async def gsc_crossref(req: GscCrossrefRequest, db: AsyncSession = Depends(get_d
     if not queries:
         raise_bad_request("Session has no fan-out queries")
 
+    try:
+        access_token = await _get_valid_access_token(conn, db)
+    except GoogleOAuthInvalidGrantError:
+        conn.access_token = None
+        conn.refresh_token = None
+        await db.commit()
+        raise_bad_request("GSC connection expired — reconnect via /api/gsc-fanout/connect/{project_id}")
+
     gsc_data = await fetch_gsc_query_data(
-        access_token    = conn.access_token,
+        access_token    = access_token,
         gsc_property    = conn.gsc_property,
         queries         = queries,
         date_range_days = req.date_range_days,

@@ -12,10 +12,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from urllib.parse import quote, urlencode
 
+from api.utils.google_oauth import (
+    exchange_code_for_tokens,
+    refresh_google_token,
+    GoogleOAuthInvalidGrantError,
+)
+
 logger = logging.getLogger("contentiq.gsc")
 
 _AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
-_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _SCOPES    = ["https://www.googleapis.com/auth/webmasters.readonly"]
 
 
@@ -46,32 +51,30 @@ def get_oauth_url(state: str) -> str:
 
 async def exchange_code(code: str) -> dict:
     """Exchange OAuth authorization code for tokens."""
-    import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(_TOKEN_URL, data={
-            "code":          code,
-            "client_id":     _client_id(),
-            "client_secret": _client_secret(),
-            "redirect_uri":  _redirect_uri(),
-            "grant_type":    "authorization_code",
-        })
-        r.raise_for_status()
-        return r.json()
+    return await exchange_code_for_tokens(
+        code=code,
+        client_id=_client_id(),
+        client_secret=_client_secret(),
+        redirect_uri=_redirect_uri(),
+    )
 
 
 async def refresh_access_token(refresh_token: str) -> str:
-    """Refresh an expired access token. Returns new access_token."""
-    import httpx
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(_TOKEN_URL, data={
-            "refresh_token": refresh_token,
-            "client_id":     _client_id(),
-            "client_secret": _client_secret(),
-            "grant_type":    "refresh_token",
-        })
-        r.raise_for_status()
-        data = r.json()
-        return data["access_token"]
+    """Refresh an expired access token. Returns new access_token.
+
+    Raises GSCAuthError (not the raw Google error) if the refresh token
+    itself is dead — callers already know how to turn that into a
+    "reconnect" prompt for this table's rows.
+    """
+    try:
+        data = await refresh_google_token(
+            refresh_token=refresh_token,
+            client_id=_client_id(),
+            client_secret=_client_secret(),
+        )
+    except GoogleOAuthInvalidGrantError as e:
+        raise GSCAuthError(str(e)) from e
+    return data["access_token"]
 
 
 async def save_tokens(audit_id: int, tokens: dict, property_url: str, db) -> None:

@@ -11,43 +11,15 @@ Required env vars:
 """
 
 import asyncio
-import ipaddress
 import json
 import logging
 import os
-import socket
 import sys
-from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
 
-_BLOCKED_NETWORKS = [
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-]
-
-
-def _assert_safe_url(url: str) -> None:
-    """Raise ValueError if the URL resolves to a private/internal address."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"Unsafe URL scheme: {parsed.scheme}")
-    hostname = parsed.hostname or ""
-    if not hostname:
-        raise ValueError("URL has no hostname")
-    try:
-        resolved = ipaddress.ip_address(socket.gethostbyname(hostname))
-        for net in _BLOCKED_NETWORKS:
-            if resolved in net:
-                raise ValueError(f"URL resolves to restricted address: {resolved}")
-    except socket.gaierror as e:
-        raise ValueError(f"Cannot resolve hostname {hostname!r}: {e}")
+from api.utils.url_validator import validate_external_url
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +33,7 @@ POLL_INTERVAL = 30  # seconds between polls when idle
 
 async def _fetch_page_text(url: str) -> str:
     """Fetch a URL and extract clean text content."""
-    _assert_safe_url(url)
+    validate_external_url(url, field_name="url")
     async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
         response = await client.get(url, headers={"User-Agent": "GEO-Analyzer/2.1 (nrankai)"})
         response.raise_for_status()
