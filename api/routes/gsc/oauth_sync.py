@@ -44,7 +44,14 @@ from api.models.database import (
 )
 from api.routes.costs import track_cost
 
-from ._shared import _oauth_available, _load_token, _get_gsc_credentials
+from ._shared import (
+    _oauth_available,
+    _load_token,
+    _get_gsc_credentials,
+    _CLIENT_CONFIG,
+    _GSC_SCOPES,
+    _GOOGLE_REDIRECT_URI,
+)
 
 router = APIRouter(prefix="/api/gsc", tags=["gsc"])
 

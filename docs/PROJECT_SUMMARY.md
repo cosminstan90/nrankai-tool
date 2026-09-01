@@ -157,9 +157,12 @@ geo_tool/
 ## Ce trebuie îmbunătățit
 
 ### Prioritate mare
-1. **Tests** — zero teste automate. Cel puțin unit tests pentru `core/` (scoring, validation, chunking) și integration tests pentru endpoint-urile critice.
+1. ~~**Tests**~~ **[2026-09-01] Parțial rezolvat** — `tests/` are acum 34 de unit tests
+   (`test_content_chunker.py`, reparat) + `tests/smoke.py` (regresie HTTP pe toate
+   GET-urile) + `tests/api_diff.py` (suprafața API nu se poate micșora). Lipsesc
+   încă integration tests pe endpoint-urile critice (audit pipeline, GSC sync).
 2. **Auth / multi-tenant** — momentan fără autentificare; dacă se merge spre SaaS real, trebuie user accounts.
-3. **`core/generate_dashboard.py` + `generate_report.py` (~2000 linii fiecare)** — cele mai mari fișiere din proiect, greu de navigat.
+3. **`core/generate_dashboard.py` + `generate_report.py` (~2000 linii fiecare)** — cele mai mari fișiere din proiect, greu de navigat. Confirmat prin audit (2026-09-01): **cod mort** — zero importuri din `api/`/`app/`, folosite doar de toolchain-ul CLI legacy (`main.py` root). Vezi `docs/audit/01-dead-code.md` F1-01 și `docs/CONSOLIDATION_PLAN.md` Etapa 5.6.
 
 ### Prioritate medie
 4. **Config management** — `core/config.py` folosește `.env` direct; ar beneficia de Pydantic Settings cu validare la startup.
@@ -169,7 +172,17 @@ geo_tool/
 ### Prioritate mică
 7. **`api/routes/action_cards.py` (1172 linii)** — candidat pentru refactoring.
 8. **API docs** — FastAPI auto-docs la `/docs` există dar fără descrieri pe endpoint-uri (docstrings lipsesc).
-9. **Alembic migrations** — de verificat că sunt sincronizate cu modelele după split-ul din `database.py`.
+9. ~~**Alembic migrations**~~ **[2026-09-01] Rezolvat** — confirmat prin diff exhaustiv
+   model↔DB (toate cele 80 de tabele): drift izolat la `content_briefs` (2 coloane) și
+   `fanout_sessions` (10 coloane). Cauză: `init_db_async()` avea migrarea corectă dar nu
+   era apelată niciodată (`main.py:71` cheamă `init_db()`, versiunea sincronă, incompletă).
+   Fix: migrarea Alembic `0009` + coloanele portate în `init_db()` + `init_db_async()`
+   ștearsă (cod mort). `alembic_version` era la `0005` cu head la `0008` — toate tabelele
+   existau deja din `create_all()`, niciodată din `alembic upgrade`; stampat la `0008`
+   înainte de a scrie `0009`. Detalii: `docs/audit/03-data-layer.md` F3-01/F3-02.
+   Rămas neatins (nu cauzează erori): index-uri lipsă pe `audit_results`, un `nullable`
+   pe `keyword_sessions.source`, un tip pe `url_guides.reviewed` — găsite de
+   `alembic check`, în afara scopului acestui fix.
 
 ---
 

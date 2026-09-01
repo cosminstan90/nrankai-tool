@@ -341,6 +341,8 @@ async def detect_alerts_for_website(
     # Check for stale data (no audit in 30 days)
     if audits_data["last_audit_date"]:
         last_audit = datetime.fromisoformat(audits_data["last_audit_date"])
+        if last_audit.tzinfo is None:
+            last_audit = last_audit.replace(tzinfo=timezone.utc)
         days_since = (datetime.now(timezone.utc) - last_audit).days
         if days_since > 30:
             alerts.append(f"No audit in {days_since} days")
@@ -606,6 +608,8 @@ async def get_website_details(domain: str, db: AsyncSession = Depends(get_db)):
     
     if audits["last_audit_date"]:
         last_audit = datetime.fromisoformat(audits["last_audit_date"])
+        if last_audit.tzinfo is None:
+            last_audit = last_audit.replace(tzinfo=timezone.utc)
         days_since = (datetime.now(timezone.utc) - last_audit).days
         if days_since > 30:
             actions.append({
