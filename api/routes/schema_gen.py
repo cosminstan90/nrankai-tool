@@ -265,14 +265,23 @@ async def call_llm_for_schema(
 
         client = AsyncAnthropic(api_key=api_key)
         messages = [{"role": "user", "content": user_content}]
+        effective_system = system_prompt
         if prefill:
-            messages.append({"role": "assistant", "content": prefill})
+            # Assistant-message prefill is rejected (400) on Sonnet 4.6+/Opus
+            # 4.6+/Sonnet 5/Opus 5/Fable 5 — replaced with an explicit
+            # instruction instead of a fake continuation turn. clean_json_response
+            # downstream already strips markdown fences if the model adds any.
+            effective_system = (
+                f"{system_prompt}\n\nRespond with ONLY a JSON object — no markdown "
+                f"fences, no commentary before or after. Your entire response must "
+                f"start with the exact characters: {prefill}"
+            )
         for _attempt in range(3):
             try:
                 response = await client.messages.create(
                     model=model,
                     max_tokens=max_tokens,
-                    system=system_prompt,
+                    system=effective_system,
                     messages=messages
                 )
                 break
@@ -281,8 +290,9 @@ async def call_llm_for_schema(
                     raise
                 await asyncio.sleep(5 * (_attempt + 1))
         text = response.content[0].text
-        # Re-attach the prefill so the caller gets a complete string
-        if prefill:
+        # Guarantee the expected prefix even if the model didn't follow the
+        # instruction exactly (previously guaranteed by message prefill).
+        if prefill and not text.lstrip().startswith(prefill):
             text = prefill + text
         return text, response.usage.input_tokens, response.usage.output_tokens
 

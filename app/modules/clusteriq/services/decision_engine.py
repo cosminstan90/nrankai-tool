@@ -224,7 +224,7 @@ class ClusterDecisionEngine:
         try:
             client = anthropic.AsyncAnthropic(api_key=api_key)
             resp = await client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=400,
                 temperature=0.3,
                 messages=[{"role": "user", "content": prompt_text}],
@@ -240,7 +240,7 @@ class ClusterDecisionEngine:
                         source="clusteriq_llm_evidence",
                         source_id=str(cluster_id),
                         provider="anthropic",
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         input_tokens=resp.usage.input_tokens,
                         output_tokens=resp.usage.output_tokens,
                         estimated_cost_usd=round(

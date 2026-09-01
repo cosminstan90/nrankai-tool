@@ -33,6 +33,8 @@ USD_EUR_RATE = float(os.getenv("USD_EUR_RATE", "0.92"))
 # Cost per million tokens (same as direct_analyzer.py)
 COST_PER_MILLION_TOKENS = {
     "anthropic": {
+        "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+        # Deprecated by Anthropic (2026-09) — kept for historical cost_records lookups only.
         "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
         "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
         "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00},

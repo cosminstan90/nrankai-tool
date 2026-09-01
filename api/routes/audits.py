@@ -79,11 +79,11 @@ async def create_audit(
     except ImportError:
         provider_models = {
             "google": "gemini-2.5-flash",
-            "anthropic": "claude-sonnet-4-20250514",
+            "anthropic": "claude-sonnet-4-6",
             "openai": "gpt-4o",
             "mistral": "mistral-large-latest"
         }
-        model = audit_data.model or provider_models.get(audit_data.provider, "claude-sonnet-4-20250514")
+        model = audit_data.model or provider_models.get(audit_data.provider, "claude-sonnet-4-6")
     
     # Create audit record
     audit_id = str(uuid.uuid4())
@@ -184,11 +184,11 @@ async def single_page_audit(
             provider = request.provider or "anthropic"
             provider_models = {
                 "google": "gemini-2.5-flash",
-                "anthropic": "claude-sonnet-4-20250514",
+                "anthropic": "claude-sonnet-4-6",
                 "openai": "gpt-4o",
                 "mistral": "mistral-large-latest"
             }
-            model = request.model or provider_models.get(provider.lower(), "claude-sonnet-4-20250514")
+            model = request.model or provider_models.get(provider.lower(), "claude-sonnet-4-6")
 
         # Helper function for one audit
         async def run_single(audit_type):

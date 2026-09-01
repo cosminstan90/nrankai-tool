@@ -591,7 +591,7 @@ async def analyze_multi_engine(
 # Default models per provider
 PROVIDER_DEFAULTS = {
     "openai":      "gpt-4o",
-    "anthropic":   "claude-sonnet-4-20250514",
+    "anthropic":   "claude-sonnet-4-6",
     "gemini":      "gemini-2.5-flash",
     "perplexity":  "sonar-pro",
 }
@@ -612,6 +612,8 @@ COST_PER_1K_TOKENS: dict = {
     "gpt-4o-mini":         {"input": 0.00015,  "output": 0.0006},
     "gpt-4.1":             {"input": 0.002,    "output": 0.008},
     "gpt-4.1-mini":        {"input": 0.0001,   "output": 0.0004},
+    "claude-sonnet-4-6":         {"input": 0.003,  "output": 0.015},
+    # Deprecated by Anthropic (2026-09) — kept for historical run_cost_usd lookups only.
     "claude-sonnet-4-20250514":  {"input": 0.003,  "output": 0.015},
     "claude-haiku-4-5-20251001": {"input": 0.00025, "output": 0.00125},
     "claude-opus-4-5-20251101":  {"input": 0.015,  "output": 0.075},

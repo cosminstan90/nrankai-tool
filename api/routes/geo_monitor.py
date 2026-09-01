@@ -214,7 +214,7 @@ async def _query_provider(provider: str, query: str) -> tuple[str, int, int, str
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not configured")
-        model = "claude-sonnet-4-20250514"
+        model = "claude-sonnet-4-6"
         client = AsyncAnthropic(api_key=api_key)
         response = await client.messages.create(
             model=model,

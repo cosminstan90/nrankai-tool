@@ -1624,7 +1624,7 @@ class CrossReferenceAnalyzer:
             # Auto-detect provider
             if os.getenv("ANTHROPIC_API_KEY"):
                 self.provider = "ANTHROPIC"
-                self.model_name = self.model_name or "claude-sonnet-4-20250514"
+                self.model_name = self.model_name or "claude-sonnet-4-6"
             elif os.getenv("OPENAI_API_KEY"):
                 self.provider = "OPENAI"
                 self.model_name = self.model_name or "gpt-4o"

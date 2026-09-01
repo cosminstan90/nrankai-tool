@@ -171,7 +171,7 @@ async def _bg_ahrefs_sync(audit_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 async def _bg_gsc_sync(audit_id: int) -> None:
-    from api.workers.contentiq.gsc import GSCAuthError, get_page_metrics, load_tokens
+    from api.workers.contentiq.gsc import GSCAuthError, get_page_metrics, load_tokens, _get_valid_token
 
     async with AsyncSessionLocal() as db:
         try:
@@ -187,9 +187,14 @@ async def _bg_gsc_sync(audit_id: int) -> None:
             if not pages:
                 return
 
+            # Refresh first if the stored token is near expiry — previously
+            # this used token_row.access_token directly and never refreshed,
+            # so syncs would silently start failing an hour after connecting.
+            access_token = await _get_valid_token(token_row, db)
+
             urls    = [p.url for p in pages]
             metrics = await get_page_metrics(
-                token_row.access_token,
+                access_token,
                 token_row.property_url,
                 urls,
                 date_range_days=90,
@@ -207,7 +212,13 @@ async def _bg_gsc_sync(audit_id: int) -> None:
             await db.commit()
             logger.info("[CIQ] GSC sync complete for audit %d", audit_id)
         except GSCAuthError as exc:
-            logger.error("[CIQ] GSC auth error for audit %d: %s", audit_id, exc)
+            logger.warning(
+                "[CIQ] GSC token dead for audit %d (%s) — clearing so the UI shows reconnect",
+                audit_id, exc,
+            )
+            from api.models.contentiq import CiqGscToken
+            await db.execute(delete(CiqGscToken).where(CiqGscToken.audit_id == audit_id))
+            await db.commit()
         except Exception as exc:
             logger.error("[CIQ] GSC sync failed for audit %d: %s", audit_id, exc)
 

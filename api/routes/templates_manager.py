@@ -314,11 +314,11 @@ async def save_template_from_audit(
 def get_default_model(provider: str) -> str:
     """Get default model for a provider."""
     defaults = {
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-sonnet-4-6",
         "openai": "gpt-4o",
         "mistral": "mistral-large-latest"
     }
-    return defaults.get(provider, "claude-sonnet-4-20250514")
+    return defaults.get(provider, "claude-sonnet-4-6")
 
 
 async def _poll_and_run_auto_actions(

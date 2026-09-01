@@ -29,20 +29,6 @@ from api.models.database import (
 )
 from api.routes.costs import track_cost
 
-from api.models.database import (
-    AsyncSessionLocal,
-    DATABASE_PATH,
-    GscProperty,
-    GscQueryRow,
-    GscPageRow,
-    GoogleOAuthToken,
-    KeywordResult,
-    KeywordSession,
-    AuditResult,
-    UrlGuide,
-)
-from api.routes.costs import track_cost
-
 # ── Google OAuth config ────────────────────────────────────────────────────────
 
 _GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
