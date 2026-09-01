@@ -221,6 +221,12 @@ class AsyncLLMClient:
             api_key = os.getenv("GEMINI_API_KEY")
             from google import genai
             self._client = genai.Client(api_key=api_key)
+        elif self.provider == "PERPLEXITY":
+            # Perplexity's API is OpenAI-compatible -- reuse the OpenAI SDK
+            # client pointed at their endpoint, same pattern already used in
+            # core/perplexity_researcher.py and api/routes/citation_tracker.py.
+            api_key = os.getenv("PERPLEXITY_API_KEY")
+            self._client = AsyncOpenAI(api_key=api_key, base_url="https://api.perplexity.ai")
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
     
@@ -230,6 +236,8 @@ class AsyncLLMClient:
         user_content: str,
         max_tokens: int = 8192,
         output_schema: Optional[dict] = None,
+        content_prefix: str = "CONTENT: ",
+        force_json: bool = True,
     ) -> Tuple[str, int, int]:
         """
         Send a completion request to the LLM.
@@ -240,16 +248,30 @@ class AsyncLLMClient:
             repair (clean_json_response). Only wired in for ANTHROPIC so
             far — see core/output_schemas.py for which audit types have a
             schema; other providers ignore this parameter unchanged.
+        content_prefix: prepended to user_content before sending. Defaults
+            to "CONTENT: " (the audit-pipeline convention every existing
+            caller relies on) — pass "" for callers sending a raw
+            conversational query where that prefix would be out of place
+            (e.g. simulating what a real user would ask an AI).
+        force_json: whether to request JSON-mode from providers that
+            support an explicit flag for it (OpenAI/Mistral's
+            response_format, Google's response_mime_type). Anthropic has
+            no equivalent outside output_schema, so this only affects
+            OPENAI/MISTRAL/GOOGLE. Default True preserves existing
+            behavior; pass False for plain conversational queries that
+            aren't asking for JSON at all.
 
         Returns:
             Tuple of (response_text, input_tokens, output_tokens)
         """
+        prefixed_content = f"{content_prefix}{user_content}"
+
         if self.provider == "ANTHROPIC":
             create_kwargs = dict(
                 model=self.model_name,
                 max_tokens=max_tokens,
                 system=system_message,
-                messages=[{"role": "user", "content": f"CONTENT: {user_content}"}],
+                messages=[{"role": "user", "content": prefixed_content}],
             )
             if output_schema is not None:
                 create_kwargs["output_config"] = {
@@ -260,62 +282,85 @@ class AsyncLLMClient:
             input_tokens = response.usage.input_tokens
             output_tokens = response.usage.output_tokens
             return text, input_tokens, output_tokens
-            
+
         elif self.provider == "OPENAI":
+            create_kwargs = dict(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prefixed_content}
+                ],
+                max_tokens=max_tokens
+            )
+            if force_json:
+                create_kwargs["response_format"] = {"type": "json_object"}
+            response = await self._client.chat.completions.create(**create_kwargs)
+            text = response.choices[0].message.content
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            return text, input_tokens, output_tokens
+
+        elif self.provider == "PERPLEXITY":
+            # No response_format here -- neither of the two existing Perplexity
+            # call sites (core/perplexity_researcher.py, citation_tracker.py)
+            # used it, and Perplexity's OpenAI-compatible endpoint doesn't
+            # advertise json_object support the way OpenAI's does. force_json
+            # is accepted for interface consistency but has no effect here.
             response = await self._client.chat.completions.create(
                 model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": f"CONTENT: {user_content}"}
+                    {"role": "user", "content": prefixed_content}
                 ],
-                response_format={"type": "json_object"},
                 max_tokens=max_tokens
             )
             text = response.choices[0].message.content
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
             return text, input_tokens, output_tokens
-            
+
         elif self.provider == "MISTRAL":
             # Mistral SDK uses async chat complete
-            response = await self._client.chat.complete_async(
+            create_kwargs = dict(
                 model=self.model_name,
                 messages=[
                     {"role": "system", "content": system_message},
-                    {"role": "user", "content": f"CONTENT: {user_content}"}
+                    {"role": "user", "content": prefixed_content}
                 ],
-                response_format={"type": "json_object"},
                 max_tokens=max_tokens
             )
+            if force_json:
+                create_kwargs["response_format"] = {"type": "json_object"}
+            response = await self._client.chat.complete_async(**create_kwargs)
             text = response.choices[0].message.content
             input_tokens = response.usage.prompt_tokens
             output_tokens = response.usage.completion_tokens
             return text, input_tokens, output_tokens
-        
+
         elif self.provider == "GOOGLE":
             from google.genai import types
+            config_kwargs = dict(
+                system_instruction=system_message,
+                max_output_tokens=max_tokens,
+                temperature=0.3,
+            )
+            if force_json:
+                config_kwargs["response_mime_type"] = "application/json"
             response = await self._client.aio.models.generate_content(
                 model=self.model_name,
-                contents=f"CONTENT: {user_content}",
-                config=types.GenerateContentConfig(
-                    system_instruction=system_message,
-                    max_output_tokens=max_tokens,
-                    temperature=0.3,
-                    response_mime_type="application/json"
-                )
+                contents=prefixed_content,
+                config=types.GenerateContentConfig(**config_kwargs)
             )
             text = response.text
             input_tokens = response.usage_metadata.prompt_token_count or 0
             output_tokens = response.usage_metadata.candidates_token_count or 0
             return text, input_tokens, output_tokens
-        
+
         raise ValueError(f"Unknown provider: {self.provider}")
     
     async def close(self):
         """Close the client connection."""
-        if self.provider == "ANTHROPIC" and hasattr(self._client, 'close'):
-            await self._client.close()
-        elif self.provider == "OPENAI" and hasattr(self._client, 'close'):
+        if self.provider in ("ANTHROPIC", "OPENAI", "PERPLEXITY") and hasattr(self._client, 'close'):
             await self._client.close()
         # Mistral and Google clients don't require explicit closing
 
