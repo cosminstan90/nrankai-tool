@@ -455,7 +455,7 @@ class TestAuditResultMerger(unittest.TestCase):
         results = [
             {
                 "geo_audit": {
-                    "ai_citation_likelihood": 80,
+                    "citation_probability": 80,
                     "authority_score": 70,
                     "quotable_statements_count": 5,
                     "entities_detected": ["ING", "Netherlands"]
@@ -468,7 +468,7 @@ class TestAuditResultMerger(unittest.TestCase):
             },
             {
                 "geo_audit": {
-                    "ai_citation_likelihood": 60,
+                    "citation_probability": 60,
                     "authority_score": 80,
                     "quotable_statements_count": 3,
                     "entities_detected": ["Amsterdam", "Netherlands"]
@@ -488,7 +488,7 @@ class TestAuditResultMerger(unittest.TestCase):
         )
         
         # Scores should be averaged
-        self.assertEqual(merged["geo_audit"]["ai_citation_likelihood"], 70)
+        self.assertEqual(merged["geo_audit"]["citation_probability"], 70)
         self.assertEqual(merged["geo_audit"]["authority_score"], 75)
         
         # Quotable statements should be summed

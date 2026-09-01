@@ -53,3 +53,6 @@ tqdm>=4.66.0
 certifi>=2024.0.0
 pyyaml>=6.0.0
 json-repair>=0.30.0
+
+# Testing
+pytest>=8.0.0

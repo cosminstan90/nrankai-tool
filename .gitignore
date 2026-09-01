@@ -17,6 +17,7 @@ venv/
 *.egg-info/
 dist/
 build/
+.pytest_cache/
 
 # Old domain scrape folders
 ahrefs.com/
