@@ -166,6 +166,7 @@ async def single_page_audit(
 
         from core.prompt_loader import list_available_audits, load_prompt
         from core.direct_analyzer import AsyncLLMClient, clean_json_response
+        from core.output_schemas import get_output_schema
 
         # Determine audits to run
         audits_to_run = []
@@ -203,7 +204,8 @@ async def single_page_audit(
                 llm_client = AsyncLLMClient(provider=provider.upper(), model_name=model)
                 text, in_tokens, out_tokens = await llm_client.complete(
                     system_message=system_message,
-                    user_content=text_content
+                    user_content=text_content,
+                    output_schema=get_output_schema(audit_type),
                 )
                 await llm_client.close()
                 cleaned = clean_json_response(text)

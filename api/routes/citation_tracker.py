@@ -26,9 +26,7 @@ from api.models.database import CitationTracker, CitationScan, AsyncSessionLocal
 from api.routes.costs import track_cost
 from api.provider_registry import get_default_model
 
-# LLM clients
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
+from core.direct_analyzer import AsyncLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -223,37 +221,37 @@ async def _query_provider(
     """
     async with LLM_SEMAPHORE:
         try:
+            # claude/chatgpt/perplexity all go through the shared AsyncLLMClient
+            # (core/direct_analyzer.py) rather than each instantiating their own
+            # provider SDK client here. content_prefix="" + force_json=False
+            # because this sends a plain conversational query (simulating what a
+            # real user would ask an AI) -- the audit pipeline's "CONTENT: " prefix
+            # and forced JSON mode would both be out of place here.
             if provider == "claude":
                 api_key = os.getenv("ANTHROPIC_API_KEY")
-                if not api_key:
-                    return "", 0, 0, model or get_default_model("anthropic")
-
                 _model = model or get_default_model("anthropic")
-                client = AsyncAnthropic(api_key=api_key)
-                response = await client.messages.create(
-                    model=_model,
-                    max_tokens=2000,
-                    messages=[{"role": "user", "content": query}]
+                if not api_key:
+                    return "", 0, 0, _model
+                client = AsyncLLMClient(provider="ANTHROPIC", model_name=_model)
+                text, in_tok, out_tok = await client.complete(
+                    system_message="", user_content=query, max_tokens=2000,
+                    content_prefix="", force_json=False,
                 )
-                in_tok  = response.usage.input_tokens  if response.usage else 0
-                out_tok = response.usage.output_tokens if response.usage else 0
-                return response.content[0].text, in_tok, out_tok, _model
+                await client.close()
+                return text, in_tok, out_tok, _model
 
             elif provider == "chatgpt":
                 api_key = os.getenv("OPENAI_API_KEY")
-                if not api_key:
-                    return "", 0, 0, model or get_default_model("openai")
-
                 _model = model or get_default_model("openai")
-                client = AsyncOpenAI(api_key=api_key)
-                response = await client.chat.completions.create(
-                    model=_model,
-                    messages=[{"role": "user", "content": query}],
-                    max_tokens=2000
+                if not api_key:
+                    return "", 0, 0, _model
+                client = AsyncLLMClient(provider="OPENAI", model_name=_model)
+                text, in_tok, out_tok = await client.complete(
+                    system_message="", user_content=query, max_tokens=2000,
+                    content_prefix="", force_json=False,
                 )
-                in_tok  = response.usage.prompt_tokens     if response.usage else 0
-                out_tok = response.usage.completion_tokens if response.usage else 0
-                return response.choices[0].message.content or "", in_tok, out_tok, _model
+                await client.close()
+                return text or "", in_tok, out_tok, _model
 
             elif provider == "perplexity":
                 api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -261,21 +259,16 @@ async def _query_provider(
                 # so we can't route this through get_default_model(). "sonar" matches the current
                 # model naming convention used in core/perplexity_researcher.py — the old
                 # "llama-3.1-sonar-*-128k-online" family was retired by Perplexity in 2025.
-                if not api_key:
-                    return "", 0, 0, model or "sonar"
-
                 _model = model or "sonar"
-                client = AsyncOpenAI(
-                    api_key=api_key,
-                    base_url="https://api.perplexity.ai"
+                if not api_key:
+                    return "", 0, 0, _model
+                client = AsyncLLMClient(provider="PERPLEXITY", model_name=_model)
+                text, in_tok, out_tok = await client.complete(
+                    system_message="", user_content=query,
+                    content_prefix="", force_json=False,
                 )
-                response = await client.chat.completions.create(
-                    model=_model,
-                    messages=[{"role": "user", "content": query}]
-                )
-                in_tok  = response.usage.prompt_tokens     if response.usage else 0
-                out_tok = response.usage.completion_tokens if response.usage else 0
-                return response.choices[0].message.content or "", in_tok, out_tok, _model
+                await client.close()
+                return text or "", in_tok, out_tok, _model
 
             elif provider == "gemini":
                 import google.generativeai as genai
