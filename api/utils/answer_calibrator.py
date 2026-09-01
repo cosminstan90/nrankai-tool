@@ -3,7 +3,7 @@ Answer Calibration Module (Prompt 35)
 =======================================
 Generates the "ideal" AI response that naturally includes the target brand,
 then extracts content gaps and requirements.
-Uses claude-sonnet-4-20250514 (~$0.015/calibration).
+Uses claude-sonnet-4-6 (~$0.015/calibration).
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from typing import List, Optional
 
 logger = logging.getLogger("answer_calibrator")
 
-_MODEL = "claude-sonnet-4-20250514"
+_MODEL = "claude-sonnet-4-6"
 _COST_USD = 0.015
 
 

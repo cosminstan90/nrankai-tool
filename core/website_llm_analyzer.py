@@ -336,7 +336,7 @@ Examples:
     parser.add_argument(
         '--model',
         type=str,
-        help='Override model name (e.g., claude-sonnet-4-20250514, gpt-4o)'
+        help='Override model name (e.g., claude-sonnet-4-6, gpt-4o)'
     )
     
     parser.add_argument(

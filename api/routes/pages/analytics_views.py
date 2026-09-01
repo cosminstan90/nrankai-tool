@@ -97,7 +97,7 @@ async def schedules_page(request: Request):
     if os.getenv("ANTHROPIC_API_KEY"):
         providers.append({
             "name": "Anthropic",
-            "models": ["claude-sonnet-4-20250514", "claude-opus-4-5-20251101", "claude-haiku-4-5-20251001"]
+            "models": ["claude-sonnet-4-6", "claude-opus-4-5-20251101", "claude-haiku-4-5-20251001"]
         })
 
     if os.getenv("OPENAI_API_KEY"):

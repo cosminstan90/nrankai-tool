@@ -65,7 +65,8 @@ ALL_MODELS: List[ModelInfo] = [
 
     # ---- Anthropic Claude ----
     ModelInfo("claude-haiku-4-5-20251001",  "Claude 4.5 Haiku",   "anthropic", "cheap",     1.00,   5.00,  8192, True,  "Fast + cheap Claude. Good for briefs/schemas."),
-    ModelInfo("claude-sonnet-4-20250514",   "Claude Sonnet 4",    "anthropic", "balanced",  3.00,  15.00,  8192, True,  "Best balance quality/price. Default for audits."),
+    ModelInfo("claude-sonnet-4-6",          "Claude Sonnet 4.6",  "anthropic", "balanced",  3.00,  15.00, 128000, True, "Best balance quality/price. Default for audits."),
+    ModelInfo("claude-sonnet-4-20250514",   "Claude Sonnet 4 (legacy)", "anthropic", "balanced", 3.00, 15.00, 8192, True, "Deprecated by Anthropic (2026-09) — kept selectable only so historical cost_records still resolve a price; do not select for new audits."),
     ModelInfo("claude-opus-4-5-20251101",   "Claude Opus 4.5",    "anthropic", "premium",  15.00,  75.00,  8192, True,  "Most capable. Complex analysis only."),
 
     # ---- OpenAI ----
@@ -86,7 +87,7 @@ ALL_MODELS: List[ModelInfo] = [
 
 PROVIDERS: List[ProviderConfig] = [
     ProviderConfig("google",    "Google Gemini",    "GEMINI_API_KEY",    "gemini-2.5-flash"),
-    ProviderConfig("anthropic", "Anthropic Claude", "ANTHROPIC_API_KEY", "claude-sonnet-4-20250514"),
+    ProviderConfig("anthropic", "Anthropic Claude", "ANTHROPIC_API_KEY", "claude-sonnet-4-6"),
     ProviderConfig("openai",    "OpenAI",           "OPENAI_API_KEY",    "gpt-4o"),
     ProviderConfig("mistral",   "Mistral",          "MISTRAL_API_KEY",   "mistral-large-latest"),
 ]
@@ -155,7 +156,7 @@ def get_models_for_provider(provider_id: str) -> List[ModelInfo]:
 def get_default_model(provider_id: str) -> str:
     """Get default model ID for a provider."""
     provider = get_provider_config(provider_id)
-    return provider.default_model if provider else "claude-sonnet-4-20250514"
+    return provider.default_model if provider else "claude-sonnet-4-6"
 
 
 def get_cheapest_model(provider_id: str = None) -> ModelInfo:
@@ -224,7 +225,7 @@ def get_cost_per_million_tokens() -> Dict:
     """Generate COST_PER_MILLION_TOKENS dict in legacy format.
     
     Returns:
-        {"ANTHROPIC": {"claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0}}, ...}
+        {"ANTHROPIC": {"claude-sonnet-4-6": {"input": 3.0, "output": 15.0}}, ...}
     """
     result = {}
     for model in ALL_MODELS:
@@ -242,7 +243,7 @@ def get_provider_models_dict() -> Dict[str, str]:
     """Generate PROVIDER_MODELS dict in legacy format.
     
     Returns:
-        {"ANTHROPIC": "claude-sonnet-4-20250514", "OPENAI": "gpt-4o", ...}
+        {"ANTHROPIC": "claude-sonnet-4-6", "OPENAI": "gpt-4o", ...}
     """
     return {p.id.upper(): p.default_model for p in PROVIDERS}
 
@@ -301,7 +302,7 @@ def get_tier_presets() -> Dict[str, Dict[str, str]]:
     Returns:
         {
             "cheap": {"google": "gemini-2.0-flash-lite", "openai": "gpt-4o-mini", ...},
-            "balanced": {"google": "gemini-2.0-flash", "anthropic": "claude-sonnet-4-20250514", ...},
+            "balanced": {"google": "gemini-2.0-flash", "anthropic": "claude-sonnet-4-6", ...},
             "premium": {"google": "gemini-2.5-pro", ...}
         }
     """
@@ -324,7 +325,7 @@ def get_models_flat_for_schedules() -> List[Dict]:
     """Generate flat provider list with models for schedules template.
     
     Backward compatible with old schedules.html format:
-    [{"name": "Anthropic", "models": ["claude-sonnet-4-20250514", ...]}]
+    [{"name": "Anthropic", "models": ["claude-sonnet-4-6", ...]}]
     """
     available = get_available_providers()
     result = []

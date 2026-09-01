@@ -29,7 +29,7 @@ except ImportError:
     # Fallback if running standalone
     PROVIDER_MODELS: dict[str, str] = {
         "GOOGLE": "gemini-2.5-flash",
-        "ANTHROPIC": "claude-sonnet-4-20250514",
+        "ANTHROPIC": "claude-sonnet-4-6",
         "OPENAI": "gpt-4o",
         "MISTRAL": "mistral-large-latest",
     }
@@ -147,7 +147,7 @@ def _configure_provider(provider_override: Optional[str], model_override: Option
         if provider_name == "ANTHROPIC" and anthropic_key:
             _config_state['client'] = Anthropic(api_key=anthropic_key)
             _config_state['provider'] = "ANTHROPIC"
-            _config_state['model_name'] = model_override or PROVIDER_MODELS.get("ANTHROPIC", "claude-sonnet-4-20250514")
+            _config_state['model_name'] = model_override or PROVIDER_MODELS.get("ANTHROPIC", "claude-sonnet-4-6")
             print(f"✓ Running in ANTHROPIC (Claude) mode - Recommended for compliance audits.")
         elif provider_name == "OPENAI" and openai_key:
             _config_state['client'] = OpenAI(api_key=openai_key)
@@ -176,7 +176,7 @@ def _configure_provider(provider_override: Optional[str], model_override: Option
         if anthropic_key:
             _config_state['client'] = Anthropic(api_key=anthropic_key)
             _config_state['provider'] = "ANTHROPIC"
-            _config_state['model_name'] = model_override or PROVIDER_MODELS.get("ANTHROPIC", "claude-sonnet-4-20250514")
+            _config_state['model_name'] = model_override or PROVIDER_MODELS.get("ANTHROPIC", "claude-sonnet-4-6")
             print("✓ Running in ANTHROPIC (Claude) mode - Recommended for compliance audits.")
         elif openai_key:
             _config_state['client'] = OpenAI(api_key=openai_key)

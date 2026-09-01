@@ -2,7 +2,7 @@
 ContentIQ Claude Brief Generator (Prompt 08)
 =============================================
 Generates structured 8-section content briefs for UPDATE/CONSOLIDATE pages.
-Uses claude-sonnet-4-20250514 (~$0.015/brief).
+Uses claude-sonnet-4-6 (~$0.015/brief).
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from typing import List
 
 logger = logging.getLogger("contentiq.brief")
 
-_MODEL = "claude-sonnet-4-20250514"
+_MODEL = "claude-sonnet-4-6"
 
 _SYSTEM = (
     "You are a senior SEO and GEO content strategist at nrankai.com. "

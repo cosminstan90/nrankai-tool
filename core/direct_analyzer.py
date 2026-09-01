@@ -65,6 +65,8 @@ except ImportError:
         },
         "ANTHROPIC": {
             "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+            "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+            # Deprecated by Anthropic (2026-09) — kept for historical cost_records lookups only.
             "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
             "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00},
         },
@@ -670,7 +672,7 @@ def estimate_costs(
     
     Returns dict like:
     {
-        "ANTHROPIC (claude-sonnet-4-20250514)": {
+        "ANTHROPIC (claude-sonnet-4-6)": {
             "input_tokens": 50000,
             "output_tokens": 40000,
             "input_cost": 0.15,

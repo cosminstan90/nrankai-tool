@@ -55,7 +55,7 @@ _SEMAPHORE = asyncio.Semaphore(2)
 
 SUPPORTED_MODELS = {
     "openai":      ["gpt-4o", "gpt-4o-mini"],
-    "anthropic":   ["claude-opus-4-5-20251101", "claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"],
+    "anthropic":   ["claude-opus-4-5-20251101", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
     "gemini":      ["gemini-2.5-flash", "gemini-2.0-flash"],
     "perplexity":  ["sonar-pro", "sonar"],
 }
