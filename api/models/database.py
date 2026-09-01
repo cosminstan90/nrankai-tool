@@ -177,65 +177,26 @@ def init_db():
         except Exception as _e:
             print(f"[WARN] url_guides migration: {_e}")
 
-    # Seed default templates if table is empty
-    from sqlalchemy.orm import Session
-    with Session(sync_engine) as session:
-        existing_templates = session.query(AuditTemplate).count()
-        if existing_templates == 0:
-            print("🌱 Seeding default audit templates...")
-            for template_data in DEFAULT_TEMPLATES:
-                template = AuditTemplate(**template_data)
-                session.add(template)
-            session.commit()
-            print(f"✓ Seeded {len(DEFAULT_TEMPLATES)} default templates")
-
-
-async def init_db_async():
-    """Initialize database tables (async version)."""
-    # Migrate benchmark_projects if it has the old schema (websites/audit_config columns)
-    from sqlalchemy import text as sa_text
-    async with engine.begin() as conn:
+    # Migrate content_briefs: add current_score + executive_summary if missing
+    # (covered by Alembic migration 0009, but kept here too since not every
+    # deployment necessarily runs `alembic upgrade` before startup)
+    with sync_engine.connect() as conn:
         try:
-            rows = await conn.execute(sa_text("PRAGMA table_info(benchmark_projects)"))
-            col_names = [row[1] for row in rows.fetchall()]
-            if col_names and "websites" in col_names:
-                await conn.execute(sa_text("DROP TABLE IF EXISTS benchmark_projects"))
-                print("✓ Migrated benchmark_projects to new schema")
+            rows = conn.execute(sa_text("PRAGMA table_info(content_briefs)")).fetchall()
+            col_names = [row[1] for row in rows]
+            if col_names and "current_score" not in col_names:
+                conn.execute(sa_text("ALTER TABLE content_briefs ADD COLUMN current_score REAL"))
+                conn.commit()
+                print("✓ Migrated content_briefs: added current_score")
+            if col_names and "executive_summary" not in col_names:
+                conn.execute(sa_text("ALTER TABLE content_briefs ADD COLUMN executive_summary TEXT"))
+                conn.commit()
+                print("✓ Migrated content_briefs: added executive_summary")
         except Exception as _e:
-            import logging as _logging
-            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely already migrated): {_e}")
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    # Add new columns to gsc_properties if they don't exist yet (SQLite migration)
-    async with engine.begin() as conn:
-        try:
-            rows = await conn.execute(sa_text("PRAGMA table_info(gsc_properties)"))
-            col_names = [row[1] for row in rows.fetchall()]
-            if col_names and "last_synced_at" not in col_names:
-                await conn.execute(sa_text("ALTER TABLE gsc_properties ADD COLUMN last_synced_at DATETIME"))
-                print("✓ Migrated gsc_properties: added last_synced_at")
-            if col_names and "sync_type" not in col_names:
-                await conn.execute(sa_text("ALTER TABLE gsc_properties ADD COLUMN sync_type VARCHAR(10) NOT NULL DEFAULT 'csv'"))
-                print("✓ Migrated gsc_properties: added sync_type")
-        except Exception as _e:
-            import logging as _logging
-            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely column already exists): {_e}")
-
-    # Migrate url_guides: add reviewed column if missing
-    async with engine.begin() as conn:
-        try:
-            rows = await conn.execute(sa_text("PRAGMA table_info(url_guides)"))
-            col_names = [row[1] for row in rows.fetchall()]
-            if col_names and "reviewed" not in col_names:
-                await conn.execute(sa_text("ALTER TABLE url_guides ADD COLUMN reviewed INTEGER NOT NULL DEFAULT 0"))
-                print("✓ Migrated url_guides: added reviewed")
-        except Exception as _e:
-            import logging as _logging
-            _logging.getLogger(__name__).debug(f"ALTER TABLE skipped (likely column already exists): {_e}")
+            print(f"[WARN] content_briefs migration: {_e}")
 
     # Migrate fanout_sessions: add Prompt 15 enrichment columns if missing
+    # (covered by Alembic migration 0009 — kept here for the same reason as above)
     _fanout_session_migrations = [
         ("query_origin",     "ALTER TABLE fanout_sessions ADD COLUMN query_origin VARCHAR(20) DEFAULT 'actual'"),
         ("source_origin",    "ALTER TABLE fanout_sessions ADD COLUMN source_origin VARCHAR(20) DEFAULT 'citation'"),
@@ -248,29 +209,28 @@ async def init_db_async():
         ("model_version",    "ALTER TABLE fanout_sessions ADD COLUMN model_version VARCHAR(50)"),
         ("from_cache",       "ALTER TABLE fanout_sessions ADD COLUMN from_cache INTEGER DEFAULT 0"),
     ]
-    async with engine.begin() as conn:
+    with sync_engine.connect() as conn:
         try:
-            rows = await conn.execute(sa_text("PRAGMA table_info(fanout_sessions)"))
-            col_names = {row[1] for row in rows.fetchall()}
+            rows = conn.execute(sa_text("PRAGMA table_info(fanout_sessions)")).fetchall()
+            col_names = {row[1] for row in rows}
             for col, sql in _fanout_session_migrations:
                 if col not in col_names:
-                    await conn.execute(sa_text(sql))
+                    conn.execute(sa_text(sql))
+                    conn.commit()
                     print(f"✓ Migrated fanout_sessions: added {col}")
         except Exception as _e:
             print(f"[WARN] fanout_sessions migration: {_e}")
 
     # Seed default templates if table is empty
-    from sqlalchemy import select
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(func.count(AuditTemplate.id)))
-        existing_templates = result.scalar()
-        
+    from sqlalchemy.orm import Session
+    with Session(sync_engine) as session:
+        existing_templates = session.query(AuditTemplate).count()
         if existing_templates == 0:
             print("🌱 Seeding default audit templates...")
             for template_data in DEFAULT_TEMPLATES:
                 template = AuditTemplate(**template_data)
                 session.add(template)
-            await session.commit()
+            session.commit()
             print(f"✓ Seeded {len(DEFAULT_TEMPLATES)} default templates")
 
 

@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import CitationTracker, CitationScan, AsyncSessionLocal, get_db
 from api.routes.costs import track_cost
+from api.provider_registry import get_default_model
 
 # LLM clients
 from anthropic import AsyncAnthropic
@@ -225,9 +226,9 @@ async def _query_provider(
             if provider == "claude":
                 api_key = os.getenv("ANTHROPIC_API_KEY")
                 if not api_key:
-                    return "", 0, 0, model or "claude-3-5-sonnet-20241022"
+                    return "", 0, 0, model or get_default_model("anthropic")
 
-                _model = model or "claude-3-5-sonnet-20241022"
+                _model = model or get_default_model("anthropic")
                 client = AsyncAnthropic(api_key=api_key)
                 response = await client.messages.create(
                     model=_model,
@@ -241,9 +242,9 @@ async def _query_provider(
             elif provider == "chatgpt":
                 api_key = os.getenv("OPENAI_API_KEY")
                 if not api_key:
-                    return "", 0, 0, model or "gpt-4o"
+                    return "", 0, 0, model or get_default_model("openai")
 
-                _model = model or "gpt-4o"
+                _model = model or get_default_model("openai")
                 client = AsyncOpenAI(api_key=api_key)
                 response = await client.chat.completions.create(
                     model=_model,
@@ -256,10 +257,14 @@ async def _query_provider(
 
             elif provider == "perplexity":
                 api_key = os.getenv("PERPLEXITY_API_KEY")
+                # provider_registry has no Perplexity entry (Anthropic/OpenAI/Google/Mistral only),
+                # so we can't route this through get_default_model(). "sonar" matches the current
+                # model naming convention used in core/perplexity_researcher.py — the old
+                # "llama-3.1-sonar-*-128k-online" family was retired by Perplexity in 2025.
                 if not api_key:
-                    return "", 0, 0, model or "llama-3.1-sonar-large-128k-online"
+                    return "", 0, 0, model or "sonar"
 
-                _model = model or "llama-3.1-sonar-large-128k-online"
+                _model = model or "sonar"
                 client = AsyncOpenAI(
                     api_key=api_key,
                     base_url="https://api.perplexity.ai"

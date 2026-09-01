@@ -195,15 +195,18 @@ async def lifespan(app: FastAPI):
     # Auto-register n8n webhook if N8N_WEBHOOK_URL is set (Prompt 20)
     _n8n_url = os.getenv("N8N_WEBHOOK_URL")
     if _n8n_url:
-        from api.models.database import FanoutWebhook
-        from api.workers.webhook_sender import ALL_EVENTS
-        from sqlalchemy import select as _sel
-        async with AsyncSessionLocal() as _wdb:
-            _existing = (await _wdb.execute(_sel(FanoutWebhook).where(FanoutWebhook.webhook_url == _n8n_url))).scalar_one_or_none()
-            if not _existing:
-                _wdb.add(FanoutWebhook(name="n8n (auto)", webhook_url=_n8n_url, events=ALL_EVENTS))
-                await _wdb.commit()
-                print(f"[OK] Registered default n8n webhook: {_n8n_url}")
+        try:
+            from api.models.database import FanoutWebhook
+            from api.workers.webhook_sender import ALL_EVENTS
+            from sqlalchemy import select as _sel
+            async with AsyncSessionLocal() as _wdb:
+                _existing = (await _wdb.execute(_sel(FanoutWebhook).where(FanoutWebhook.webhook_url == _n8n_url))).scalar_one_or_none()
+                if not _existing:
+                    _wdb.add(FanoutWebhook(name="n8n (auto)", webhook_url=_n8n_url, events=ALL_EVENTS))
+                    await _wdb.commit()
+                    print(f"[OK] Registered default n8n webhook: {_n8n_url}")
+        except Exception as e:
+            print(f"[WARN] n8n webhook auto-registration failed: {e}")
 
     # Seed prompt library (Prompt 21) — no-op if already populated
     try:

@@ -4,7 +4,7 @@ Database models and Pydantic schemas.
 
 from .database import (
     Audit, AuditResult, AuditLog,
-    get_db, init_db, init_db_async,
+    get_db, init_db,
     AsyncSessionLocal, engine
 )
 from .schemas import (
@@ -19,7 +19,7 @@ from .schemas import (
 
 __all__ = [
     "Audit", "AuditResult", "AuditLog",
-    "get_db", "init_db", "init_db_async",
+    "get_db", "init_db",
     "AsyncSessionLocal", "engine",
     "AuditCreate", "AuditResponse", "AuditListResponse",
     "AuditResultResponse", "AuditResultsResponse",
