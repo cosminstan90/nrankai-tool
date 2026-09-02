@@ -485,6 +485,16 @@ class FanoutSession(Base):
     target_position       = Column(Integer, nullable=True)          # 1-based index in sources list
     # Optional linkage to other geo_tool entities
     audit_id        = Column(String(36),  ForeignKey("audits.id",  ondelete="SET NULL"), nullable=True, index=True)
+    # Etapa 4.2 (docs/CONSOLIDATION_PLAN.md): api/routes/projects.py used to
+    # store FanoutProject.id in audit_id (a real FK to the unrelated `audits`
+    # table -- acknowledged as "a hack" in that file's own original comment).
+    # It only worked because PRAGMA foreign_keys=ON is applied to sync_engine
+    # only (api/models/database.py), never to the async engine every request
+    # actually uses -- so the FK was never really enforced. Dedicated column,
+    # matching the pattern already used correctly on FanoutTrackingConfig.project_id
+    # and FanoutCompetitiveReport.project_id (plain nullable string, no FK
+    # there either -- kept consistent with that existing convention).
+    project_id      = Column(String(36),  nullable=True, index=True)
     created_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc), index=True)
     # ── Prompt 15 enrichment columns ─────────────────────────────────────────
     query_origin      = Column(String(20),  default="actual")        # actual | inferred | generated
@@ -516,6 +526,7 @@ class FanoutSession(Base):
             "target_found":         self.target_found,
             "target_position":      self.target_position,
             "audit_id":             self.audit_id,
+            "project_id":           self.project_id,
             "created_at":           self.created_at.isoformat() if self.created_at else None,
             # Enrichment
             "query_origin":         self.query_origin,

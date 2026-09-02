@@ -77,7 +77,7 @@ async def _project_stats(project_id: str, db: AsyncSession) -> dict:
 
     # Total sessions
     total_sessions = (await db.execute(
-        select(func.count(FanoutSession.id)).where(FanoutSession.audit_id == project_id)
+        select(func.count(FanoutSession.id)).where(FanoutSession.project_id == project_id)
     )).scalar_one()
 
     # Latest completed tracking run across all configs for this project
@@ -205,10 +205,10 @@ async def project_dashboard(project_id: str, db: AsyncSession = Depends(get_db))
         .limit(5)
     )).scalars().all()
 
-    # Recent sessions — use project_id stored on session (we store it in engine field hack or audit_id)
+    # Recent sessions linked to this project
     recent_sessions = (await db.execute(
         select(FanoutSession)
-        .where(FanoutSession.audit_id == project_id)
+        .where(FanoutSession.project_id == project_id)
         .order_by(desc(FanoutSession.created_at))
         .limit(10)
     )).scalars().all()
@@ -294,7 +294,7 @@ async def quick_analyze(
         session_id = await _save_fanout_result(
             db2, result,
             target_url=f"https://{proj.target_domain}",
-            audit_id=project_id,
+            project_id=project_id,
         )
     return {"session_id": session_id, "prompt": prompt, "project_id": project_id}
 

@@ -160,10 +160,18 @@ async def _save_fanout_result(
     result: FanoutResult,
     target_url: Optional[str] = None,
     audit_id: Optional[str] = None,
+    project_id: Optional[str] = None,
 ) -> str:
     """
     Persist a FanoutResult to the three DB tables.
     Returns the new session_id (UUID string).
+
+    audit_id: real FK to the `audits` table (an actual site audit this
+        session was run from). project_id: FK to fanout_projects.id (a
+        client/project workspace, api/routes/projects.py) -- kept as a
+        separate column rather than overloading audit_id (docs/
+        CONSOLIDATION_PLAN.md Etapa 4.2; see migrations/versions/
+        0011_fanout_session_project_id.py for why the old approach was unsafe).
     """
     session_id = str(uuid.uuid4())
     tgt_domain = _target_domain(target_url)
@@ -194,6 +202,7 @@ async def _save_fanout_result(
         target_found=target_found,
         target_position=target_position,
         audit_id=audit_id,
+        project_id=project_id,
         created_at=datetime.now(timezone.utc),
         # Enrichment (Prompt 15)
         prompt_cluster=_cluster,
