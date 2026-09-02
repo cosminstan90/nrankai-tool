@@ -148,6 +148,7 @@ async def lifespan(app: FastAPI):
     # Start scheduler loop
     from api.routes.schedules import check_and_run_schedules
     from api.workers.fanout_tracker_worker import check_and_run_due_trackings
+    from api.routes.visibility import check_and_run_citation_scans
     _tracking_tick = 0  # count scheduler ticks to run tracking every 15 min
     _bm_tick = 0        # geo benchmark recalc every 1440 ticks (~24 h)
 
@@ -163,6 +164,17 @@ async def lifespan(app: FastAPI):
                 print("[WARNING] Scheduler: check_and_run_schedules timed out after 45 s -- skipping tick")
             except Exception as e:
                 print(f"[ERROR] Scheduler error: {e}")
+
+            # Citation/visibility trackers with schedule_cron set (every tick --
+            # cron matching is minute-precision, so this can't run less often
+            # without risking missing the exact match). Previously defined but
+            # never wired in at all -- docs/CONSOLIDATION_PLAN.md Etapa 3.
+            try:
+                await asyncio.wait_for(check_and_run_citation_scans(), timeout=45)
+            except asyncio.TimeoutError:
+                print("[WARNING] Scheduler: check_and_run_citation_scans timed out after 45 s -- skipping tick")
+            except Exception as e:
+                print(f"[ERROR] Citation scan scheduler error: {e}")
 
             # Fan-out tracking: check every 15 minutes (every 15th tick)
             _tracking_tick += 1
