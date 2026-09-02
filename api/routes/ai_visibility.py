@@ -1,7 +1,15 @@
-"""AI Visibility summary API — aggregates GeoMonitor + CitationTracker data."""
+"""AI Visibility summary API — aggregates visibility-tracking data.
+
+Etapa 3 of the consolidation (docs/CONSOLIDATION_PLAN.md): previously this
+module existed solely to merge GeoMonitorProject/GeoMonitorScan and
+CitationTracker/CitationScan back together after a scan, because they were
+the same feature tracked in two separate tables. Since api/routes/visibility.py
+unified both into CitationTracker/CitationScan, this module now reads one
+table pair instead of computing two parallel aggregates and merging them.
+"""
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, List, Any
 
 from fastapi import APIRouter, Depends
@@ -10,7 +18,6 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import get_db
-from api.models.infra import GeoMonitorProject, GeoMonitorScan
 from api.models.content import CitationTracker, CitationScan
 
 logger = logging.getLogger(__name__)
@@ -70,160 +77,86 @@ def _parse_json_field(value: Any) -> dict:
 
 @router.get("/summary", response_model=VisibilitySummary)
 async def get_visibility_summary(db: AsyncSession = Depends(get_db)):
-    """Return aggregated AI visibility metrics across all projects."""
+    """Return aggregated AI visibility metrics across all tracked targets."""
 
-    # ── GeoMonitor projects + latest completed scan per project ──────────────
-    geo_projects_result = await db.execute(select(GeoMonitorProject))
-    geo_projects = geo_projects_result.scalars().all()
+    trackers_result = await db.execute(select(CitationTracker))
+    trackers = trackers_result.scalars().all()
 
-    geo_scores: List[float] = []
-    geo_provider_data: Dict[str, Dict] = {}
-    geo_last_scan_at: Optional[datetime] = None
+    mention_scores: List[float] = []
+    citation_scores: List[float] = []
+    provider_data: Dict[str, Dict] = {}
+    last_scan_at: Optional[datetime] = None
 
-    for project in geo_projects:
-        scan_result = await db.execute(
-            select(GeoMonitorScan)
-            .where(
-                GeoMonitorScan.project_id == project.id,
-                GeoMonitorScan.status == "completed",
-            )
-            .order_by(desc(GeoMonitorScan.completed_at))
+    async def _latest_completed(tracker_id: str) -> Optional[CitationScan]:
+        result = await db.execute(
+            select(CitationScan)
+            .where(CitationScan.tracker_id == tracker_id, CitationScan.status == "completed")
+            .order_by(desc(CitationScan.completed_at))
             .limit(1)
         )
-        scan = scan_result.scalar_one_or_none()
+        return result.scalar_one_or_none()
+
+    for tracker in trackers:
+        scan = await _latest_completed(tracker.id)
         if scan is None:
             continue
 
         if scan.visibility_score is not None:
-            geo_scores.append(scan.visibility_score)
-
-        # provider_breakdown in GeoMonitorScan: {"chatgpt": {mentioned: 5, total: 10}, ...}
-        breakdown = _parse_json_field(getattr(scan, "provider_breakdown", None))
-        for provider, data in breakdown.items():
-            if not isinstance(data, dict):
-                continue
-            total = data.get("total", 0) or 0
-            mentioned = data.get("mentioned", 0) or 0
-            pct = (mentioned / total * 100) if total > 0 else 0.0
-            if provider not in geo_provider_data:
-                geo_provider_data[provider] = {"mentions_sum": 0.0, "count": 0}
-            geo_provider_data[provider]["mentions_sum"] += pct
-            geo_provider_data[provider]["count"] += 1
-
-        # Track most recent completed_at
-        if scan.completed_at:
-            if geo_last_scan_at is None or scan.completed_at > geo_last_scan_at:
-                geo_last_scan_at = scan.completed_at
-
-    mention_rate = (sum(geo_scores) / len(geo_scores)) if geo_scores else 0.0
-
-    # ── CitationTracker trackers + latest completed scan per tracker ──────────
-    ct_result = await db.execute(select(CitationTracker))
-    citation_trackers = ct_result.scalars().all()
-
-    citation_scores: List[float] = []
-    citation_provider_data: Dict[str, Dict] = {}
-    citation_last_scan_at: Optional[datetime] = None
-
-    for tracker in citation_trackers:
-        scan_result = await db.execute(
-            select(CitationScan)
-            .where(
-                CitationScan.tracker_id == tracker.id,
-                CitationScan.status == "completed",
-            )
-            .order_by(desc(CitationScan.completed_at))
-            .limit(1)
-        )
-        scan = scan_result.scalar_one_or_none()
-        if scan is None:
-            continue
-
+            mention_scores.append(scan.visibility_score)
         if scan.citation_rate is not None:
             citation_scores.append(scan.citation_rate)
 
-        # provider_breakdown in CitationScan: {"chatgpt": {citations: 5, mentions: 8, queries: 20}, ...}
-        breakdown = _parse_json_field(getattr(scan, "provider_breakdown", None))
+        # provider_breakdown: {"chatgpt": {citations, mentions, queries, responses, citation_rate, mention_rate}, ...}
+        breakdown = _parse_json_field(scan.provider_breakdown)
         for provider, data in breakdown.items():
             if not isinstance(data, dict):
                 continue
-            queries = data.get("queries", 0) or 0
-            citations = data.get("citations", 0) or 0
-            pct = (citations / queries * 100) if queries > 0 else 0.0
-            if provider not in citation_provider_data:
-                citation_provider_data[provider] = {"citations_sum": 0.0, "count": 0}
-            citation_provider_data[provider]["citations_sum"] += pct
-            citation_provider_data[provider]["count"] += 1
+            bucket = provider_data.setdefault(provider, {"mentions_sum": 0.0, "mentions_n": 0,
+                                                          "citations_sum": 0.0, "citations_n": 0})
+            if "mention_rate" in data:
+                bucket["mentions_sum"] += data["mention_rate"]
+                bucket["mentions_n"] += 1
+            if "citation_rate" in data:
+                bucket["citations_sum"] += data["citation_rate"]
+                bucket["citations_n"] += 1
 
-        if scan.completed_at:
-            if citation_last_scan_at is None or scan.completed_at > citation_last_scan_at:
-                citation_last_scan_at = scan.completed_at
+        if scan.completed_at and (last_scan_at is None or scan.completed_at > last_scan_at):
+            last_scan_at = scan.completed_at
 
+    mention_rate = (sum(mention_scores) / len(mention_scores)) if mention_scores else 0.0
     citation_rate = (sum(citation_scores) / len(citation_scores)) if citation_scores else 0.0
-
-    # ── Composite score ───────────────────────────────────────────────────────
     composite_score = round(mention_rate * 0.4 + citation_rate * 0.6, 1)
 
-    # ── Provider breakdown (merged) ───────────────────────────────────────────
-    all_providers = set(geo_provider_data.keys()) | set(citation_provider_data.keys())
     provider_breakdown: Dict[str, ProviderStats] = {}
-    for provider in all_providers:
-        geo_d = geo_provider_data.get(provider)
-        cit_d = citation_provider_data.get(provider)
-        mentions_avg = None
-        citations_avg = None
-        if geo_d and geo_d["count"] > 0:
-            mentions_avg = round(geo_d["mentions_sum"] / geo_d["count"], 1)
-        if cit_d and cit_d["count"] > 0:
-            citations_avg = round(cit_d["citations_sum"] / cit_d["count"], 1)
+    for provider, d in provider_data.items():
+        mentions_avg = round(d["mentions_sum"] / d["mentions_n"], 1) if d["mentions_n"] else None
+        citations_avg = round(d["citations_sum"] / d["citations_n"], 1) if d["citations_n"] else None
         provider_breakdown[provider] = ProviderStats(mentions=mentions_avg, citations=citations_avg)
 
-    # ── Trend: compare to second-most-recent composite ────────────────────────
+    # Trend: compare to second-most-recent completed scan per tracker
     trend: Optional[str] = None
-    if geo_projects or citation_trackers:
-        # Build previous composite from second-latest scans
-        prev_geo_scores: List[float] = []
-        for project in geo_projects:
-            scans_result = await db.execute(
-                select(GeoMonitorScan)
-                .where(
-                    GeoMonitorScan.project_id == project.id,
-                    GeoMonitorScan.status == "completed",
-                )
-                .order_by(desc(GeoMonitorScan.completed_at))
-                .limit(2)
-            )
-            scans = scans_result.scalars().all()
-            if len(scans) >= 2 and scans[1].visibility_score is not None:
-                prev_geo_scores.append(scans[1].visibility_score)
-
-        prev_citation_scores: List[float] = []
-        for tracker in citation_trackers:
-            scans_result = await db.execute(
+    if trackers:
+        prev_mention: List[float] = []
+        prev_citation: List[float] = []
+        for tracker in trackers:
+            result = await db.execute(
                 select(CitationScan)
-                .where(
-                    CitationScan.tracker_id == tracker.id,
-                    CitationScan.status == "completed",
-                )
+                .where(CitationScan.tracker_id == tracker.id, CitationScan.status == "completed")
                 .order_by(desc(CitationScan.completed_at))
                 .limit(2)
             )
-            scans = scans_result.scalars().all()
-            if len(scans) >= 2 and scans[1].citation_rate is not None:
-                prev_citation_scores.append(scans[1].citation_rate)
+            scans = result.scalars().all()
+            if len(scans) >= 2:
+                if scans[1].visibility_score is not None:
+                    prev_mention.append(scans[1].visibility_score)
+                if scans[1].citation_rate is not None:
+                    prev_citation.append(scans[1].citation_rate)
 
-        if prev_geo_scores or prev_citation_scores:
-            prev_mention = (sum(prev_geo_scores) / len(prev_geo_scores)) if prev_geo_scores else mention_rate
-            prev_citation = (sum(prev_citation_scores) / len(prev_citation_scores)) if prev_citation_scores else citation_rate
-            prev_composite = prev_mention * 0.4 + prev_citation * 0.6
-            delta = composite_score - prev_composite
+        if prev_mention or prev_citation:
+            pm = (sum(prev_mention) / len(prev_mention)) if prev_mention else mention_rate
+            pc = (sum(prev_citation) / len(prev_citation)) if prev_citation else citation_rate
+            delta = composite_score - (pm * 0.4 + pc * 0.6)
             trend = f"+{delta:.1f}" if delta >= 0 else f"{delta:.1f}"
-
-    # ── last_scan_at ──────────────────────────────────────────────────────────
-    last_scan_at: Optional[str] = None
-    candidates = [d for d in [geo_last_scan_at, citation_last_scan_at] if d is not None]
-    if candidates:
-        last_scan_at = max(candidates).isoformat()
 
     return VisibilitySummary(
         composite_score=composite_score,
@@ -231,58 +164,37 @@ async def get_visibility_summary(db: AsyncSession = Depends(get_db)):
         citation_rate=round(citation_rate, 1),
         provider_breakdown=provider_breakdown,
         trend=trend,
-        last_scan_at=last_scan_at,
-        geo_projects_count=len(geo_projects),
-        citation_trackers_count=len(citation_trackers),
+        last_scan_at=last_scan_at.isoformat() if last_scan_at else None,
+        geo_projects_count=len(trackers),
+        citation_trackers_count=len(trackers),
     )
 
 
 @router.get("/recent-scans", response_model=List[RecentScan])
 async def get_recent_scans(db: AsyncSession = Depends(get_db)):
-    """Return last 10 scans combined from GeoMonitor and CitationTracker."""
-    scans: List[RecentScan] = []
-
-    # Geo scans
-    geo_result = await db.execute(
-        select(GeoMonitorScan, GeoMonitorProject)
-        .join(GeoMonitorProject, GeoMonitorScan.project_id == GeoMonitorProject.id)
-        .order_by(desc(GeoMonitorScan.created_at))
-        .limit(10)
-    )
-    for scan, project in geo_result.all():
-        scans.append(RecentScan(
-            id=scan.id,
-            type="geo",
-            project_name=project.name,
-            website=project.website,
-            score=scan.visibility_score,
-            status=scan.status,
-            completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
-            project_url=f"/geo-monitor/projects/{project.id}",
-        ))
-
-    # Citation scans
-    cit_result = await db.execute(
+    """Return the last 10 scans across all tracked targets."""
+    result = await db.execute(
         select(CitationScan, CitationTracker)
         .join(CitationTracker, CitationScan.tracker_id == CitationTracker.id)
         .order_by(desc(CitationScan.created_at))
         .limit(10)
     )
-    for scan, tracker in cit_result.all():
+
+    scans: List[RecentScan] = []
+    for scan, tracker in result.all():
+        has_url_patterns = bool(_parse_json_field(tracker.url_patterns) if isinstance(tracker.url_patterns, str) else tracker.url_patterns)
+        # Prefer citation_rate when url_patterns is configured (this target cares about
+        # URL citations specifically); otherwise fall back to the broader mention rate.
+        score = scan.citation_rate if (has_url_patterns and scan.citation_rate is not None) else scan.visibility_score
         scans.append(RecentScan(
             id=scan.id,
-            type="citation",
+            type="citation" if (has_url_patterns and scan.citation_rate is not None) else "geo",
             project_name=tracker.name,
             website=tracker.website,
-            score=scan.citation_rate,
+            score=score,
             status=scan.status,
             completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
             project_url=f"/citations/trackers/{tracker.id}",
         ))
 
-    # Sort combined list by completed_at desc, then return top 10
-    def sort_key(s: RecentScan):
-        return s.completed_at or ""
-
-    scans.sort(key=sort_key, reverse=True)
     return scans[:10]

@@ -8,11 +8,10 @@ from .compare import router as compare_router
 from .summary import router as summary_router
 from .benchmarks import router as benchmarks_router
 from .schedules import router as schedules_router
-from .geo_monitor import router as geo_monitor_router
+from .visibility import router as citation_tracker_router, router_geo as geo_monitor_router
 from .content_briefs import router as content_briefs_router
 from .pdf_reports import router as pdf_reports_router
 from .schema_gen import router as schema_gen_router
-from .citation_tracker import router as citation_tracker_router
 from .portfolio import router as portfolio_router
 from .costs import router as costs_router
 from .gap_analysis import router as gap_analysis_router

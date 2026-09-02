@@ -100,36 +100,49 @@ class CitationTracker(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     alert_threshold = Column(Float, default=15.0, nullable=True)
     alert_webhook_url = Column(String(500), nullable=True)
+    # Etapa 3 consolidation (docs/CONSOLIDATION_PLAN.md) — absorbed from the
+    # former geo_monitor_projects, which had no equivalent of url_patterns'
+    # precise URL-citation matching, and vice versa for these three fields.
+    brand_keywords = Column(Text, nullable=True)  # JSON array — broader than url_patterns, matches a plain mention
+    language = Column(String(50), nullable=True, default="English")
+    competitors = Column(JSON, nullable=True, default=list)  # [{"name": str, "brand_keywords": [str], "website": str}]
 
     # Relationship to scans
     scans = relationship("CitationScan", back_populates="tracker", cascade="all, delete-orphan")
-    
+
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
         import json
-        
+
         url_patterns_parsed = []
         tracking_queries_parsed = []
         providers_config_parsed = {}
-        
+        brand_keywords_parsed = []
+
         try:
             if self.url_patterns:
                 url_patterns_parsed = json.loads(self.url_patterns)
         except (json.JSONDecodeError, TypeError):
             url_patterns_parsed = []
-        
+
         try:
             if self.tracking_queries:
                 tracking_queries_parsed = json.loads(self.tracking_queries)
         except (json.JSONDecodeError, TypeError):
             tracking_queries_parsed = []
-        
+
         try:
             if self.providers_config:
                 providers_config_parsed = json.loads(self.providers_config)
         except (json.JSONDecodeError, TypeError):
             providers_config_parsed = {}
-        
+
+        try:
+            if self.brand_keywords:
+                brand_keywords_parsed = json.loads(self.brand_keywords)
+        except (json.JSONDecodeError, TypeError):
+            brand_keywords_parsed = []
+
         return {
             "id": self.id,
             "name": self.name,
@@ -140,7 +153,10 @@ class CitationTracker(Base):
             "schedule_cron": self.schedule_cron,
             "is_active": bool(self.is_active),
             "last_scan_at": self.last_scan_at.isoformat() if self.last_scan_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "brand_keywords": brand_keywords_parsed,
+            "language": self.language or "English",
+            "competitors": self.competitors or [],
         }
 
 
@@ -154,7 +170,7 @@ class CitationScan(Base):
     status = Column(String(20), default="pending")
     total_queries = Column(Integer, default=0)
     total_citations = Column(Integer, default=0)  # URL appeared in response
-    total_mentions = Column(Integer, default=0)  # Brand mentioned (broader)
+    total_mentions = Column(Integer, default=0)  # Brand mentioned (broader) — same role as geo_monitor's mentioned_count
     citation_rate = Column(Float, nullable=True)  # citations / (queries × providers) × 100
     results_json = Column(Text, nullable=True)  # Full results per query per provider
     provider_breakdown = Column(Text, nullable=True)  # JSON: {"chatgpt": {citations: 5, mentions: 8, queries: 20}, ...}
@@ -162,7 +178,10 @@ class CitationScan(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    
+    # Etapa 3 consolidation — absorbed from the former geo_monitor_scans.
+    visibility_score = Column(Float, nullable=True)  # total_mentions / total_queries × 100 (broader than citation_rate)
+    competitor_scores = Column(JSON, nullable=True, default=dict)  # {"brand-a.com": {"name": str, "mention_rate": float}}
+
     # Relationship back to tracker
     tracker = relationship("CitationTracker", back_populates="scans")
     
@@ -200,9 +219,11 @@ class CitationScan(Base):
             "total_citations": self.total_citations,
             "total_mentions": self.total_mentions,
             "citation_rate": self.citation_rate,
+            "visibility_score": self.visibility_score,
             "results_json": results_parsed,
             "provider_breakdown": provider_breakdown_parsed,
             "top_cited_urls": top_cited_urls_parsed,
+            "competitor_scores": self.competitor_scores or {},
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": self.completed_at.isoformat() if self.completed_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None
