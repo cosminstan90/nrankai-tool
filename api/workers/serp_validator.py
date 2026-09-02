@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 from urllib.parse import urlparse
 
+from api.utils.domain import strip_www
+
 logger = logging.getLogger("serp_validator")
 
 SERPER_ENDPOINT   = "https://google.serper.dev/search"
@@ -36,7 +38,7 @@ class SERPResult:
 
 def _domain_from_url(url: str) -> str:
     try:
-        return urlparse(url).netloc.lstrip("www.")
+        return strip_www(urlparse(url).netloc)
     except Exception:
         return url
 

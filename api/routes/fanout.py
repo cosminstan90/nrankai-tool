@@ -36,6 +36,7 @@ from api.models.database import (
     FanoutPromptLibrary,
 )
 from api.routes.costs import track_cost
+from api.utils.domain import strip_www
 from api.utils.errors import raise_not_found, raise_bad_request
 from api.workers.fanout_analyzer import (
     analyze_prompt, analyze_batch, analyze_multi_engine,
@@ -146,7 +147,7 @@ class MultiEngineRequest(BaseModel):
 def _extract_domain(url: str) -> str:
     """Return bare domain (no www.) from a URL string."""
     try:
-        return urlparse(url).netloc.lstrip("www.") or ""
+        return strip_www(urlparse(url).netloc) or ""
     except Exception:
         return ""
 
@@ -797,7 +798,7 @@ async def create_tracking_config(
 
     config = FanoutTrackingConfig(
         name=req.name,
-        target_domain=req.target_domain.lower().lstrip("www."),
+        target_domain=strip_www(req.target_domain.lower()),
         target_brand=req.target_brand,
         prompts=req.prompts,
         engines=req.engines,

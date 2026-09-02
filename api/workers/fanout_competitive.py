@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 
+from api.utils.domain import strip_www
 from api.workers.fanout_analyzer import analyze_prompt, PROVIDER_DEFAULTS
 from api.workers.prompt_discovery import classify_prompt_cluster
 
@@ -71,10 +72,10 @@ def _bare_domain(raw: str) -> str:
     # If it looks like a URL, parse it; otherwise treat as plain domain
     if raw.startswith("http://") or raw.startswith("https://"):
         try:
-            return urlparse(raw).netloc.lstrip("www.").lower()
+            return strip_www(urlparse(raw).netloc).lower()
         except Exception:
             return raw.lower()
-    return raw.lstrip("www.").lower()
+    return strip_www(raw).lower()
 
 
 def _domain_in_sources(domain: str, sources) -> tuple[bool, int]:

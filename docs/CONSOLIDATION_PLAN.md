@@ -590,7 +590,75 @@ Curățare colaterală: import mort `raise_bad_request` eliminat din
 de rețea în CI): `tests/test_entity_checker_wikipedia.py`. pytest (88 passed),
 smoke, api_diff verde.
 
-Rămâne neexaminat: `serpiq`.
+### 4.9 `serpiq` — ✅ validat live, 3 bug-uri reparate (1 sistemic, 2 locale) (2026-09-02)
+Modul mare și distinct (~2350 linii — `app/modules/serpiq/` + `api/models/serpiq.py`,
+migrarea `0008`): "SERP Snapshot & Instant Analysis" — analiză completă a unei
+căutări sau URL: fetch SERP live (DataForSEO), analiză on-page a URL-ului
+țintă, verdict (optimize/create/compete/dominate/gap) + brief opțional Claude.
+Nu se fuzionează cu nimic — arhitectură proprie, coerentă, deja cu propriile
+tabele/migrare, cu un bug de concurență (`_save_snapshot` lazy-load greenlet)
+deja reparat într-o sesiune anterioară (vezi git log).
+
+**Bug #1 (sistemic, descoperit aici dar depășește serpiq) — `.lstrip("www.")`:**
+`str.lstrip(chars)` elimină un *set* de caractere, nu un prefix literal —
+`"wework.com".lstrip("www.")` → `"ework.com"` (corupe orice domeniu care
+începe cu litera 'w', nu doar "www." literal: webflow.com, weebly.com,
+wetransfer.com sunt companii reale afectate). Găsit identic duplicat în
+**10 fișiere, 19 apariții**: `serp_validator.py`, cele 3 fișiere serpiq,
+`fanout_tracker_worker.py` (×4), `prompt_discovery.py` (×5),
+`fanout_cross_reference.py`, `fanout_competitive.py` (×2), `fanout_analyzer.py`
+(cel mai grav — `FanoutSource.domain`, valoarea persistată în DB pentru
+*fiecare* sursă din *fiecare* sesiune Fan-Out, folosită de citation tracking,
+analiză competitivă, cross-reference, `is_target` matching), `fanout.py` (×2).
+
+**Reparat (aprobat explicit ca reparație sistemică):** `api/utils/domain.py`
+→ `strip_www(domain)`, verifică prefixul literal case-insensitiv, păstrează
+cazul restului stringului. Înlocuit toate cele 19 apariții din cele 10
+fișiere. Verificat live: `FanoutSource(url="https://wework.com/...")` →
+`domain == "wework.com"` (înainte: `"ework.com"`); endpoint SerpIQ cu
+`input_value="https://webflow.com/"` → keyword și domeniu corecte, poziție
+găsită = 1 (înainte, bug-ul ar fi corupt keyword-ul derivat din hostname).
+Test de regresie: `tests/test_domain_strip_www.py`.
+
+**Bug #2 (serpiq, descoperit live) — tipuri SERP nefiltrate:** `SERPFetcher.
+_parse_item()` folosea o listă neagră incompletă (`"paid", "shopping", "app",
+"map"`) pentru a decide ce item-uri DataForSEO să păstreze. Blocurile
+`ai_overview` și `people_also_ask` — extrem de comune pe SERP-urile reale din
+2026 — treceau nefiltrate, fără `url`/`domain`/`title` proprii, ocupând un
+slot din "top 20" cu un rând complet gol și **dislocuind un rezultat organic
+real**. Confirmat live pe o căutare reală ("best crm software"): 3 din 20
+rânduri persistate erau goale (poziții 1, 3, 12 — ai_overview + 2×
+people_also_ask), 3 rezultate organice reale pierdute. Existase deja o
+constantă `_ORGANIC_TYPES` definită dar niciodată folosită — exact tiparul
+"scris corect, niciodată conectat" găsit deja de mai multe ori în alte
+sateliți. **Reparat:** switch de la listă neagră la listă albă
+(`_VALID_ITEM_TYPES = _ORGANIC_TYPES | {local_pack, video}`), folosind
+constanta deja existentă. Verificat live: aceeași căutare → 19 item-uri
+reale, zero rânduri goale. Test de regresie: `tests/test_serpiq_item_filtering.py`.
+
+**Bug #3 (serpiq, consecință directă a #2) — "top 3" după număr de poziție
+literal:** `verdict_engine.py` (3 locuri: `avg_word_count_top3`,
+`_top3_domains_bullet`, `_schema_rate_top_n`) filtra după `position in (1,2,3)`
+/ `position <= n` — dar odată ce blocurile ai_overview/people_also_ask nu mai
+ocupă acele poziții ca rânduri goale (bug #2 reparat), pozițiile absolute rar
+mai cad exact pe 1/2/3 pe SERP-uri reale. Confirmat live: bullet-ul "Top 3
+rezultate" arăta **un singur** domeniu în loc de 3, deși existau clar 3+
+competitori organici reali imediat după (poziții 4, 5, 6). **Reparat:**
+folosește ordinea din listă (`serp_items[:3]`/`serp_items[:n]`) — lista e deja
+ordonată după rank real și acum fără zgomot — în loc de numărul de poziție
+literal. Verificat: `position_found`/`find_url_in_serp` NU au nevoie de
+aceeași schimbare (folosesc corect poziția absolută reală, semnificativă
+pentru "unde apari tu exact"). Test de regresie: `tests/test_serpiq_verdict_top3.py`.
+
+pytest (100 passed), smoke, api_diff verde. Toate verificate cu apeluri reale
+către DataForSEO live (nu mock-uri) — credențiale `DATAFORSEO_LOGIN`/
+`DATAFORSEO_PASSWORD` sunt configurate în acest deployment.
+
+Cu acest satelit, toate cele 6 module identificate ca neexaminate în Etapa
+4.2 (`answer_calibration`, `gsc_fanout`, `cocitation`, `mention_seeding`,
+`entity`, `serpiq`) sunt acum validate live. Etapa 4 poate fi considerată
+închisă, rămâne doar 4.3 (reevaluare fuziune cu `visibility/` — niciun
+candidat găsit, niciunul dintre cele 6 s-a dovedit duplicat).
 
 ### 4.3 Reunifică cu `visibility/` — de re-evaluat
 Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele

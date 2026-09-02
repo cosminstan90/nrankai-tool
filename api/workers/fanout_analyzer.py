@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from urllib.parse import urlparse
 
+from api.utils.domain import strip_www
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
@@ -49,7 +50,7 @@ class FanoutSource:
     def __post_init__(self):
         if not self.domain and self.url:
             try:
-                self.domain = urlparse(self.url).netloc.lstrip("www.")
+                self.domain = strip_www(urlparse(self.url).netloc)
             except Exception:
                 self.domain = ""
 

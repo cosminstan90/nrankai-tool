@@ -396,11 +396,15 @@ class SerpIQVerdictEngine:
         d.dominant_content_type = self._detect_content_type(serp_items)
 
         # ── Word count average for top 3 ──────────────────────────────────
+        # "Top 3" means the first 3 items by list order, not literal
+        # position in (1, 2, 3): SERP feature blocks (AI Overview, People
+        # Also Ask, etc.) commonly occupy those exact position numbers
+        # without being ranked pages, which would otherwise starve this of
+        # real data on a large fraction of real-world queries.
         top3_wcs = [
             _attr(item, "word_count_estimated")
-            for item in serp_items
-            if _attr(item, "position") in (1, 2, 3)
-            and _attr(item, "word_count_estimated")
+            for item in serp_items[:3]
+            if _attr(item, "word_count_estimated")
         ]
         if top3_wcs:
             d.avg_word_count_top3 = int(sum(top3_wcs) / len(top3_wcs))
@@ -560,11 +564,13 @@ class SerpIQVerdictEngine:
 
     @staticmethod
     def _top3_domains_bullet(serp_items: list) -> str:
-        """Build 'Top 3 rezultate: domain1 (pos1), …' bullet."""
-        top3 = sorted(
-            [i for i in serp_items if _attr(i, "position") in (1, 2, 3)],
-            key=lambda i: _attr(i, "position") or 99,
-        )[:3]
+        """Build 'Top 3 rezultate: domain1 (pos1), …' bullet.
+
+        "Top 3" is the first 3 items by list order, not literal position in
+        (1, 2, 3) -- an AI Overview or People Also Ask block commonly sits
+        at one of those exact position numbers without being a ranked page.
+        """
+        top3 = serp_items[:3]
 
         if not top3:
             return "Nu exista rezultate organice in top 3."
@@ -635,9 +641,12 @@ def _first_featured_snippet(serp_items: list):
 
 def _schema_rate_top_n(serp_items: list, n: int = 3) -> float:
     """
-    Fraction of top-N organic items that have schema markup (0.0–1.0).
+    Fraction of the top-N ranked items (by list order) that have schema
+    markup (0.0-1.0). Uses list order rather than literal position <= n,
+    since SERP feature blocks (AI Overview, People Also Ask) can occupy
+    those position numbers without being ranked pages.
     """
-    top = [i for i in serp_items if (_attr(i, "position") or 99) <= n]
+    top = serp_items[:n]
     if not top:
         return 0.0
     return sum(1 for i in top if _attr(i, "has_schema")) / len(top)

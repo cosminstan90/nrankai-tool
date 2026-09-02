@@ -31,6 +31,7 @@ try:
 except ImportError:
     _BS4_AVAILABLE = False
 
+from api.utils.domain import strip_www
 from api.workers.fanout_analyzer import (
     analyze_prompt, analyze_multi_engine,
     PROVIDER_DEFAULTS, SUPPORTED_PROVIDERS,
@@ -247,7 +248,7 @@ class PromptDiscovery:
         category: str = "generic",
         location: Optional[str] = None,
     ):
-        self.target_domain = target_domain.lower().lstrip("www.")
+        self.target_domain = strip_www(target_domain.lower())
         self.target_brand = target_brand
         self.category = category if category in TEMPLATES else "generic"
         self.location = location or ""
@@ -316,7 +317,7 @@ class PromptDiscovery:
     def _domain_matches(self, url: str) -> bool:
         """Check if a source URL belongs to the target domain."""
         try:
-            netloc = urlparse(url).netloc.lower().lstrip("www.")
+            netloc = strip_www(urlparse(url).netloc.lower())
             return netloc == self.target_domain or netloc.endswith("." + self.target_domain)
         except Exception:
             return False
@@ -348,7 +349,7 @@ class PromptDiscovery:
             for src in result.sources:
                 url = src.url if hasattr(src, "url") else src.get("url", "")
                 try:
-                    domain = urlparse(url).netloc.lower().lstrip("www.")
+                    domain = strip_www(urlparse(url).netloc.lower())
                 except Exception:
                     domain = ""
                 if domain and domain != self.target_domain:
@@ -737,7 +738,7 @@ def extract_competitors_from_fanout(
         Top 10 competitor domains by frequency, excluding generic/social domains
         and the target domain itself.
     """
-    target = target_domain.lower().lstrip("www.")
+    target = strip_www(target_domain.lower())
     domain_counts: Dict[str, int] = {}
 
     for result in fanout_results:
@@ -758,7 +759,7 @@ def extract_competitors_from_fanout(
                 url = str(src)
 
             try:
-                domain = urlparse(url).netloc.lower().lstrip("www.")
+                domain = strip_www(urlparse(url).netloc.lower())
             except Exception:
                 continue
 
