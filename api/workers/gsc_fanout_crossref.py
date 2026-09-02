@@ -1,15 +1,11 @@
 """
 GSC × Fan-Out Cross-Reference (Prompt 27)
 ==========================================
-Correlates AI fan-out queries with real Google Search Console data to classify
-each query into one of four categories:
-
-  SYNCED      ai_found=T  + serp_found=T  → ideal visibility
-  AI_GAP      ai_found=F  + serp_found=T  → GEO optimisation needed (PRIORITY)
-  AI_ONLY     ai_found=T  + serp_found=F  → SEO opportunity
-  DOUBLE_GAP  ai_found=F  + serp_found=F  → create content
-
-traffic_at_risk = sum of GSC clicks for AI_GAP queries.
+Correlates AI fan-out queries with real Google Search Console data to
+classify each query as SYNCED (target domain already ranks for it in real
+search, per GSC) or GAP (it doesn't yet). See api/utils/serp_classification.py
+for why this is a 2-way split rather than the 4-way ai_found/serp_found
+matrix this module used to compute.
 """
 
 from __future__ import annotations
@@ -96,50 +92,16 @@ def crossref_fanout_gsc(
     gsc_data: Dict[str, dict],
     target_domain: Optional[str] = None,
 ) -> dict:
-    """
-    Classify each fan-out query by comparing AI fan-out presence vs GSC presence.
-    All fan-out queries are considered ai_found=True by definition.
-    """
-    synced:     list = []
-    ai_gap:     list = []
-    ai_only:    list = []
-    double_gap: list = []
+    """Classify each fan-out query by whether it already has GSC search history."""
+    from api.utils.serp_classification import classify_serp_presence
 
-    traffic_at_risk = 0
-
+    entries = []
     for query in fanout_queries:
-        gsc_row  = gsc_data.get(query.lower().strip())
-        serp_found = gsc_row is not None and gsc_row.get("found", False)
-        # All fan-out queries are considered found in AI by definition
-        ai_found   = True
+        gsc_row = gsc_data.get(query.lower().strip())
+        entries.append({
+            "query":      query,
+            "serp_found": gsc_row is not None and gsc_row.get("found", False),
+            "gsc":        gsc_row or {},
+        })
 
-        entry = {
-            "query":        query,
-            "serp_found":   serp_found,
-            "gsc":          gsc_row or {},
-        }
-
-        if ai_found and serp_found:
-            synced.append(entry)
-        elif not ai_found and serp_found:
-            ai_gap.append(entry)
-            traffic_at_risk += gsc_row.get("clicks", 0) if gsc_row else 0
-        elif ai_found and not serp_found:
-            ai_only.append(entry)
-        else:
-            double_gap.append(entry)
-
-    return {
-        "total_queries":    len(fanout_queries),
-        "synced":           synced,
-        "ai_gap":           ai_gap,
-        "ai_only":          ai_only,
-        "double_gap":       double_gap,
-        "traffic_at_risk":  traffic_at_risk,
-        "summary": {
-            "synced_count":     len(synced),
-            "ai_gap_count":     len(ai_gap),
-            "ai_only_count":    len(ai_only),
-            "double_gap_count": len(double_gap),
-        },
-    }
+    return classify_serp_presence(entries)
