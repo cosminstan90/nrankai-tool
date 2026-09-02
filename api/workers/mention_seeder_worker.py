@@ -102,6 +102,22 @@ async def _serper_search(query: str, num: int, api_key: str) -> list[dict]:
         return []
 
 
+def get_active_platforms(cfg) -> dict:
+    """Return the platform -> query-builder mapping this config actually monitors."""
+    active_platforms = {}
+    if cfg.monitor_reddit:     active_platforms["reddit"]     = PLATFORMS["reddit"]
+    if cfg.monitor_quora:      active_platforms["quora"]      = PLATFORMS["quora"]
+    if cfg.monitor_review_sites:
+        active_platforms["g2"]        = PLATFORMS["g2"]
+        active_platforms["capterra"]  = PLATFORMS["capterra"]
+        active_platforms["trustpilot"]= PLATFORMS["trustpilot"]
+    if cfg.monitor_press:      active_platforms["press"]      = PLATFORMS["press"]
+
+    if not active_platforms:
+        active_platforms = dict(PLATFORMS)  # scan all if none configured
+    return active_platforms
+
+
 async def run_mention_scan(config_id: int, db) -> MentionSeedingReport:
     """
     Run a full mention scan for a MentionSeedingConfig.
@@ -135,17 +151,7 @@ async def run_mention_scan(config_id: int, db) -> MentionSeedingReport:
     seen_urls = set(prev_results)
 
     # Determine which platforms to scan
-    active_platforms = {}
-    if cfg.monitor_reddit:     active_platforms["reddit"]     = PLATFORMS["reddit"]
-    if cfg.monitor_quora:      active_platforms["quora"]      = PLATFORMS["quora"]
-    if cfg.monitor_review_sites:
-        active_platforms["g2"]        = PLATFORMS["g2"]
-        active_platforms["capterra"]  = PLATFORMS["capterra"]
-        active_platforms["trustpilot"]= PLATFORMS["trustpilot"]
-    if cfg.monitor_press:      active_platforms["press"]      = PLATFORMS["press"]
-
-    if not active_platforms:
-        active_platforms = dict(PLATFORMS)  # scan all if none configured
+    active_platforms = get_active_platforms(cfg)
 
     # Fan-out searches concurrently
     tasks = {
