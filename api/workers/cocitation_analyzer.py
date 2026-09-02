@@ -78,7 +78,7 @@ async def build_cocitation_map(
             select(FanoutSource).where(FanoutSource.session_id == session.id)
         )).scalars().all()
 
-        source_domains = {_root_domain(s.source_url) for s in sources if s.source_url}
+        source_domains = {_root_domain(s.url) for s in sources if s.url}
         target_present = target_root in source_domains
 
         if target_present:
@@ -118,7 +118,7 @@ async def build_cocitation_map(
             select(FanoutSource).where(FanoutSource.session_id == session.id)
         )).scalars().all()
         for s in sources:
-            all_sources_any_session[_root_domain(s.source_url)] += 1
+            all_sources_any_session[_root_domain(s.url)] += 1
 
     for dom, total_appearances in sorted(all_sources_any_session.items(), key=lambda x: -x[1])[:10]:
         if dom == target_root:
