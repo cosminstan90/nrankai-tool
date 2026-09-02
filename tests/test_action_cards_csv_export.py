@@ -16,9 +16,12 @@ from api.routes.action_cards import export_csv
 class _FakeCard:
     def __init__(self, actions_json):
         self.page_url = "https://example.com/page1"
+        self.page_title = "Example Page"
         self.priority = "critical"
         self.current_score = 45.0
         self.target_score = 70.0
+        self.completed_actions = 0
+        self.total_actions = 1
         self.actions_json = actions_json
 
 

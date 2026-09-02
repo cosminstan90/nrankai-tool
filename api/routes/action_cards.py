@@ -755,49 +755,41 @@ async def export_action_cards(
         raise_bad_request("Invalid format")
 
 
-async def export_csv(cards: List[ActionCard], audit: Audit) -> Response:
-    """Export as CSV file."""
-    import csv
-    import io
-    
-    output = io.StringIO()
-    writer = csv.writer(output)
-    
-    # Header
-    writer.writerow([
-        "Page URL", "Priority", "Current Score", "Target Score",
-        "Action #", "Category", "Action", "Current Text", 
-        "Recommended Text", "Reason", "Difficulty", "Status"
-    ])
-    
-    # Data
+def _cards_to_export_pages(cards: List[ActionCard]) -> List["ExportPage"]:
+    """Normalize ActionCard rows into the shared export engine's shape."""
+    from api.utils.recommendation_export import ExportItem, ExportPage
+
+    pages = []
     for card in cards:
         actions = json.loads(card.actions_json)
-        for action in actions:
-            writer.writerow([
-                card.page_url,
-                card.priority,
-                card.current_score,
-                card.target_score,
-                action.get("id"),
-                action.get("category"),
-                action.get("action"),
-                (action.get("current") or "")[:200],
-                (action.get("recommended") or "")[:500],
-                action.get("reason") or "",
-                action.get("difficulty"),
-                "✓" if action.get("completed") else "☐"
-            ])
-    
-    csv_content = output.getvalue()
-    
-    return Response(
-        content=csv_content,
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f"attachment; filename=action_cards_{audit.website}_{datetime.now().strftime('%Y%m%d')}.csv"
-        }
-    )
+        items = [
+            ExportItem(
+                title=action.get("action"),
+                category=action.get("category"),
+                tag=action.get("difficulty"),
+                current=action.get("current"),
+                recommended=action.get("recommended"),
+                reason=action.get("reason"),
+                completed=bool(action.get("completed")),
+            )
+            for action in actions
+        ]
+        pages.append(ExportPage(
+            page_url=card.page_url,
+            page_title=card.page_title,
+            priority=card.priority,
+            current_score=card.current_score,
+            target_score=card.target_score,
+            progress_label=f"{card.completed_actions}/{card.total_actions}",
+            items=items,
+        ))
+    return pages
+
+
+async def export_csv(cards: List[ActionCard], audit: Audit) -> Response:
+    """Export as CSV file."""
+    from api.utils.recommendation_export import build_csv_response
+    return build_csv_response(_cards_to_export_pages(cards), audit.website, "action_cards")
 
 
 async def export_json(cards: List[ActionCard], audit: Audit) -> dict:
@@ -812,363 +804,13 @@ async def export_json(cards: List[ActionCard], audit: Audit) -> dict:
 
 async def export_trello(cards: List[ActionCard], audit: Audit) -> dict:
     """Export in Trello-importable format."""
-    
-    # Group by priority
-    lists = {
-        "critical": {"name": "🔴 Critical Priority", "cards": []},
-        "high": {"name": "🟠 High Priority", "cards": []},
-        "medium": {"name": "🟡 Medium Priority", "cards": []},
-        "low": {"name": "🟢 Low Priority", "cards": []}
-    }
-    
-    for card in cards:
-        actions = json.loads(card.actions_json)
-        
-        # Create checklist items
-        checklist_items = []
-        for action in actions:
-            item_text = f"{action.get('action')} ({action.get('difficulty')})"
-            checklist_items.append({
-                "name": item_text,
-                "checked": action.get("completed", False)
-            })
-        
-        # Card description
-        description = f"""**Page:** {card.page_url}
-**Current Score:** {card.current_score}/100
-**Target Score:** {card.target_score}/100
-
-## Actions:
-
-"""
-        for action in actions:
-            description += f"""### {action.get('action')}
-**Category:** {action.get('category')}
-**Difficulty:** {action.get('difficulty')}
-
-**Current:** {action.get('current') or 'N/A'}
-
-**Recommended:**
-{action.get('recommended')}
-
-**Why:** {action.get('reason')}
-
----
-
-"""
-        
-        # Trello API hard limit is 16 384 chars per card description.
-        _TRELLO_MAX_DESC = 15_000
-        if len(description) > _TRELLO_MAX_DESC:
-            print(f"[action_cards] Note: Trello description truncated from {len(description):,} "
-                  f"to {_TRELLO_MAX_DESC:,} chars for {card.page_url}")
-            description = description[:_TRELLO_MAX_DESC] + "\n\n*[truncated — see full export for remaining actions]*"
-
-        trello_card = {
-            "name": f"{card.page_title or card.page_url} ({card.current_score}→{card.target_score})",
-            "desc": description,
-            "checklists": [
-                {
-                    "name": "Implementation Checklist",
-                    "items": checklist_items
-                }
-            ]
-        }
-        
-        lists[card.priority]["cards"].append(trello_card)
-    
-    return {
-        "name": f"Action Cards: {audit.website}",
-        "lists": [v for k, v in lists.items() if v["cards"]]
-    }
+    from api.utils.recommendation_export import build_trello_export
+    return build_trello_export(_cards_to_export_pages(cards), audit.website, "Action Cards")
 
 
 async def export_html(cards: List[ActionCard], audit: Audit, db: AsyncSession) -> Response:
     """Export as standalone HTML report."""
-    
-    # Try to get branding config if exists
-    agency_name = "Your Agency"
-    agency_logo = None
-    
-    # Build HTML
-    html = f"""<!DOCTYPE html>
-<html lang="ro">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Action Cards - {audit.website}</title>
-    <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f5f5;
-            padding: 20px;
-        }}
-        
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }}
-        
-        .header {{
-            border-bottom: 3px solid #4F46E5;
-            padding-bottom: 20px;
-            margin-bottom: 40px;
-        }}
-        
-        .header h1 {{
-            color: #1F2937;
-            font-size: 32px;
-            margin-bottom: 10px;
-        }}
-        
-        .header .meta {{
-            color: #6B7280;
-            font-size: 14px;
-        }}
-        
-        .card {{
-            border: 2px solid #E5E7EB;
-            border-radius: 8px;
-            padding: 24px;
-            margin-bottom: 24px;
-            break-inside: avoid;
-        }}
-        
-        .card-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #E5E7EB;
-        }}
-        
-        .card-url {{
-            font-size: 14px;
-            color: #4F46E5;
-            font-weight: 600;
-            word-break: break-all;
-        }}
-        
-        .priority-badge {{
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }}
-        
-        .priority-critical {{ background: #FEE2E2; color: #991B1B; }}
-        .priority-high {{ background: #FED7AA; color: #9A3412; }}
-        .priority-medium {{ background: #FEF3C7; color: #92400E; }}
-        .priority-low {{ background: #D1FAE5; color: #065F46; }}
-        
-        .score-section {{
-            display: flex;
-            gap: 24px;
-            margin-bottom: 20px;
-            padding: 12px;
-            background: #F9FAFB;
-            border-radius: 4px;
-        }}
-        
-        .score-item {{
-            flex: 1;
-        }}
-        
-        .score-label {{
-            font-size: 12px;
-            color: #6B7280;
-            text-transform: uppercase;
-            margin-bottom: 4px;
-        }}
-        
-        .score-value {{
-            font-size: 24px;
-            font-weight: 700;
-            color: #1F2937;
-        }}
-        
-        .action {{
-            margin-bottom: 20px;
-            padding: 16px;
-            background: #F9FAFB;
-            border-left: 4px solid #4F46E5;
-            border-radius: 4px;
-        }}
-        
-        .action-header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }}
-        
-        .action-title {{
-            font-size: 16px;
-            font-weight: 600;
-            color: #1F2937;
-        }}
-        
-        .action-difficulty {{
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }}
-        
-        .difficulty-easy {{ background: #D1FAE5; color: #065F46; }}
-        .difficulty-medium {{ background: #FED7AA; color: #9A3412; }}
-        .difficulty-hard {{ background: #FEE2E2; color: #991B1B; }}
-        
-        .action-content {{
-            margin-top: 12px;
-        }}
-        
-        .action-section {{
-            margin-bottom: 12px;
-        }}
-        
-        .action-label {{
-            font-size: 11px;
-            color: #6B7280;
-            text-transform: uppercase;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }}
-        
-        .action-text {{
-            font-size: 14px;
-            color: #374151;
-            padding: 8px;
-            background: white;
-            border-radius: 4px;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }}
-        
-        .action-reason {{
-            font-size: 13px;
-            color: #6B7280;
-            font-style: italic;
-            margin-top: 8px;
-        }}
-        
-        .footer {{
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #E5E7EB;
-            text-align: center;
-            color: #6B7280;
-            font-size: 13px;
-        }}
-        
-        @media print {{
-            body {{ background: white; padding: 0; }}
-            .container {{ box-shadow: none; padding: 20px; }}
-            .card {{ page-break-inside: avoid; }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Action Cards pentru {audit.website}</h1>
-            <div class="meta">
-                Generated by {agency_name} on {datetime.now().strftime('%d %B %Y')}
-            </div>
-        </div>
-"""
-    
-    # Add cards
-    for card in cards:
-        actions = json.loads(card.actions_json)
-        
-        html += f"""
-        <div class="card">
-            <div class="card-header">
-                <div class="card-url">{escape(card.page_url or "")}</div>
-                <span class="priority-badge priority-{escape(card.priority or "")}">{escape(card.priority or "")}</span>
-            </div>
-
-            <div class="score-section">
-                <div class="score-item">
-                    <div class="score-label">Current Score</div>
-                    <div class="score-value">{card.current_score}/100</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-label">Target Score</div>
-                    <div class="score-value">{card.target_score}/100</div>
-                </div>
-                <div class="score-item">
-                    <div class="score-label">Actions</div>
-                    <div class="score-value">{card.completed_actions}/{card.total_actions}</div>
-                </div>
-            </div>
-"""
-
-        for action in actions:
-            difficulty_class = f"difficulty-{escape(action.get('difficulty', 'medium') or 'medium')}"
-
-            html += f"""
-            <div class="action">
-                <div class="action-header">
-                    <div class="action-title">{"✓ " if action.get('completed') else "☐ "}{escape(action.get('action') or "")}</div>
-                    <span class="action-difficulty {difficulty_class}">{escape(action.get('difficulty') or "")}</span>
-                </div>
-
-                <div class="action-content">
-"""
-
-            if action.get('current'):
-                html += f"""
-                    <div class="action-section">
-                        <div class="action-label">Current:</div>
-                        <div class="action-text">{escape(action.get('current') or "")}</div>
-                    </div>
-"""
-
-            html += f"""
-                    <div class="action-section">
-                        <div class="action-label">Recommended:</div>
-                        <div class="action-text">{escape(action.get('recommended') or "")}</div>
-                    </div>
-
-                    <div class="action-reason">
-                        💡 {escape(action.get('reason') or "")}
-                    </div>
-                </div>
-            </div>
-"""
-        
-        html += """
-        </div>
-"""
-    
-    html += f"""
-        <div class="footer">
-            Generated by {agency_name} • {datetime.now().strftime('%d %B %Y')}
-        </div>
-    </div>
-</body>
-</html>
-"""
-    
-    return Response(
-        content=html,
-        media_type="text/html",
-        headers={
-            "Content-Disposition": f"attachment; filename=action_cards_{audit.website}_{datetime.now().strftime('%Y%m%d')}.html"
-        }
-    )
+    from api.utils.recommendation_export import build_html_response
+    return build_html_response(_cards_to_export_pages(cards), audit.website, "Action Cards", "action_cards")
 
 

@@ -783,6 +783,58 @@ Etapa 5.2 (`benchmarks`, `content_gaps`, `gap_analysis`) neatinse încă de plan
 
 Fuziunea propriu-zisă `action_cards`+`content_briefs` rămâne următorul pas.
 
+#### 5.1e Fuziunea propriu-zisă: doar export-ul unificat (2026-09-02)
+Cu bug-urile reale reparate (5.1b–5.1d), a rămas întrebarea centrală: ce
+înseamnă de fapt „fuzionează action_cards+content_briefs"? Analiza celor
+două fișiere complete a arătat că **nu sunt de fapt duplicate la nivel de
+generare**:
+- Prompt-uri diferite: `action_cards.py` are prompt Python hardcodat;
+  `content_briefs.py` încarcă din `prompts/content_brief.yaml` — teritoriu
+  „nu se modifică fără plan explicit" din CLAUDE.md.
+- Output diferit: action_cards = listă de todo-uri cu text exact de copiat;
+  content_briefs = brief complet de strategie de conținut, cu propriul
+  sub-flux de generare FAQ (`POST /{id}/faq`) pe care action_cards nu-l are.
+- Algoritm de selecție a paginilor diferit: `select_pages_for_briefs`
+  (content_briefs) dedup după `page_url` cu umplere pe două benzi de scor;
+  selecția din `action_cards` e mai simplă, cheie de "deja procesat" pe
+  `result_id`, nu `page_url`. Unificarea ar schimba comportament real pentru
+  utilizatorii existenți ai uneia din cele două funcții.
+
+Forțarea unui singur „pipeline cu formatul ca parametru" aici ar fi repetat
+exact capcana deja identificată de două ori în această etapă (`projects.py`,
+gruparea inițială 5+3). **Decizie (aprobată explicit):** singurul lucru
+cu adevărat duplicat și sigur de unificat era stratul de **export**
+(CSV/HTML/Trello) — `action_cards.py` avea toate 4 formatele,
+`content_briefs.py` avea doar JSON.
+
+Extras `api/utils/recommendation_export.py`: `ExportItem`/`ExportPage` +
+`build_csv_response`/`build_html_response`/`build_trello_export`. Ambele
+seturi de „item-uri de recomandare" au aceeași formă conceptuală (titlu,
+current, recommended, reason, tag de severitate) sub nume de câmpuri
+diferite — `action_cards`: `category/action/current/recommended/reason/
+difficulty`; `content_briefs.content_changes`: `type/section/current/
+recommended/rationale/impact` — mapate 1:1 pe `ExportItem`. Codarea pe
+culori a badge-ului de severitate (verde/portocaliu/roșu) a fost făcută
+agnostică de vocabular (funcționează atât pentru easy/medium/hard cât și
+pentru critical/high/medium), ca să nu se piardă din vizual la generalizare.
+
+Fidelitate verificată explicit față de codul original din `action_cards.py`
+(nu doar „merge, testează la final"): coloana „Category" (pierdută într-o
+primă variantă, adăugată înapoi), badge-ul de progres „X/Y acțiuni"
+(la fel, pierdut apoi recuperat), fallback-ul `page_title or page_url`
+pentru numele cardului Trello. `content_briefs.py` a primit acum, pentru
+prima dată, export CSV/HTML/Trello (înainte doar JSON) — `format=json`
+rămâne default-ul, deci niciun apelant existent nu-și schimbă comportamentul.
+
+Verificat live cu date reale istorice (același audit `53a6d6f0...` care are
+și action_cards și content_briefs): toate 4 formate, ambele fișiere, conțin
+date reale corecte (Category/Tag/Current/Recommended/Reason intacte în CSV,
+grupare pe priority în Trello, culori corecte în HTML). Test de regresie:
+`tests/test_recommendation_export.py`. pytest (120 passed), smoke, api_diff
+verde.
+
+Cu aceasta, Etapa 5.1 se consideră închisă.
+
 ### 5.2 `compare/` — șase module pentru comparație și gap
 `content_gaps` (9), `compare` (6), `gap_analysis` (5), `cross_reference` (5),
 `benchmarks` (5), `multilingual` (2). `compare` și `benchmarks` fac amândouă comparație
