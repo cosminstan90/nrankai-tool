@@ -863,18 +863,57 @@ Review every question/answer and fill in "existing_faq_review"."""
         return {"brief_id": brief_id, "faq_analysis": faq_data}
 
 
+def _briefs_to_export_pages(briefs: List[ContentBrief]) -> List["ExportPage"]:
+    """Normalize ContentBrief rows into the shared export engine's shape.
+
+    Each brief's content_changes entry ({type, section, current, recommended,
+    rationale, impact}) maps onto the same conceptual shape as an
+    action_cards action ({category, action, current, recommended, reason,
+    difficulty}) -- see api/utils/recommendation_export.py.
+    """
+    from api.utils.recommendation_export import ExportItem, ExportPage
+
+    pages = []
+    for brief in briefs:
+        try:
+            brief_data = json.loads(brief.brief_json) if brief.brief_json else {}
+        except json.JSONDecodeError:
+            brief_data = {}
+
+        changes = brief_data.get("content_changes", []) or []
+        items = [
+            ExportItem(
+                title=change.get("section"),
+                category=change.get("type"),
+                tag=change.get("impact"),
+                current=change.get("current"),
+                recommended=change.get("recommended"),
+                reason=change.get("rationale"),
+            )
+            for change in changes
+            if isinstance(change, dict)
+        ]
+        pages.append(ExportPage(
+            page_url=brief.page_url,
+            priority=brief.priority,
+            current_score=brief.current_score,
+            items=items,
+        ))
+    return pages
+
+
 @router.get("/export/{audit_id}")
-async def export_briefs(audit_id: str):
-    """Export all briefs for an audit as JSON."""
+async def export_briefs(audit_id: str, format: str = Query("json", description="Export format: json, csv, html, trello")):
+    """Export all briefs for an audit. Formats: json (default), csv, html, trello."""
     async with AsyncSessionLocal() as db:
         # Verify audit exists
         audit_query = select(Audit).where(Audit.id == audit_id)
         audit_result = await db.execute(audit_query)
         audit = audit_result.scalar_one_or_none()
-        
+
         if not audit:
             raise_not_found("Audit")
-        
+
         # Get all briefs
         query = select(ContentBrief).where(
             ContentBrief.audit_id == audit_id
@@ -882,18 +921,32 @@ async def export_briefs(audit_id: str):
             ContentBrief.priority.desc(),
             ContentBrief.created_at.asc()
         )
-        
+
         result = await db.execute(query)
         briefs = result.scalars().all()
-        
-        # Build export data
-        export_data = {
-            "audit_id": audit_id,
-            "website": audit.website,
-            "audit_type": audit.audit_type,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
-            "total_briefs": len(briefs),
-            "briefs": [brief.to_dict() for brief in briefs]
-        }
-        
-        return export_data
+
+        if format == "json":
+            return {
+                "audit_id": audit_id,
+                "website": audit.website,
+                "audit_type": audit.audit_type,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "total_briefs": len(briefs),
+                "briefs": [brief.to_dict() for brief in briefs]
+            }
+
+        if not briefs:
+            raise HTTPException(status_code=404, detail="No content briefs found")
+
+        pages = _briefs_to_export_pages(briefs)
+        if format == "csv":
+            from api.utils.recommendation_export import build_csv_response
+            return build_csv_response(pages, audit.website, "content_briefs")
+        elif format == "html":
+            from api.utils.recommendation_export import build_html_response
+            return build_html_response(pages, audit.website, "Content Briefs", "content_briefs")
+        elif format == "trello":
+            from api.utils.recommendation_export import build_trello_export
+            return build_trello_export(pages, audit.website, "Content Briefs")
+        else:
+            raise HTTPException(status_code=400, detail="Invalid format. Use: json, csv, html, trello")
