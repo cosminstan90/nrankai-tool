@@ -385,27 +385,65 @@ pentru că `fanout.py:184` instanțiază `FanoutSession(...)` prin ORM, care în
 scrie toate cele 23 de coloane din model în timp ce DB-ul are 13 — deci **și citirea și
 scrierea** eșuau. Etapa 1.3 repară asta.
 
-### 4.1 Validează că funcționează
+### 4.1 Validează că funcționează — ✅ FĂCUT (2026-09-02)
 După fix-ul de schemă: rulează efectiv o analiză Fan-Out din UI (`/fanout`) și confirmă
 că sesiunea se salvează, sursele se populează, iar „Recent Sessions" afișează rezultatul.
 **Până acum nimeni nu a văzut acest feature funcționând — nu presupune că restul
 codului e corect doar pentru că se salvează un rând.** Verifică tot lanțul:
 `fanout_sessions` → `fanout_queries` → `fanout_sources`.
 
-### 4.2 Absoarbe sateliții
-Odată ce Fan-Out e viu, aceste module devin vederi peste el, nu module separate:
-- `projects.py` (9 ops) — e literalmente „Fan-Out Project Management (Prompt 25)",
-  CRUD pentru `FanoutProject`. Numele e înșelător; mută-l în `visibility/`.
-- `answer_calibration.py` (3 ops) — endpoint-urile lui sunt deja sub
-  `/api/fanout/sessions/{id}/...`. E fanout într-un fișier separat.
-- `gsc_fanout.py` (5 ops) — fanout × GSC.
-- `cocitation`, `mention_seeding`, `entity`, `serpiq` — toate operează pe același
-  concept (unde/cum apare brandul), fiecare cu tabelul propriu.
+Rezultat: **confirmat live** — analiză reală prin `POST /api/fanout/analyze`, toate
+cele 3 tabele populate corect, endpoint-uri derivate (`/coverage`, `/action-cards`,
+`/composite-score`) cu rezultate sensibile pe date reale, UI (`/fanout`) randează
+corect, zero erori de consolă. Fix-ul din Etapa 1 a fost suficient — niciun bug nou
+în calea principală analyze→save.
 
-### 4.3 Reunifică cu `visibility/`
-Rezultatul: **un singur domeniu** care răspunde la „unde apar în răspunsurile AI" —
-Fan-Out dă întrebările și sursele, `visibility/` dă evoluția în timp. Cele 11 module
-și ~87 de operații devin un domeniu coerent.
+### 4.2 Absoarbe sateliții — ⚠️ PREMISĂ CORECTATĂ (2026-09-02)
+**Textul original de mai jos (tăiat) presupunea greșit, dintr-o citire superficială
+(doar docstring-ul), că `projects.py` e duplicat de `visibility/`. După citire completă
+și testare live, s-a confirmat că NU e — vezi „Ce s-a găsit în schimb" mai jos.**
+
+~~Odată ce Fan-Out e viu, aceste module devin vederi peste el, nu module separate:~~
+~~- `projects.py` (9 ops) — e literalmente „Fan-Out Project Management (Prompt 25)",~~
+~~  CRUD pentru `FanoutProject`. Numele e înșelător; mută-l în `visibility/`.~~
+
+**Ce s-a găsit în schimb:** `FanoutProject` e un concept distinct și legitim —
+un „workspace per client" (`target_domain` + `target_brand` + `vertical` + `locale`,
+folosit pentru comparație cu benchmark-uri de industrie) care **grupează** sesiuni
+Fan-Out și configurări de tracking, nu un tracker de citări/mențiuni ca
+`CitationTracker`. Nu se absoarbe în `visibility/` — rămâne un nivel de organizare
+separat, posibil deasupra lui `visibility/` într-o eventuală ierarhie viitoare
+(un client poate avea mai multe target-uri de vizibilitate urmărite).
+
+**Bug real găsit și reparat, verificat live:** `projects.py` lega o sesiune de
+proiectul ei scriind UUID-ul proiectului în `FanoutSession.audit_id` — o coloană
+declarată ca FK real către `audits` (`ForeignKey("audits.id")`), semnalat chiar în
+comentariul codului original ca „hack". Funcționa doar pentru că
+`PRAGMA foreign_keys=ON` (`api/models/database.py`) e aplicat doar pe `sync_engine`,
+niciodată pe motorul async pe care merg toate request-urile reale — deci FK-ul nu
+era de fapt impus niciodată. **Reparat**: coloană dedicată `FanoutSession.project_id`
+(migrarea `0011`), fără FK (consecvent cu convenția deja folosită de
+`FanoutTrackingConfig.project_id`/`FanoutCompetitiveReport.project_id`).
+
+**Constatare sistemică, nereparată acum** (risc mai larg decât acest caz):
+verificarea de FK a SQLite e activă doar la pornirea sincronă (`init_db()`), nu și
+pe motorul async folosit de toată aplicația live — deci **nicio constrângere de
+foreign key din schema declarată nu se impune de fapt la runtime**, pentru nicio
+tabelă. Nu s-a atins acum (risc de a strica ceva dacă există deja încălcări de FK
+în date, needs-runtime-check separat) — de investigat separat dacă se dorește
+integritate reală de date.
+
+Rămân neexaminate în profunzime (din lipsă de timp în această etapă):
+`answer_calibration.py` (endpoint-urile lui sunt deja sub `/api/fanout/sessions/{id}/...`
+— probabil chiar fanout, de verificat), `gsc_fanout.py` (fanout × GSC),
+`cocitation`, `mention_seeding`, `entity`, `serpiq` — fiecare cu tabelul propriu,
+de citit complet (nu doar docstring) înainte de orice decizie de fuziune, exact
+lecția din acest caz.
+
+### 4.3 Reunifică cu `visibility/` — de re-evaluat
+Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele
+listate mai sus, dacă vreunul se dovedește, după citire completă, a fi într-adevăr
+duplicat conceptual cu `visibility/` (nu doar tematic apropiat).
 
 ---
 
