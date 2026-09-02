@@ -489,6 +489,35 @@ Rămân neexaminate: `cocitation`, `mention_seeding`, `entity`, `serpiq` — fie
 cu tabelul propriu, de citit complet (nu doar docstring) înainte de orice decizie
 de fuziune.
 
+### 4.6 `cocitation.py` — ✅ validat live, bug de crash reparat (2026-09-02)
+Modul legitim și distinct (Prompt 34 — hartă de co-citare: ce domenii apar
+alături de brandul țintă în sursele citate de AI, clasificate director/
+review-site/competitor). Nu se fuzionează cu nimic — nu se suprapune cu
+`visibility/` sau cu `gsc_fanout.py` (acelea măsoară prezența brandului
+propriu; cocitation măsoară cu cine apare brandul, nu dacă apare).
+
+**Bug găsit:** `build_cocitation_map()` (`api/workers/cocitation_analyzer.py`)
+citea `FanoutSource.source_url`, atribut care nu a existat niciodată pe acel
+model (coloana reală e `url` — `api/models/content.py:575`). Crash garantat
+(`AttributeError`) la fiecare apel — `/api/cocitation/analyze` nu a funcționat
+niciodată, de la implementare. Exact același tipar ca la `answer_calibration.py`
+și `gsc_fanout_crossref.py`: cod scris sintactic corect, referință la o
+coloană care nu există, niciodată exercitat până acum.
+
+Reparat cele 2 apariții (`s.source_url` → `s.url`). Notă: modelul are și un
+câmp `domain` precalculat, dar acesta e doar netloc fără „www.” (nu root
+domain adevărat — un subdomeniu ca `blog.example.com` rămâne neschimbat), pe
+când modulul își calculează singur root domain-ul via `_root_domain(url)`
+pentru gruparea corectă a competitorilor. Am păstrat acest calcul propriu
+(mai precis pentru scopul modulului), am corectat doar numele atributului.
+
+Verificat live: sesiune + surse reale inserate în DB, `build_cocitation_map()`
+apelat direct (clasificare corectă competitor/review_site), apoi toate 2
+endpoint-urile prin HTTP (`analyze` cu `session_ids` explicit, `analyze` fără
+`session_ids` — ramura de auto-descoperire după `target_url`, `analyze` cu
+`project_id`, `GET .../latest` succes + 404). Test de regresie:
+`tests/test_cocitation_analyzer.py`. pytest (81 passed), smoke, api_diff verde.
+
 ### 4.3 Reunifică cu `visibility/` — de re-evaluat
 Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele
 listate mai sus, dacă vreunul se dovedește, după citire completă, a fi într-adevăr
