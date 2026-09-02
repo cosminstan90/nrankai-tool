@@ -782,9 +782,9 @@ async def export_csv(cards: List[ActionCard], audit: Audit) -> Response:
                 action.get("id"),
                 action.get("category"),
                 action.get("action"),
-                action.get("current", "")[:200],
-                action.get("recommended", "")[:500],
-                action.get("reason", ""),
+                (action.get("current") or "")[:200],
+                (action.get("recommended") or "")[:500],
+                action.get("reason") or "",
                 action.get("difficulty"),
                 "✓" if action.get("completed") else "☐"
             ])
