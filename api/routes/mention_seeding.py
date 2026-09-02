@@ -137,10 +137,12 @@ async def get_latest_scan(config_id: int, db: AsyncSession = Depends(get_db)):
         s = r.sentiment or "neutral"
         sentiment_breakdown[s] = sentiment_breakdown.get(s, 0) + 1
 
+    from api.workers.mention_seeder_worker import get_active_platforms
+
     new_count = sum(1 for r in results if r.is_new)
-    covered   = sum(1 for cnt in by_platform.values() if cnt > 0)
-    total_plat = max(len(by_platform), 1)
-    coverage  = round(covered / total_plat * 100, 1)
+    covered    = sum(1 for cnt in by_platform.values() if cnt > 0)
+    total_plat = max(len(get_active_platforms(cfg)), 1)
+    coverage   = round(covered / total_plat * 100, 1)
 
     return {
         "config_id":          config_id,

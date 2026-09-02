@@ -518,6 +518,39 @@ endpoint-urile prin HTTP (`analyze` cu `session_ids` explicit, `analyze` fără
 `project_id`, `GET .../latest` succes + 404). Test de regresie:
 `tests/test_cocitation_analyzer.py`. pytest (81 passed), smoke, api_diff verde.
 
+### 4.7 `mention_seeding.py` — ✅ validat live, bug de logică reparat (2026-09-02)
+Modul legitim și distinct (Prompt 32 — monitorizare Reddit/Quora/G2/Capterra/
+Trustpilot/presă pentru mențiuni de brand, via Serper.dev). Nu se fuzionează
+cu nimic — nicio suprapunere cu celelalte module de vizibilitate (acelea
+urmăresc citări AI; acesta urmărește mențiuni organice pe platforme terțe).
+CRUD-ul de configurări (`create_config`/`list_configs`) și worker-ul
+(`run_mention_scan`) sunt corecte — modelele se potrivesc exact cu utilizarea
+lor în cod, fără drift de schemă.
+
+**Bug găsit (nu crash, logică mereu greșită):** `GET .../latest` calcula
+`coverage_score = covered / len(by_platform)`, dar `by_platform` se construiește
+*doar* din platformele care au avut deja cel puțin o mențiune persistată — deci
+`covered` (numărul de platforme cu `cnt > 0`) e mereu egal cu `len(by_platform)`
+prin construcție. Rezultatul: `coverage_score` raporta mereu 100%, indiferent
+câte platforme monitorizează de fapt configurația — niciodată procentul real
+„din câte platforme urmărite am prezență". Worker-ul își calcula propriul
+coverage_score corect (folosind `active_platforms`, derivat din flag-urile
+`monitor_*` ale configurației, ca numitor real), dar acel calcul nu ajungea
+niciodată la endpoint-ul de citire — era complet duplicat, greșit, separat.
+
+**Reparat:** extras `get_active_platforms(cfg)` din worker într-o funcție
+publică refolosită de ambele locuri; endpoint-ul `latest` folosește acum
+`len(get_active_platforms(cfg))` ca numitor, la fel ca worker-ul.
+
+Verificat live: config cu toate cele 4 flag-uri `monitor_*` active (→ 6
+platforme monitorizate) + 2 mențiuni seed-uite (reddit, g2) → coverage 33.3%
+(înainte de fix: 100%, greșit). Config separat cu doar `monitor_reddit=true`
+(→ 1 platformă) + 1 mențiune → coverage 100% (corect, caz limită validat
+separat). Test de regresie: `tests/test_mention_seeding_coverage.py`.
+pytest (85 passed), smoke, api_diff verde.
+
+Rămân neexaminate: `entity`, `serpiq`.
+
 ### 4.3 Reunifică cu `visibility/` — de re-evaluat
 Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele
 listate mai sus, dacă vreunul se dovedește, după citire completă, a fi într-adevăr
