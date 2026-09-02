@@ -814,7 +814,7 @@ Analyze the above data and generate a comprehensive gap analysis following the J
             
             # Call LLM
             print(f"[Gap Analysis {gap_id}] Calling LLM {provider}/{model}...")
-            response_text = await call_llm_for_summary(
+            response_text, _in_tok, _out_tok = await call_llm_for_summary(
                 provider=provider,
                 model=model,
                 system_prompt=system_prompt,

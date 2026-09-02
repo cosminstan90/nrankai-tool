@@ -678,6 +678,111 @@ Toate iau rezultate de audit și produc recomandări; diferă doar formatul de i
 Adaugă aici și generatoarele: `meta_generator`, `schema_gen`, `llms_txt`.
 *Date reale de păstrat: 40 action_cards, 27 url_guides, 25 content_briefs, 74 schema_markups.*
 
+#### 5.1a Premisă corectată după citire completă (2026-09-02)
+Ca și la `projects.py` (Etapa 4.2): premisa „5+3 module, același input/output"
+nu rezistă la citirea corpului efectiv al fiecărui fișier (survey complet,
+8 fișiere, prin agent de research + verificare independentă a fiecărei
+afirmații-cheie). Doar **`action_cards`+`content_briefs`** sunt cu adevărat
+duplicate (aceeași formă: findings per-pagină → rând de recomandare
+structurată → export-uri). Restul sunt conceptual distincte:
+- `guide.py` — agregă multi-sursă **per URL** (nu per `result_id`), include
+  date GSC live; mai aproape de `insights.py` decât de perechea de mai sus.
+- `insights.py` — clasificator batch cross-sursă (GSC+GA4+Ads+audit), nu
+  „findings → recomandare"; nu atinge deloc `ContentBrief`/`ActionCard`/
+  `SchemaMarkup`. Candidat mai bun pentru gruparea din 5.2.
+- `summary.py` — cardinalitate greșită pentru fuziune (un rând per audit
+  întreg, nu per pagină) — și e sursa de infrastructură comună (vezi mai jos).
+- `meta_generator.py` — zero persistență, zero legătură cu vreun audit;
+  operează pe orice URL scrapuit live, nu pe „findings".
+- `schema_gen.py` — artefact categoric diferit (JSON-LD validat determinist,
+  nu o „recomandare"), și el însuși hub de infrastructură comună.
+- `llms_txt.py` — artefact site-level pentru un consumator diferit (crawlere
+  AI, nu om) — markdown, nu JSON structurat.
+
+Scop revizuit: doar fuziunea `action_cards`+`content_briefs`.
+
+#### 5.1b Bug reparat înainte de fuziune: crash CSV export (2026-09-02)
+`export_csv()` din `action_cards.py` făcea `action.get("current", "")[:200]`
+— `dict.get(key, default)` înlocuiește default-ul doar când **cheia** lipsește,
+nu când valoarea e `None`, iar promptul LLM din același fișier instruiește
+explicit modelul să întoarcă `"current": null` când nu există text curent
+(și o altă ramură din același fișier construiește direct `"current": None`).
+Export CSV crash garantat pentru orice card cu acest caz normal, așteptat.
+Reparat (`current`/`recommended`/`reason`), verificat live cu un card real
+având `"current": null` prin toate cele 4 formate de export. Test:
+`tests/test_action_cards_csv_export.py`. Commit `6898122`.
+
+#### 5.1c Extragere infrastructură comună înainte de fuziune (2026-09-02)
+`call_llm_for_summary`/`clean_json_response` erau definite în `summary.py`
+dar importate de **7 alte fișiere** (`action_cards`, `content_briefs`,
+`benchmarks`, `content_gaps`, `draft_optimizer`, `gap_analysis`, `schedules`)
+— infrastructură comună găzduită accidental într-un singur router, nu într-un
+loc real partajat. Mutat verbatim în `api/utils/llm_json_client.py`;
+`summary.py` re-exportă ambele nume (același tipar ca re-exportul
+`app/modules/serpiq/models.py`/`api/models/clusteriq.py`), deci niciunul din
+cele 7 fișiere nu și-a schimbat importul. Verificat: toate cele 8 fișiere se
+importă fără eroare, apel Anthropic real prin funcția mutată confirmă
+comportament identic. Commit `cce345e`.
+
+#### 5.1d ⚠️ Cel mai mare bug găsit în tot acest proiect de consolidare (2026-09-02)
+În timpul citirii complete a `content_briefs.py` (pas necesar înainte de
+fuziune, exact disciplina învățată de la `projects.py`), a ieșit la iveală
+că **`call_llm_for_summary` întoarce un tuple `(text, input_tokens,
+output_tokens)`** — așa a fost din **primul commit al proiectului**, nu o
+regresie — dar **6 din cele 8 fișiere care îl apelează tratează valoarea
+întoarsă ca și cum ar fi direct textul**, apoi crapă când `clean_json_response()`
+sau `.strip()` sunt apelate pe tuple:
+
+| Fișier | Bug exact | Verificat live |
+|---|---|---|
+| `action_cards.py` | `response.strip()` pe tuple | ✅ apel Anthropic real reușit (200 OK), apoi crash — recomandările reale erau **mereu aruncate**, fallback la acțiuni generice |
+| `content_briefs.py` (×2: brief + FAQ) | `clean_json_response(tuple)` | ✅ 500 live, eroare capturată direct în rândul din DB: `'tuple' object has no attribute 'strip'` |
+| `benchmarks.py` | `clean_json_response(tuple)` | ✅ confirmat live (după fix, alt eșec — model retras din date istorice, nu bug de cod) |
+| `content_gaps.py` (×2) | **mai grav** — `content=` în loc de `user_content=`, kwarg care nu există deloc → `TypeError` **înainte** să ajungă la LLM | ✅ confirmat live |
+| `gap_analysis.py` | `clean_json_response(tuple)` | ✅ confirmat live |
+
+Doar `draft_optimizer.py` și `generate_summary_task` din `summary.py` însuși
+au despachetat corect tuple-ul dintotdeauna.
+
+**Dovada din DB (cronologie):** toate cele 40 de rânduri `action_cards` (27
+feb – 2 mar 2026) și toate cele 25 `content_briefs` (26 feb – 9 mar 2026) —
+nimic de atunci (azi: 2 sep 2026). ~6 luni de tăcere completă. Aceste
+funcționalități nu au funcționat NICIODATĂ cu adevărat — pentru
+`action_cards`, degradau silențios la acțiuni generice (crash-ul era prins
+și mascat de un fallback); pentru `content_briefs`, generarea eșua complet
+(rânduri `status="failed"`, 4 din 25 rânduri istorice confirmă exact acest
+tipar, restul fiind probabil dintr-o versiune anterioară a codului).
+
+**Bug suplimentar găsit în `content_gaps.py` în timpul verificării live:**
+toate endpoint-urile cu `gap_id` (`GET`/`PATCH`/`POST .../generate-full-brief`/
+`DELETE`) tipau parametrul ca `int`, dar `ContentGap.id` e un UUID string
+(`String(36)`) — FastAPI respingea orice `gap_id` real cu 422 înainte ca
+handler-ul să ruleze vreodată. Reparat (`gap_id: int` → `gap_id: str`, 5
+locuri), verificat live (422 → 200 pe același UUID real).
+
+**Reparat și verificat live, cu apeluri Anthropic reale (nu mock-uri), pentru
+toate cele 5 fișiere / 7 puncte de apel** — fiecare a produs conținut real,
+substanțial, pentru prima dată vreodată:
+- `action_cards.py`: 5 acțiuni reale, în română, specifice paginii testate.
+- `content_briefs.py`: brief complet (executive summary, content_changes,
+  seo/geo requirements) — prima generare reușită din istoria funcției.
+- `benchmarks.py`: analiză competitivă completă (competitive_summary,
+  strengths/weaknesses/opportunities).
+- `content_gaps.py`: brief complet de conținut pentru un gap real.
+- `gap_analysis.py`: analiză gap completă (overall_gap_score, gaps detaliate).
+
+Teste de regresie: `tests/test_call_llm_for_summary_unpacking.py` (verifică
+static, prin AST, că niciun apel nu mai atribuie tuple-ul unei singure
+variabile), `tests/test_content_gaps_fixes.py` (fixează kwarg-ul corect +
+tipul `str` pentru `gap_id`). pytest (110 passed), smoke, api_diff verde.
+
+**Notă de context:** severitatea și domeniul acestui bug depășesc cu mult
+scope-ul „fuzionează action_cards+content_briefs" — a fost prezentat explicit
+utilizatorului înainte de reparare, dat fiind că afectează și module din
+Etapa 5.2 (`benchmarks`, `content_gaps`, `gap_analysis`) neatinse încă de plan.
+
+Fuziunea propriu-zisă `action_cards`+`content_briefs` rămâne următorul pas.
+
 ### 5.2 `compare/` — șase module pentru comparație și gap
 `content_gaps` (9), `compare` (6), `gap_analysis` (5), `cross_reference` (5),
 `benchmarks` (5), `multilingual` (2). `compare` și `benchmarks` fac amândouă comparație

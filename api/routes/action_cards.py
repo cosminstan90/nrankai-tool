@@ -274,7 +274,7 @@ Return ONLY the JSON array, no other text.
     try:
         # Call LLM using shared helper
         # max_tokens=4096 to avoid truncated JSON strings in "recommended" fields
-        response = await call_llm_for_summary(
+        response, _in_tok, _out_tok = await call_llm_for_summary(
             provider=provider,
             model=model,
             system_prompt=system_prompt,
@@ -782,9 +782,9 @@ async def export_csv(cards: List[ActionCard], audit: Audit) -> Response:
                 action.get("id"),
                 action.get("category"),
                 action.get("action"),
-                action.get("current", "")[:200],
-                action.get("recommended", "")[:500],
-                action.get("reason", ""),
+                (action.get("current") or "")[:200],
+                (action.get("recommended") or "")[:500],
+                action.get("reason") or "",
                 action.get("difficulty"),
                 "✓" if action.get("completed") else "☐"
             ])
