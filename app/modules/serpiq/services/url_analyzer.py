@@ -33,6 +33,8 @@ from urllib.parse import urljoin, urlparse
 
 from pydantic import BaseModel
 
+from api.utils.domain import strip_www
+
 logger = logging.getLogger("serpiq.url_analyzer")
 
 # ---------------------------------------------------------------------------
@@ -364,7 +366,7 @@ def _normalise_domain(value: str) -> str | None:
         hostname = urlparse(value).hostname or ""
     except Exception:
         return None
-    return hostname.lower().lstrip("www.") or None
+    return strip_www(hostname.lower()) or None
 
 
 def _domains_match(a: str, b: str) -> bool:

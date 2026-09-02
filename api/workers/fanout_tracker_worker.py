@@ -22,6 +22,7 @@ from api.models.database import (
     AsyncSessionLocal,
     FanoutTrackingConfig, FanoutTrackingRun, FanoutTrackingDetail,
 )
+from api.utils.domain import strip_www
 from api.workers.fanout_analyzer import analyze_prompt, PROVIDER_DEFAULTS
 from api.workers.prompt_discovery import classify_prompt_cluster
 
@@ -62,11 +63,11 @@ def _next_run_at(schedule: str, from_dt: Optional[datetime] = None) -> datetime:
 
 def _find_target_position(sources, target_domain: str) -> int:
     """Return 1-based position of target domain in sources list, 0 if absent."""
-    target = target_domain.lower().lstrip("www.")
+    target = strip_www(target_domain.lower())
     for i, src in enumerate(sources, 1):
         url = src.url if hasattr(src, "url") else ""
         try:
-            netloc = urlparse(url).netloc.lower().lstrip("www.")
+            netloc = strip_www(urlparse(url).netloc.lower())
         except Exception:
             continue
         if netloc == target or netloc.endswith("." + target):
@@ -118,7 +119,7 @@ async def run_tracking(config_id: str) -> None:
 
         prompts = config.prompts or []
         engines = config.engines or ["openai"]
-        target_domain = (config.target_domain or "").lower().lstrip("www.")
+        target_domain = strip_www((config.target_domain or "").lower())
 
         detail_rows = []
         mention_count = 0
@@ -159,7 +160,7 @@ async def run_tracking(config_id: str) -> None:
                     for src in result.sources:
                         url = src.url if hasattr(src, "url") else ""
                         try:
-                            domain = urlparse(url).netloc.lower().lstrip("www.")
+                            domain = strip_www(urlparse(url).netloc.lower())
                         except Exception:
                             domain = ""
                         if domain:

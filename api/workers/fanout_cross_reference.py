@@ -17,6 +17,8 @@ import logging
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from api.utils.domain import strip_www
+
 from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -38,9 +40,9 @@ logger = logging.getLogger("fanout.cross_reference")
 def _domain_of(url: str) -> str:
     """Extract bare domain (no www.) from URL string."""
     try:
-        return urlparse(url if "://" in url else f"https://{url}").netloc.lstrip("www.")
+        return strip_www(urlparse(url if "://" in url else f"https://{url}").netloc)
     except Exception:
-        return url.lower().replace("www.", "")
+        return strip_www(url.lower())
 
 
 def _domains_match(a: str, b: str) -> bool:

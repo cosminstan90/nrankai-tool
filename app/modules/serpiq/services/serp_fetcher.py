@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Optional
 from urllib.parse import urlparse
 
+from api.utils.domain import strip_www
+
 logger = logging.getLogger("serpiq.fetcher")
 
 # ---------------------------------------------------------------------------
@@ -46,6 +48,12 @@ _TYPE_FEATURED_SNIPPET = "featured_snippet"
 _TYPE_LOCAL_PACK       = "local_pack"
 _TYPE_VIDEO            = "video"
 _ORGANIC_TYPES         = {"organic", "featured_snippet"}
+
+# Only these types represent an actual single ranked page with its own
+# url/domain/title. Every other DataForSEO item type (people_also_ask,
+# ai_overview, knowledge_graph, related_searches, images, paid, shopping,
+# app, map, top_stories, etc.) is a SERP feature block, not a ranked result.
+_VALID_ITEM_TYPES = _ORGANIC_TYPES | {_TYPE_LOCAL_PACK, _TYPE_VIDEO}
 
 # Path extensions to strip when deriving a keyword from a URL
 _STRIP_EXTENSIONS = re.compile(
@@ -210,8 +218,14 @@ class SERPFetcher:
         """
         item_type = (raw.get("type") or "").lower()
 
-        # Skip paid / non-organic result types
-        if item_type in ("paid", "shopping", "app", "map"):
+        # Only types that represent an actual single ranked page belong in a
+        # "top 20" snapshot. Everything else -- people_also_ask, ai_overview,
+        # knowledge_graph, related_searches, images, paid, shopping, app,
+        # map, etc. -- is a SERP feature block with no url/domain/title of
+        # its own. Letting those through (as the previous blocklist did)
+        # silently consumed a ranked-position slot with a hollow row,
+        # displacing a real organic result that should have appeared.
+        if item_type not in _VALID_ITEM_TYPES:
             return None
 
         position = raw.get("rank_absolute") or raw.get("position") or 0
@@ -256,12 +270,12 @@ class SERPFetcher:
         """Prefer raw.domain field; fall back to parsing raw.url."""
         domain = raw.get("domain") or None
         if domain:
-            return domain.lower().lstrip("www.").rstrip("/")
+            return strip_www(domain.lower()).rstrip("/")
         url = raw.get("url") or ""
         if url:
             try:
                 parsed = urlparse(url if "://" in url else "https://" + url)
-                return parsed.hostname.lstrip("www.") if parsed.hostname else None
+                return strip_www(parsed.hostname) if parsed.hostname else None
             except Exception:
                 pass
         return None
@@ -373,5 +387,5 @@ def extract_keyword_from_url(url: str) -> str:
         return cleaned[-1]
 
     # Fallback: return hostname without www
-    host = (parsed.hostname or "").lstrip("www.")
+    host = strip_www(parsed.hostname or "")
     return host or url.strip()
