@@ -16,7 +16,7 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import get_db, EntityCheck
-from api.utils.errors import raise_not_found, raise_bad_request
+from api.utils.errors import raise_not_found
 
 logger = logging.getLogger("entity")
 router = APIRouter(prefix="/api/entity", tags=["entity"])
