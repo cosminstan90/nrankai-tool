@@ -83,14 +83,60 @@ SCORE_WEIGHTS = {
 # Individual checkers
 # ---------------------------------------------------------------------------
 
-async def _check_wikipedia(brand: str, session: httpx.AsyncClient) -> EntityCheckResult:
-    """Try EN Wikipedia, then RO Wikipedia."""
-    for lang, variant_label in [("en", "en"), ("ro", "ro")]:
-        url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(brand)}"
+async def _wikipedia_page_links_to_domain(
+    lang: str, title: str, domain_root: str, session: httpx.AsyncClient
+) -> bool:
+    """Check the article's external links for the brand's own domain.
+
+    Looking up a brand by name alone finds the wrong article whenever the
+    brand name collides with an unrelated common-word title -- e.g. "Asana"
+    resolves to the yoga posture, not "Asana, Inc.". Company/organisation
+    articles almost always link the official website in the infobox, so
+    this confirms the match is actually about the target brand.
+    """
+    try:
+        resp = await session.get(
+            f"https://{lang}.wikipedia.org/w/api.php",
+            params={
+                "action": "query", "titles": title, "prop": "extlinks",
+                "ellimit": "500", "format": "json",
+            },
+        )
+        if resp.status_code != 200:
+            return False
+        pages = resp.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            for link in page.get("extlinks", []):
+                if domain_root in link.get("*", "").lower():
+                    return True
+    except Exception as exc:
+        logger.debug("Wikipedia extlinks check error for %r: %s", title, exc)
+    return False
+
+
+async def _check_wikipedia(brand: str, target_domain: str, session: httpx.AsyncClient) -> EntityCheckResult:
+    """Try EN Wikipedia (brand name, then common disambiguated titles), then RO Wikipedia.
+
+    Every candidate is verified against target_domain's own extlinks before
+    being accepted, to reject name collisions with unrelated articles.
+    """
+    domain_root = target_domain.lower().replace("www.", "").rstrip("/")
+    candidates = [
+        ("en", brand, "en"),
+        ("en", f"{brand} (company)", "en"),
+        ("en", f"{brand}, Inc.", "en"),
+        ("en", f"{brand} (software)", "en"),
+        ("ro", brand, "ro"),
+    ]
+    for lang, title, variant_label in candidates:
+        url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title)}"
         try:
             resp = await session.get(url, follow_redirects=True)
             if resp.status_code == 200:
                 data = resp.json()
+                resolved_title = data.get("title", title)
+                if not await _wikipedia_page_links_to_domain(lang, resolved_title, domain_root, session):
+                    continue
                 description = data.get("extract", "")[:300] or None
                 page_url = data.get("content_urls", {}).get("desktop", {}).get("page")
                 return EntityCheckResult(
@@ -101,7 +147,7 @@ async def _check_wikipedia(brand: str, session: httpx.AsyncClient) -> EntityChec
                     quality_score=variant_label,
                 )
         except Exception as exc:
-            logger.debug("Wikipedia %s check error for %r: %s", lang, brand, exc)
+            logger.debug("Wikipedia %s check error for %r: %s", lang, title, exc)
 
     return EntityCheckResult(source="wikipedia_en", found=False)
 
@@ -459,7 +505,7 @@ async def check_entity(
                 )
 
         results = await asyncio.gather(
-            safe(_check_wikipedia(target_brand, session), "wikipedia_en"),
+            safe(_check_wikipedia(target_brand, target_domain, session), "wikipedia_en"),
             safe(_check_wikidata(target_domain, session), "wikidata"),
             safe(_check_schema_markup(target_domain, session), "schema_markup"),
             safe(_check_crunchbase(target_brand, serper_api_key, session), "crunchbase"),

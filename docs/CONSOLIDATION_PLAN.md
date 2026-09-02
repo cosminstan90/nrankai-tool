@@ -549,7 +549,48 @@ platforme monitorizate) + 2 mențiuni seed-uite (reddit, g2) → coverage 33.3%
 separat). Test de regresie: `tests/test_mention_seeding_coverage.py`.
 pytest (85 passed), smoke, api_diff verde.
 
-Rămân neexaminate: `entity`, `serpiq`.
+### 4.8 `entity.py` — ✅ validat live, bug de acuratețe (fals pozitiv) reparat (2026-09-02)
+Modul legitim și distinct (Prompt 31 — autoritate de entitate: Wikipedia,
+Wikidata, schema markup Organization, Crunchbase/Knowledge Panel/LinkedIn via
+Serper). Nu se fuzionează cu nimic. Singurul dintre sateliți care funcționează
+parțial fără `SERPER_API_KEY` (Wikipedia/Wikidata/schema markup sunt HTTP-uri
+publice fără nevoie de cheie) — verificat live, real, prin apeluri HTTP
+reale către Wikipedia/Wikidata/homepage-ul țintei.
+
+**Bug găsit (nu crash, fals pozitiv de acuratețe):** `_check_wikipedia()`
+căuta articolul Wikipedia direct după numele brandului
+(`/page/summary/{brand}`), fără nicio dezambiguizare. Pentru „Asana" asta
+rezolva la articolul despre **postura de yoga** (un articol real, cu acel
+titlu exact), nu la „Asana, Inc." (compania) — confirmat live comparând
+răspunsurile reale ale API-ului Wikipedia. Efect: +25 puncte fals-pozitive
+la `entity_authority_score`, `url`/`description` care indică spre un subiect
+complet neînrudit, și — pentru un brand care chiar NU are prezență Wikipedia
+dar coincide cu un cuvânt comun — recomandarea „creează un articol Wikipedia"
+ar fi fost suprimată greșit. Multe nume de brand-uri SaaS coincid cu cuvinte
+comune (Notion, Buffer, Monday, etc.), deci nu e un caz izolat.
+`_check_wikidata` nu are această problemă — caută după URL-ul oficial al
+site-ului (proprietatea P856), deja precis.
+
+**Reparat** (după discuție explicită despre scop): fiecare candidat de
+titlu e verificat prin `extlinks`-urile paginii (API MediaWiki) — dacă
+pagina nu conține un link către `target_domain`, e respinsă ca fals-pozitiv.
+Pentru engleză, se încearcă și tipare comune de dezambiguizare
+(`"{brand} (company)"`, `"{brand}, Inc."`, `"{brand} (software)"`) înainte
+de a renunța, ca să găsească articolul corect al companiei, nu doar să
+suprime fals-pozitivul.
+
+Verificat live (apeluri HTTP reale, nu mock-uri, către Wikipedia/MediaWiki):
+„Asana" → găsește acum corect „Asana, Inc." (confirmat prin extlinks conținând
+asana.com), nu mai returnează articolul de yoga. Fără regresie pe branduri
+fără ambiguitate: „Salesforce" și „Anthropic" găsite corect pe primul candidat.
+Brand inexistent → correct not-found. Testat și end-to-end prin HTTP
+(`POST /check`, `POST /check` cu `project_id`, `GET .../latest` succes + 404).
+Curățare colaterală: import mort `raise_bad_request` eliminat din
+`api/routes/entity.py`. Test de regresie (cu mock-uri httpx, fără dependență
+de rețea în CI): `tests/test_entity_checker_wikipedia.py`. pytest (88 passed),
+smoke, api_diff verde.
+
+Rămâne neexaminat: `serpiq`.
 
 ### 4.3 Reunifică cu `visibility/` — de re-evaluat
 Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele
