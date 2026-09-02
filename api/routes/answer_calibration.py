@@ -5,6 +5,7 @@ POST /api/fanout/sessions/{id}/calibrate
 POST /api/fanout/sessions/{id}/calibrate-all-gaps
 GET  /api/answer-calibrations/{project_id}
 """
+import json
 import logging
 from typing import Optional
 
@@ -68,7 +69,7 @@ async def calibrate_session(
     if req.crossref_id:
         xref = await db.get(FanoutCrossRefResult, req.crossref_id)
         if xref and xref.result_json:
-            crossref_result = xref.result_json
+            crossref_result = json.loads(xref.result_json)
 
     result = await calibrate(
         prompt               = session.prompt,
@@ -131,14 +132,14 @@ async def calibrate_all_gaps(
     # Find most recent crossref for this session
     xref = (await db.execute(
         _sel(FanoutCrossRefResult)
-        .where(FanoutCrossRefResult.fanout_session_id == session_id)
+        .where(FanoutCrossRefResult.session_id == session_id)
         .order_by(desc(FanoutCrossRefResult.created_at))
         .limit(1)
     )).scalar_one_or_none()
 
     gap_queries = []
     if xref and xref.result_json:
-        gap_queries = [g.get("query", "") for g in xref.result_json.get("gap_queries", [])]
+        gap_queries = [g.get("query", "") for g in json.loads(xref.result_json).get("gap_queries", [])]
 
     if not gap_queries:
         raise_bad_request("No gap queries found for this session — run a crossref first")
