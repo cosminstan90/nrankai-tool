@@ -433,12 +433,61 @@ tabelă. Nu s-a atins acum (risc de a strica ceva dacă există deja încălcăr
 în date, needs-runtime-check separat) — de investigat separat dacă se dorește
 integritate reală de date.
 
-Rămân neexaminate în profunzime (din lipsă de timp în această etapă):
-`answer_calibration.py` (endpoint-urile lui sunt deja sub `/api/fanout/sessions/{id}/...`
-— probabil chiar fanout, de verificat), `gsc_fanout.py` (fanout × GSC),
-`cocitation`, `mention_seeding`, `entity`, `serpiq` — fiecare cu tabelul propriu,
-de citit complet (nu doar docstring) înainte de orice decizie de fuziune, exact
-lecția din acest caz.
+### 4.4 `answer_calibration.py` — ✅ validat live, 2 bug-uri de crash reparate (2026-09-02)
+Nu era duplicat cu nimic — 3 endpoint-uri deja corect plasate sub
+`/api/fanout/sessions/{id}/...`. Testat live end-to-end (sesiune reală, crossref
+inserat manual cu gap_queries), au ieșit la iveală 2 bug-uri reale, ambele de tip
+„scris corect sintactic, mort la prima rulare":
+- `calibrate-all-gaps` interoga `FanoutCrossRefResult.fanout_session_id`, atribut
+  care nu a existat niciodată (coloana reală e `session_id`) — 100% crash (500),
+  de la prima rulare a acestui endpoint, vreodată.
+- atât `calibrate()` cât și `calibrate-all-gaps` tratau `result_json` (coloană
+  `Text`, string JSON) ca și cum ar fi deja dict — `.get()` pe string → crash.
+
+Reparat, verificat live (toate 3 endpoint-urile, ambele ramuri crossref_id/
+project_id), pytest+smoke+api_diff verde. Commit `ab94724`, merge `ab0cc30`.
+
+### 4.5 `gsc_fanout.py` — ✅ examinat, nu se fuzionează, bug de design reparat (2026-09-02)
+Modulul (Prompt 27, OAuth GSC + crossref cu sesiuni Fan-Out) e legitim și diferit
+de restul — nu se absoarbe nicăieri. În timpul validării live a ieșit la iveală
+un bug mai profund decât un typo:
+
+**Bug găsit:** `crossref_fanout_gsc()` (`api/workers/gsc_fanout_crossref.py`) și
+endpoint-ul separat `validate-serp` din `fanout.py` (Prompt 19, validare SERP
+live via Serper.dev) calculau **independent, cu cod copy-pasted**, aceeași
+matrice de 4 categorii (`synced`/`ai_gap`/`ai_only`/`double_gap`), cu
+`ai_found = True` hardcodat („by definition — these are fan-out queries").
+Asta făcea `ai_gap` și `double_gap` structural imposibil de populat în ambele
+locuri — nu exista nicăieri în schema de date un semnal real „AI-ul chiar a
+citat brandul meu la ACEASTĂ interogare" per query (`FanoutSource`, tabelul de
+citări, e la nivel de sesiune, nu legat de `FanoutQuery` individual).
+`traffic_at_risk` era deci mereu 0, iar „GEO gap prioritar" (scopul declarat al
+feature-ului) nu a funcționat niciodată.
+
+**Verificat înainte de fix:** `SERPER_API_KEY` nu e configurat deloc în `.env`
+(deci `validate-serp` n-a fost niciodată apelabil în acest deployment) și
+`validate-serp` nu are nicio referință în UI — spre deosebire de `gsc-fanout`,
+conectat live în `projects.html` (connect/status/disconnect). Cele două module
+nu sunt totuși duplicate pure: `validate-serp` funcționează pentru orice
+domeniu (inclusiv competitori, fără OAuth), `gsc-fanout` doar pentru domeniul
+propriu verificat, dar cu istoric real de clickuri/impresii — capabilități
+diferite, nu doar aceeași funcție de două ori.
+
+**Decizie (aprobată explicit):** păstrează ambele module (capabilități reale
+diferite), dar extrage logica de clasificare duplicată într-un helper comun
+`api/utils/serp_classification.py`, simplificată la 2 categorii care reflectă
+ce chiar există în date — `synced` (domeniul țintă rankează deja în căutare
+reală) / `gap` (nu rankează) — în loc de matricea de 4 cu jumătate din bucket-uri
+mereu goale. Ambele apeluri (`crossref_fanout_gsc` și `validate_serp`) folosesc
+acum același helper. Test de regresie: `tests/test_serp_classification.py`.
+
+Nicio referință UI la `ai_gap`/`ai_only`/`double_gap`/`traffic_at_risk` (verificat
+prin grep în `api/templates`/`api/static`) — schimbarea de formă a răspunsului
+API e sigură.
+
+Rămân neexaminate: `cocitation`, `mention_seeding`, `entity`, `serpiq` — fiecare
+cu tabelul propriu, de citit complet (nu doar docstring) înainte de orice decizie
+de fuziune.
 
 ### 4.3 Reunifică cu `visibility/` — de re-evaluat
 Cu `projects.py` scos din ecuație, scopul acestei etape se restrânge la modulele

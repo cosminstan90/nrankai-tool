@@ -1352,14 +1352,14 @@ async def validate_serp(
     validator = SERPValidator(api_key=api_key)
     results   = await validator.validate_batch(queries_to_check, req.target_domain, req.gl, req.hl)
 
-    # Categorise
-    synced = []; ai_gap = []; ai_only = []; double_gap = []
+    # Categorise -- see api/utils/serp_classification.py for why this is a
+    # synced/gap split rather than a 4-way ai_found/serp_found matrix.
+    from api.utils.serp_classification import classify_serp_presence
+
+    entries: list = []
     paa_all: list = []
-    saved   = []
 
     for q_text, sr in zip(queries_to_check, results):
-        # Did the AI include this query? (all session queries = AI found)
-        ai_found   = True   # by definition — these are fan-out queries
         serp_found = sr.target_found
 
         row = FanoutSerpValidation(
@@ -1378,29 +1378,21 @@ async def validate_serp(
         db.add(row)
         paa_all.extend(sr.people_also_ask or [])
 
-        entry = {"query": q_text, "target_position": sr.target_position, "top_10": sr.top_10_domains}
-        if ai_found and serp_found:
-            synced.append(entry)
-        elif not ai_found and serp_found:
-            ai_gap.append(entry)
-        elif ai_found and not serp_found:
-            ai_only.append(entry)
-        else:
-            double_gap.append(entry)
+        entries.append({
+            "query":           q_text,
+            "serp_found":      serp_found,
+            "target_position": sr.target_position,
+            "top_10":          sr.top_10_domains,
+        })
 
     await db.commit()
 
     return {
-        "session_id":     session_id,
-        "target_domain":  req.target_domain,
-        "total_queries":  len(queries_to_check),
-        "total_cost_usd": round(total_cost, 4),
-        "synced":         synced,
-        "ai_gap":         ai_gap,
-        "ai_only":        ai_only,
-        "double_gap":     double_gap,
+        "session_id":      session_id,
+        "target_domain":   req.target_domain,
+        "total_cost_usd":  round(total_cost, 4),
+        **classify_serp_presence(entries),
         "people_also_ask": list(dict.fromkeys(paa_all))[:20],
-        "traffic_at_risk": len(ai_gap),
     }
 
 
