@@ -321,7 +321,7 @@ async def generate_benchmark_analysis_task(
             user_content  = _build_benchmark_data_payload(target_summary, competitor_summaries)
 
             print(f"[Benchmark] Generating analysis for {benchmark_id} using {provider}/{model}")
-            response_text = await call_llm_for_summary(
+            response_text, _in_tok, _out_tok = await call_llm_for_summary(
                 provider=provider,
                 model=model,
                 system_prompt=system_prompt,

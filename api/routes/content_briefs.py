@@ -278,7 +278,7 @@ Current Page Content (truncated to 3000 chars):
 Generate a detailed content brief with specific, actionable recommendations."""
         
         # Call LLM
-        response_text = await call_llm_for_summary(
+        response_text, input_tokens, output_tokens = await call_llm_for_summary(
             provider=provider,
             model=model,
             system_prompt=system_prompt,
@@ -286,9 +286,6 @@ Generate a detailed content brief with specific, actionable recommendations."""
             max_tokens=8192
         )
 
-        # Track cost (approximate token estimate: ~4 chars per token)
-        input_tokens = max((len(system_prompt) + len(user_content)) // 4, 100)
-        output_tokens = max(len(response_text) // 4, 50)
         asyncio.create_task(track_cost(
             source="brief",
             provider=provider,
@@ -835,7 +832,7 @@ EXISTING FAQPage schema to review:
 Review every question/answer and fill in "existing_faq_review"."""
 
         # ── Call LLM ─────────────────────────────────────────────────────────
-        response_text = await call_llm_for_summary(
+        response_text, input_tokens, output_tokens = await call_llm_for_summary(
             provider=provider,
             model=model,
             system_prompt=system_prompt,
@@ -843,8 +840,6 @@ Review every question/answer and fill in "existing_faq_review"."""
             max_tokens=3000
         )
 
-        input_tokens = max((len(system_prompt) + len(user_content)) // 4, 100)
-        output_tokens = max(len(response_text) // 4, 50)
         asyncio.create_task(track_cost(
             source="brief",
             provider=provider,

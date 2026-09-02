@@ -427,17 +427,17 @@ Return JSON array with {len(batch)} brief objects."""
 
         try:
             # Call LLM
-            response = await call_llm_for_summary(
-                content=user_prompt,
+            response, _in_tok, _out_tok = await call_llm_for_summary(
+                user_content=user_prompt,
                 system_prompt=system_prompt,
                 provider=provider,
                 model=model
             )
-            
+
             # Parse response
             cleaned = clean_json_response(response)
             briefs = json.loads(cleaned)
-            
+
             if not isinstance(briefs, list):
                 # Fallback if single object returned
                 briefs = [briefs]
@@ -571,7 +571,7 @@ async def analyze_content_gaps_task(
             traceback.print_exc()
 
 
-async def generate_full_brief_task(gap_id: int, provider: str, model: str):
+async def generate_full_brief_task(gap_id: str, provider: str, model: str):
     """
     Generate a more detailed content brief for a specific gap.
     
@@ -641,13 +641,13 @@ Current brief summary (if any): {gap.suggested_title or 'None'}
 Generate the complete, detailed brief."""
 
             # Call LLM
-            response = await call_llm_for_summary(
-                content=user_prompt,
+            response, _in_tok, _out_tok = await call_llm_for_summary(
+                user_content=user_prompt,
                 system_prompt=system_prompt,
                 provider=provider,
                 model=model
             )
-            
+
             # Parse and save
             cleaned = clean_json_response(response)
             full_brief = json.loads(cleaned)
@@ -821,7 +821,7 @@ async def get_content_gap_stats(
 
 
 @router.get("/{gap_id}")
-async def get_content_gap(gap_id: int):
+async def get_content_gap(gap_id: str):
     """
     Get detailed content gap with full brief.
     """
@@ -838,7 +838,7 @@ async def get_content_gap(gap_id: int):
 
 
 @router.patch("/{gap_id}")
-async def update_content_gap(gap_id: int, request: UpdateGapStatusRequest):
+async def update_content_gap(gap_id: str, request: UpdateGapStatusRequest):
     """
     Update content gap status.
     
@@ -872,7 +872,7 @@ async def update_content_gap(gap_id: int, request: UpdateGapStatusRequest):
 
 @router.post("/{gap_id}/generate-full-brief")
 async def generate_full_brief(
-    gap_id: int,
+    gap_id: str,
     background_tasks: BackgroundTasks,
     provider: str = Query("anthropic", description="LLM provider"),
     model: Optional[str] = Query(None, description="LLM model")
@@ -997,7 +997,7 @@ async def export_content_gaps(
 
 
 @router.delete("/{gap_id}")
-async def delete_content_gap(gap_id: int):
+async def delete_content_gap(gap_id: str):
     """
     Delete a content gap.
     """
