@@ -118,6 +118,110 @@ async def delete_property(property_id: str):
 
 # ── CSV upload ────────────────────────────────────────────────────────────────
 
+def _parse_gsc_csv(content: bytes) -> tuple:
+    """
+    Parse a Google Search Console "Performance" report CSV export
+    (Queries or Pages).
+
+    This function was called by upload_csv() below but was never actually
+    defined anywhere in the repo -- a casualty of the 2026-04-05 refactor
+    that split the old monolithic gsc.py into this package (confirmed via
+    git log -p: the old file's definition was dropped while the call site
+    survived the split). Every call to this endpoint raised NameError.
+    Written fresh here, matched to GSC's real export format and following
+    the same parsing style already established in api/routes/ads.py's
+    _parse_ads_csv.
+
+    Handles:
+    - UTF-8 BOM (Windows exports); falls back to latin-1 for legacy exports
+    - 'Top queries' / 'Query' / 'Queries' first column -> report_type = 'queries'
+    - 'Top pages' / 'Page' / 'Pages' first column       -> report_type = 'pages'
+    - CTR formatted as "12.34%" -> stored as 0.1234, matching the 0.0-1.0
+      scale GscQueryRow.ctr/GscPageRow.ctr already use via the live OAuth
+      sync path in oauth_sync.py (the Search Console API returns ctr as a
+      raw fraction; CSV upload must normalise to the same scale so the two
+      ingestion paths don't silently disagree on units)
+    - Position as a decimal ("3.5")
+    - Comma-separated integers ("1,234" -> 1234)
+
+    Returns (report_type, rows), where each row is
+    {"key", "clicks", "impressions", "ctr", "position"}.
+    """
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = content.decode("latin-1", errors="replace")
+
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = reader.fieldnames or []
+    if not fieldnames:
+        raise ValueError("Empty or invalid CSV file — no column headers found.")
+
+    col_norm = {f.strip().lower(): f for f in fieldnames}
+
+    first_col_lower = (fieldnames[0] or "").strip().lower()
+    QUERY_HEADERS = {"top queries", "query", "queries", "search query", "search queries"}
+    PAGE_HEADERS  = {"top pages", "page", "pages", "landing page", "landing pages", "url", "urls"}
+
+    if first_col_lower in QUERY_HEADERS:
+        report_type = "queries"
+    elif first_col_lower in PAGE_HEADERS:
+        report_type = "pages"
+    else:
+        raise ValueError(
+            f"Cannot detect report type from first column: {fieldnames[0]!r}. "
+            "Expected 'Top queries'/'Query' or 'Top pages'/'Page'."
+        )
+
+    key_col = fieldnames[0]
+
+    def _get(row: dict, *names: str) -> Optional[str]:
+        for n in names:
+            col = col_norm.get(n)
+            if col and col in row:
+                return row[col]
+        return None
+
+    def _int(v) -> int:
+        try:
+            return int(str(v or 0).replace(",", "").strip())
+        except (ValueError, TypeError):
+            return 0
+
+    def _ctr(v) -> Optional[float]:
+        """Parse CTR like '12.34%' -> 0.1234. GSC exports always include %."""
+        try:
+            return float(str(v or "").strip().rstrip("%")) / 100.0
+        except (ValueError, TypeError):
+            return None
+
+    def _position(v) -> Optional[float]:
+        try:
+            s = str(v or "").strip()
+            return float(s) if s else None
+        except (ValueError, TypeError):
+            return None
+
+    rows: list = []
+    for row in reader:
+        key_value = (row.get(key_col) or "").strip()
+        if not key_value:
+            continue
+
+        rows.append({
+            "key":         key_value,
+            "clicks":      _int(_get(row, "clicks")),
+            "impressions": _int(_get(row, "impressions")),
+            "ctr":         _ctr(_get(row, "ctr")),
+            "position":    _position(_get(row, "position", "avg. position", "average position")),
+        })
+
+    if not rows:
+        raise ValueError("CSV parsed successfully but contained no data rows.")
+
+    return report_type, rows
+
+
 @router.post("/properties/{property_id}/upload")
 async def upload_csv(property_id: str, file: UploadFile = File(...)):
     """
