@@ -180,7 +180,12 @@ async def generate_summary_task(
                 user_content=user_content,
                 max_tokens=4096
             )
-            asyncio.create_task(track_cost(
+            # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens its
+            # own AsyncSessionLocal(), and firing it concurrently while this function's own
+            # `db` session is still open (it commits below) can silently drop that commit --
+            # both sessions share one physical SQLite connection (StaticPool). See the
+            # Etapa 3 fix + comment in api/routes/visibility.py for the reproduced bug.
+            await track_cost(
                 source="summary",
                 provider=provider.lower(),
                 model=model,
@@ -188,7 +193,7 @@ async def generate_summary_task(
                 output_tokens=out_tok,
                 audit_id=audit_id,
                 website=audit.website,
-            ))
+            )
 
             # Clean and parse response
             clean_text = clean_json_response(response_text)

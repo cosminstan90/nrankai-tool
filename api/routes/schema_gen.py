@@ -456,8 +456,12 @@ Generate appropriate JSON-LD schema markup for this page."""
             response, input_tokens, output_tokens = await call_llm_for_schema(provider, model, system_prompt, user_content)
             response = clean_json_response(response)
 
-            # Track cost (fire-and-forget)
-            asyncio.create_task(track_cost(
+            # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens its
+            # own AsyncSessionLocal(), and firing it concurrently while this function's own
+            # `db` session is still open (it commits below) can silently drop that commit --
+            # both sessions share one physical SQLite connection (StaticPool). See the
+            # Etapa 3 fix + comment in api/routes/visibility.py for the reproduced bug.
+            await track_cost(
                 source="schema",
                 provider=provider,
                 model=model,
@@ -465,7 +469,7 @@ Generate appropriate JSON-LD schema markup for this page."""
                 output_tokens=output_tokens,
                 audit_id=audit.id,
                 website=audit.website
-            ))
+            )
             
             # Parse response
             try:
@@ -670,7 +674,10 @@ Generate ALL applicable JSON-LD schema types for this page. The primary schema s
             )
             response = clean_json_response(response)
 
-            asyncio.create_task(track_cost(
+            # Awaited, not fire-and-forget via asyncio.create_task: see comment on the other
+            # track_cost() call in this file (generate_schema_for_page) / api/routes/visibility.py
+            # for why racing it against this function's own open `db` session is unsafe.
+            await track_cost(
                 source="schema",
                 provider=provider,
                 model=model,
@@ -678,7 +685,7 @@ Generate ALL applicable JSON-LD schema types for this page. The primary schema s
                 output_tokens=output_tokens,
                 audit_id=None,
                 website=url
-            ))
+            )
 
             try:
                 llm_output = json.loads(response)
