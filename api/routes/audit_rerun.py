@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.models.database import Audit, AuditResult, get_db
 from api.utils.audit_json import AUDIT_ROOT_KEYS
 from api.utils.errors import raise_not_found, raise_bad_request
+from api.utils.url_validator import sanitize_website_for_path
 
 router = APIRouter(prefix="/api", tags=["audit-rerun"])
 
@@ -53,9 +54,15 @@ async def rerun_single_page(
     if not page_result:
         raise_not_found("Result")
 
-    # Find the corresponding text file
-    input_dir = os.path.join(audit.website, "input_llm")
-    output_dir = os.path.join(audit.website, f"output_{audit.audit_type.lower()}")
+    # Find the corresponding text file. audit_worker.py's own _safe_dir()
+    # is this exact sanitize_website_for_path() call -- audit.website used
+    # raw here (e.g. "https://example.com") never matched the real
+    # sanitized directory name ("example.com") the original audit wrote
+    # its files under, so this endpoint 404'd on the input file for every
+    # real audit before ever reaching the DirectAnalyzer call below.
+    safe_website = sanitize_website_for_path(audit.website)
+    input_dir = os.path.join(safe_website, "input_llm")
+    output_dir = os.path.join(safe_website, f"output_{audit.audit_type.lower()}")
 
     # The filename in the result might be the output JSON filename
     # We need to find the corresponding .txt input file
@@ -91,7 +98,7 @@ async def rerun_single_page(
         page_text = f.read()
 
     # Check for research context
-    research_dir = os.path.join(audit.website, "research")
+    research_dir = os.path.join(safe_website, "research")
     research_context = None
     if os.path.exists(research_dir):
         research_file = os.path.join(research_dir, txt_name.replace('.txt', '.research.json'))
@@ -107,23 +114,46 @@ async def rerun_single_page(
     if research_context:
         page_text = page_text + research_context
 
+    # Same simple truncation POST /api/audits/single uses -- avoids runaway
+    # token cost on an unusually large page (ContentChunker's smarter
+    # multi-chunk merge is DirectAnalyzer-specific machinery, not needed
+    # for a single ad-hoc re-run).
+    page_text = page_text[:30000]
+
     # Run analysis on single page
     try:
-        from core.direct_analyzer import DirectAnalyzer
+        from core.direct_analyzer import AsyncLLMClient, clean_json_response
+        from core.output_schemas import get_output_schema
+        from core.prompt_loader import load_prompt
+        from api.routes.costs import track_cost
 
-        analyzer = DirectAnalyzer(
-            question_type=audit.audit_type,
-            provider=audit.provider.upper(),
-            model_name=audit.model,
-            max_chars=30000
-        )
+        system_message = load_prompt(audit.audit_type)
+        if audit.language and audit.language.lower() != "english":
+            system_message += (
+                f"\n\nLANGUAGE INSTRUCTION: Write ALL text values in your JSON response "
+                f"in {audit.language}. Keep JSON keys, field names, enum values, and "
+                f"numbers in English."
+            )
 
-        # Analyze single page
-        result_text = await analyzer.analyze_single_page(page_text, txt_name)
+        llm_client = AsyncLLMClient(provider=audit.provider.upper(), model_name=audit.model)
+        try:
+            result_text, in_tokens, out_tokens = await llm_client.complete(
+                system_message=system_message,
+                user_content=page_text,
+                output_schema=get_output_schema(audit.audit_type),
+            )
+        finally:
+            await llm_client.close()
+
+        if in_tokens or out_tokens:
+            await track_cost(
+                source="audit_rerun", provider=audit.provider, model=audit.model,
+                input_tokens=in_tokens, output_tokens=out_tokens,
+                audit_id=audit_id, website=audit.website,
+            )
 
         if result_text:
             # Parse JSON result
-            from core.direct_analyzer import clean_json_response
             cleaned = clean_json_response(result_text)
             result_data = json.loads(cleaned)
 
