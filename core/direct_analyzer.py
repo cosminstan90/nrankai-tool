@@ -1094,16 +1094,27 @@ class DirectAnalyzer:
                 self.stats.total_input_tokens += total_input_tokens
                 self.stats.total_output_tokens += total_output_tokens
 
-                # Record cost to DB (non-blocking, non-fatal)
+                # Record cost to DB. Awaited, not fire-and-forget via
+                # asyncio.create_task: record_cost_async() opens its own
+                # AsyncSessionLocal(), and firing it concurrently while this
+                # function's own db session may still be open elsewhere in
+                # the same process races on the shared SQLite connection
+                # (StaticPool) -- see the Etapa 3 fix + comment in
+                # api/routes/visibility.py for the reproduced silently-
+                # dropped-commit bug this exact pattern causes. Here it also
+                # caused a cross-test hang (task_4baec8cd): an abandoned
+                # create_task() left mid-flight when a test's event loop
+                # closes can wedge aiosqlite's single worker thread for
+                # every later test sharing the same pooled connection.
                 if total_input_tokens > 0:
-                    asyncio.create_task(record_cost_async(
+                    await record_cost_async(
                         audit_id=self.audit_id,
                         website=self.website,
                         provider=self.provider,
                         model=self.model_name,
                         input_tokens=total_input_tokens,
                         output_tokens=total_output_tokens,
-                    ))
+                    )
 
                 # Save to disk
                 save_result_to_disk(
