@@ -1308,6 +1308,27 @@ Cu harness-ul, prompturile devin editabile în siguranță — inclusiv cele dou
 temporal învechit (`geo_audit.yaml:6` spune „2024-2025", `ux_content.yaml:8,85` spune
 „2025"; suntem în 2026).
 
+**Executat (2026-09-03).** `tests/prompt_eval/` — nu un test pytest (face apeluri LLM
+reale, plătite; `pytest.ini`/`--collect-only` confirmă 0 colectări din acest folder,
+193 teste neschimbate), un script separat rulat manual: `python tests/prompt_eval/run_eval.py`.
+- 9 cazuri de referință reale (`reference_cases/*.json`), 3 pe tip de audit
+  (GEO_AUDIT, CONTENT_QUALITY, READABILITY_AUDIT — `TECHNICAL_SEO` nu are încă
+  audituri reale în DB, deci nimic de unde extras cazuri), câte unul din
+  banda joasă/medie/înaltă de scor, toate pagini reale din `ing.ro`, cu
+  `expected_score` confirmat explicit de utilizator (2026-09-03) — nu doar
+  copiat din ce a nimerit LLM-ul la momentul respectiv.
+- `run_eval.py`: încarcă fiecare caz, rulează promptul curent din `prompts/`
+  contra textului real al paginii (`AsyncLLMClient.complete`, același
+  `output_schema`/`clean_json_response`/extragere de scor ca restul
+  pipeline-ului, prin `AUDIT_ROOT_KEYS`), compară scorul actual cu cel
+  așteptat ± toleranță (implicit 15), raportează pass/fail per caz. Cazul
+  cu pagină goală (`business.ing.ro/ing2/login`, scor așteptat 0) e verificat
+  fără apel LLM — conținut gol → scor 0, determinist.
+- Verificat live: un apel real (geo_audit_low) → scor așteptat 5, actual 4,
+  în toleranță. Confirmă pipeline-ul complet funcțional, nu doar logica pură.
+- Adăugare unui caz nou de referință: doar un fișier JSON nou în
+  `reference_cases/`, fără cod nou.
+
 ---
 
 ## Etapa 7 — Extinderea propriu-zisă (după consolidare)

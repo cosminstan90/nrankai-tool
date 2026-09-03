@@ -1,0 +1,12 @@
+{
+  "label": "geo_audit_low",
+  "audit_type": "GEO_AUDIT",
+  "expected_score": 5,
+  "tolerance": 15,
+  "page_text": "Accesibilitate Mărește fontul Micșorează fontul Alb și negru Inversează culorile Contrast negativ Evidențiază legăturile Font normal Resetează Elimină meniu accesibilitate Dacă alegi să elimini meniul de accesibilitate, nu îl vei mai putea vizualiza, decât dacă ștergi istoricul de navigare și datele. Ești sigur că dorești să ascunzi interfața?\nElimină meniul Cum te putem contacta Lasă-ne datele tale și un consultant din ING Office te va contacta să îți ofere mai multe detalii Oraș...\nAlba Iulia Alexandria Arad Bacau Baia Mare Bistrita Botosani Braila Brasov Bucuresti Buftea Buzau Calarasi Campina Caracal Cluj-Napoca Constanta Craiova Deva Drobeta-Turnu Severin Floresti Focsani Galati Giurgiu Hunedoara Iasi Lugoj Mangalia Medias Miercurea Ciuc Oradea Otopeni Piatra Neamt Pitesti Ploiesti Ramnicu-Valcea Resita Satu Mare Sebes Sfantu Gheorghe Sibiu Slatina Suceava Targoviste Targu Jiu Targu Mures Timisoara Tulcea Turda Voluntari Zalau Sucursala...\nÎnainte de a ne transmite datele tale, asigura-te că ai citit informațiile privind prelucrarea datelor cu caracter personal de către ING, disponibile permanent aici .\nConsimțământ de utilizare cookies Colectăm anumite date în timp ce utilizezi website-ul ING, pentru a-ți asigura funcționarea corectă, siguranță în timpul navigării și pentru a respecta reglementările în vigoare. De asemenea, avem nevoie de acordul tău în timp ce navighezi pe ing.ro pentru a: studia modul în care utilizezi site-ul nostru și alte servicii, a le putea îmbunătăți, stabili care dintre produsele, serviciile și ofertele noastre pot fi relevante, adapta mesajele de marketing pe care le vei vedea pe rețelele sociale, în aplicații și pe alte site-uri web. Selectează \"Acceptă toate\" dacă este în regulă să folosim aceste cookies. Selectează \"Setări cookie-uri\" să alegi tipurile de module cookie pe care le folosim. Îți poți modifica preferințele în orice moment. Trebuie doar să faci click pe link-ul \"Setări cookie-uri\" din partea de jos a oricărei pagini din site.\nSetări cookie-uri Respinge toate ✓ Acceptă toate",
+  "source": {
+    "note": "Real production page, real historical AuditResult -- expected_score confirmed by the user (2026-09-03) as matching the actual page content, not just copied from whatever the LLM happened to score it at the time.",
+    "original_result_id": 1,
+    "original_website": "ing.ro"
+  }
+}

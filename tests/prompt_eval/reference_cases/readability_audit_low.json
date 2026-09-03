@@ -1,0 +1,12 @@
+{
+  "label": "readability_audit_low",
+  "audit_type": "READABILITY_AUDIT",
+  "expected_score": 0,
+  "tolerance": 15,
+  "page_text": "",
+  "source": {
+    "note": "Real production page, real historical AuditResult -- expected_score confirmed by the user (2026-09-03) as matching the actual page content, not just copied from whatever the LLM happened to score it at the time.",
+    "original_result_id": 9025,
+    "original_website": "ing.ro"
+  }
+}
