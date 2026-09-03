@@ -834,6 +834,7 @@ class DirectAnalyzer:
         audit_id: Optional[str] = None,
         website: Optional[str] = None,
         prompts_dir: Optional[str] = None,
+        html_dir: Optional[str] = None,
     ):
         self.input_dir = input_dir
         self.output_dir = output_dir
@@ -848,6 +849,8 @@ class DirectAnalyzer:
         self.audit_id = audit_id       # For cost tracking & DB logging
         self.website = website          # For cost tracking
         self.prompts_dir = prompts_dir  # Custom prompts directory (None = use default)
+        self.html_dir = html_dir        # Original (pre-conversion) HTML, for TECHNICAL_SEO facts
+        self._domain_facts: Optional[dict] = None
 
         # Initialize content chunker for intelligent handling of large pages
         self.chunker = ContentChunker(provider=self.provider)
@@ -942,6 +945,29 @@ class DirectAnalyzer:
                 file_path = os.path.join(self.input_dir, filename)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     page_text = f.read()
+
+                # Inject deterministic technical-SEO facts (Etapa 6 of the
+                # consolidation) -- robots.txt/llms.txt facts were fetched
+                # once in run(); structured data is per-page, parsed from
+                # the original HTML (html2llm_converter strips <script>
+                # tags before page_text is written, so this is the only
+                # place that original markup is still available).
+                if self.question_type == "TECHNICAL_SEO":
+                    from core.technical_facts import extract_structured_data_types, format_facts_block
+
+                    structured_data_types = None
+                    if self.html_dir:
+                        html_filename = os.path.splitext(filename)[0] + ".html"
+                        html_path = os.path.join(self.html_dir, html_filename)
+                        if os.path.exists(html_path):
+                            try:
+                                with open(html_path, 'r', encoding='utf-8') as hf:
+                                    structured_data_types = extract_structured_data_types(hf.read())
+                            except Exception as exc:
+                                logger.warning(f"Could not read {html_path} for structured data facts: {exc}")
+
+                    facts_block = format_facts_block(self._domain_facts, structured_data_types)
+                    page_text = facts_block + "\n\n" + page_text
 
                 # Inject research context if available
                 if self.research_dir:
@@ -1180,7 +1206,13 @@ class DirectAnalyzer:
         
         # Initialize async client
         self.client = AsyncLLMClient(self.provider, self.model_name)
-        
+
+        # One-time domain-level facts (robots.txt AI-crawler access, llms.txt) --
+        # same for every page, so fetched once here rather than per page.
+        if self.question_type == "TECHNICAL_SEO" and self.website:
+            from core.technical_facts import fetch_domain_facts
+            self._domain_facts = await fetch_domain_facts(self.website)
+
         # Create semaphore for concurrency control
         semaphore = asyncio.Semaphore(self.concurrency)
         
@@ -1290,6 +1322,7 @@ async def run_direct_analysis(
     audit_id: Optional[str] = None,
     website: Optional[str] = None,
     prompts_dir: Optional[str] = None,
+    html_dir: Optional[str] = None,
 ) -> AnalysisStats:
     """
     Run direct (non-batch) LLM analysis.
@@ -1306,6 +1339,8 @@ async def run_direct_analysis(
         language: Output language for recommendations (default: English)
         audit_id: Optional audit ID for cost tracking / logging
         website: Optional website label for cost tracking
+        html_dir: Optional directory with original (pre-conversion) .html
+            files, used only for TECHNICAL_SEO structured-data facts
 
     Returns:
         AnalysisStats with run metrics
@@ -1323,6 +1358,7 @@ async def run_direct_analysis(
         audit_id=audit_id,
         website=website,
         prompts_dir=prompts_dir,
+        html_dir=html_dir,
     )
 
     return await analyzer.run()

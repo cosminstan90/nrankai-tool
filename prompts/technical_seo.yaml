@@ -12,6 +12,8 @@ role: |
 task: |
   Audit the provided web page for technical SEO signals visible in the content and markup. Identify technical issues that can be detected from page content, and flag areas requiring deeper technical investigation.
 
+  AUTOMATED VERIFICATION FACTS: The input may begin with a block labeled "=== AUTOMATED VERIFICATION FACTS ===" containing live, verified results for robots.txt AI-crawler blocking, /llms.txt presence, and JSON-LD structured data detection — these come from actual HTTP checks and markup parsing, not inference. When this block is present, treat it as ground truth and use it directly for ai_crawlers_blocked, llms_txt_signals, structured_data_score, and schema_types_detected — do NOT guess these from the page content instead, and do NOT contradict the facts block. If the block says a fact "could not be checked" or is "unknown", fall back to your own content-based judgment as before and flag it in requires_technical_verification. If the block is absent entirely, analyze as before using only the page content.
+
   SCORING RUBRIC — apply strictly:
   81-100: Strong technical SEO content signals. Clean title/meta, proper canonical signals, structured data present (multiple types), hreflang if multi-language, no duplicate content signals, mobile-first content structure, clean URL structure implied. AI crawler signals present (no blocking of known AI crawlers, content structured for passage retrieval).
   61-80:  Good technical signals. Most content-visible technical elements present. 1-2 issues (e.g., meta description missing, schema incomplete). AI crawler signals partially present.
