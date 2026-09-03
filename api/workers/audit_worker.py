@@ -450,6 +450,7 @@ async def run_analysis_step(
                 audit_id=audit_id,
                 website=website,
                 prompts_dir=prompts_dir,
+                html_dir=os.path.join(_safe_dir(website), "input_html"),
             )
             
             # Update pages_analyzed from actual output files
