@@ -1234,7 +1234,53 @@ Adaugă un pas de colectare deterministă (robots.txt, llms.txt, headers, schema
 status codes) înainte de apelul LLM, și pune faptele în prompt. LLM-ul evaluează
 judecăți, nu ghicește fapte.
 
-Abia aici se ating prompturile — și doar cu un harness de evaluare:
+**Executat (2026-09-03) — doar partea deterministă, fără harness (decizie explicită a
+utilizatorului: harness-ul rămâne amânat, vezi 6.1 mai jos).** Verificat din nou premisele
+înainte de scris cod, nu doar citat tabelul de mai sus:
+- `bot_access.py`/`llms_txt.py` NU sunt module reutilizabile cum sugera planul —
+  `llms_txt.py` e un **generator** de llms.txt (nu verifică dacă unul există deja), iar
+  logica reală de robots.txt e în `api/utils/bot_access_auditor.py`. Scris în schimb
+  `core/technical_facts.py` de la zero, cu propria parsare minimă de robots.txt — ca să
+  nu creeze `core/` → `api/` (core/ are azi zero importuri din api/, păstrat așa).
+- Descoperire mai serioasă decât presupunea planul: `schema_gen.py` nu era problema —
+  `core/html2llm_converter.py`'s `extract_content()` **decompune complet orice `<script>`**
+  (deci și tot JSON-LD) înainte ca LLM-ul să vadă vreodată textul paginii, cu excepția
+  conținutului FAQPage, reformatat ca proză. „Schema.org presence: detectable?" era
+  întrebat contra unui text căruia i se scosese deja 100% din markup.
+- `core/technical_facts.py` (nou): `fetch_domain_facts()` — un singur GET robots.txt +
+  un singur GET llms.txt per audit (nu per pagină, același domeniu). `extract_structured_data_types()`
+  — parsează `<script type="application/ld+json">` din HTML-ul ORIGINAL (încă pe disc în
+  `input_html/`, doar niciodată citit după conversie), gestionează `@graph` și forme-listă.
+  `format_facts_block()` randează ambele într-un bloc etichetat.
+- `core/direct_analyzer.py`: `DirectAnalyzer` primește `html_dir` opțional; `run()` culege
+  faptele de domeniu o singură dată (doar când `question_type == TECHNICAL_SEO`);
+  `_process_single_page()` caută HTML-ul original al fiecărei pagini după nume de fișier
+  și prepend-uiește blocul de fapte la `page_text` înainte de LLM. Toate celelalte tipuri
+  de audit neatinse (gate exact pe `question_type`).
+- `api/workers/audit_worker.py`: o linie, trece `html_dir=input_html/` mai departe.
+- `prompts/technical_seo.yaml`: un paragraf adăugat în `task:` — LLM-ul tratează blocul
+  de fapte ca adevăr verificat când e prezent, revine la judecata proprie doar când un
+  fapt e marcat necunoscut/indisponibil. Nimic altceva din prompt atins.
+- **Greșeală proprie, transparent semnalată utilizatorului**: la începutul acestei etape,
+  am reîmprospătat `prompts_backup/` cu o copie a `prompts/` curent, fără să verific mai
+  întâi ce conținea deja — se dovedește a fi o versiune „v2" reală, distinctă, folosită de
+  `audit_worker.py` când `Audit.prompt_version == "v2"` (2 din cele 84 audituri reale,
+  ambele READABILITY_AUDIT pe ing.ro). Conținutul original v2 e de nerecuperat (niciodată
+  în git, `cp` suprascrie direct deci Recycle Bin nu prinde nimic, fără drepturi admin
+  pentru shadow copies, directorul nu e în sincronizarea OneDrive). Utilizatorul a
+  confirmat că nu există altă copie și a acceptat pierderea.
+- **Găsit, nu al meu, semnalat separat (`task_4baec8cd`)**: apelarea `_process_single_page()`
+  de două ori într-un proces de test, după ce alt test a folosit deja o sesiune reală
+  `AsyncSessionLocal`, poate bloca la nesfârșit — `asyncio.create_task(record_cost_async(...))`
+  atinge engine-ul SQLite global pe un event loop nou, posibil legat de conexiunea
+  `StaticPool` a loop-ului anterior deja închis. Ocolit în testele proprii (client fals
+  întoarce 0 tokeni, deci codul de cost tracking nu se declanșează), nefixat.
+
+Teste: 16 pentru funcțiile pure (`tests/test_technical_facts.py`) + 6 pentru integrarea
+reală cu `DirectAnalyzer._process_single_page()` (`tests/test_direct_analyzer_technical_facts.py`).
+pytest (168 passed), smoke, api_diff verzi (367 operații, neschimbate).
+
+Abia aici se ating prompturile mai departe — și doar cu un harness de evaluare:
 
 ### 6.1 Harness de evaluare pe prompturi
 Momentan `prompts/` e înghețat prin convenție („nu modifica fără plan" — CLAUDE.md),
