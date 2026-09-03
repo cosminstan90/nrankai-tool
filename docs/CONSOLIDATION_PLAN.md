@@ -1111,6 +1111,22 @@ inclusiv 2 copii aproape identice ale `_top_keywords_without_serp`. Cod
 mort/duplicat, fără impact la utilizatori azi — candidat curat pentru
 consolidare (face `pipeline.py` să delege către orchestrator), nu urgent.
 
+**Rezolvat (2026-09-03) — invers față de premisă.** Citire completă a
+ambelor fișiere arată că `IngestionOrchestrator` NU e o abstracție
+superioară de adoptat — e o schiță mai veche, mai îngustă, depășită de
+`pipeline.py`. `run_full_ingestion()` face doar GSC+SERP, se oprește acolo
+(fără sincronizare `CluUrl`, fără clustering, fără decizii KUCD), și
+folosește un vocabular de status incompatibil (`crawling`/`clustering`)
+pentru care `PHASE_LABEL`/`PHASE_PROGRESS` nu au nicio intrare — dacă ar fi
+fost vreodată conectat, UI-ul ar afișa o fază necunoscută/goală. „Face
+pipeline.py să delege" ar fi însemnat fie pierderea pașilor lipsă
+(regresie), fie rescrierea completă a orchestrator-ului ca să reproducă
+exact `pipeline.py` — fără beneficiu real dincolo de deduplicarea unui
+singur helper de ~15 linii. Șters clasa întreagă (174 linii); cele 2
+servicii de dedesubt (`GSCIngestionService`, `DataForSEOIngestionService`)
+neatinse, folosite direct de `pipeline.py` exact ca înainte. pytest (192
+passed), smoke, api_diff verzi.
+
 **Găsit, latent, fără impact azi:** `_sync_urls_from_serp_data` (pipeline.py)
 pretinde idempotență via `ON CONFLICT DO NOTHING`, dar `CluUrl` nu are
 constrângere unică pe `(project_id, url)` — doar un index neunic — deci
