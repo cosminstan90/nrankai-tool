@@ -820,13 +820,21 @@ COMPARISON DATA:
 Analyze the above data and generate a comprehensive gap analysis following the JSON format specified in the system prompt."""
             
             # Call LLM
+            # max_tokens=8192, not 4096: up to 10 criteria (_empty_criteria()),
+            # each a potential criteria_gaps entry with 3 prose fields
+            # (details/competitor_example/fix_action), plus strengths and
+            # recommendations grouped into quick_wins/medium_term/strategic --
+            # a full gap analysis routinely exceeds 4096 tokens and gets cut
+            # off mid-JSON, failing json.loads() below. Matches the max_tokens
+            # already used for comparably verbose structured JSON elsewhere
+            # (content_briefs.py:286, keyword_research.py:630).
             print(f"[Gap Analysis {gap_id}] Calling LLM {provider}/{model}...")
             response_text, _in_tok, _out_tok = await call_llm_for_summary(
                 provider=provider,
                 model=model,
                 system_prompt=system_prompt,
                 user_content=user_content,
-                max_tokens=4096
+                max_tokens=8192
             )
             
             # Parse response
