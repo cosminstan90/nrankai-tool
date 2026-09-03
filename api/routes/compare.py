@@ -13,6 +13,26 @@ from api.models.database import Audit, AuditResult, get_db
 
 router = APIRouter(prefix="/api", tags=["compare"])
 
+# Well-known top-level wrapper keys used by our audit prompts' output JSON.
+# _extract_criteria_averages() and rerun_single_page() used to each keep
+# their own independent, divergent list (14 vs 20 keys, some spelled
+# differently -- e.g. "internal_linking_audit" vs "internal_linking",
+# "content_quality_audit" vs "content_quality") -- meaning the same
+# audit_type's score could extract successfully in one endpoint and
+# silently come back empty in the other. Unioned into one list so both
+# recognize everything either one used to.
+AUDIT_ROOT_KEYS = [
+    "seo_audit", "geo_audit", "internal_linking_audit", "internal_linking",
+    "content_brief_audit", "accessibility_audit", "gdpr_audit",
+    "social_media_audit", "page_speed_audit", "schema_markup_audit",
+    "content_quality_audit", "content_quality", "technical_seo_audit",
+    "competitor_analysis", "brand_sentiment_audit", "mobile_audit",
+    "ux_content_audit", "brand_voice_audit", "ecommerce_audit",
+    "translation_audit", "competitive_positioning_audit",
+    "spelling_grammar_audit", "readability_audit", "freshness_audit",
+    "local_seo_audit", "security_content_audit", "ai_overview_audit",
+]
+
 
 # ============================================================================
 # DASHBOARD CHART DATA
@@ -174,13 +194,6 @@ def _extract_criteria_averages(results) -> dict:
     Handles the standard nested structure:
         { "seo_audit": { "overall_score": 75, "title_tag": {"score": 80, ...}, ... } }
     """
-    # Well-known top-level wrapper keys used by our audit prompts
-    AUDIT_ROOT_KEYS = [
-        "seo_audit", "geo_audit", "internal_linking_audit", "content_brief_audit",
-        "accessibility_audit", "gdpr_audit", "social_media_audit", "page_speed_audit",
-        "schema_markup_audit", "content_quality_audit", "technical_seo_audit",
-        "competitor_analysis", "brand_sentiment_audit", "mobile_audit",
-    ]
     # Keys that represent the overall score or non-criterion metadata
     SKIP_KEYS = {
         "overall_score", "score", "total_score", "grade", "page_url", "url",
@@ -532,13 +545,7 @@ async def rerun_single_page(
             # Extract score
             score = None
             # Try all known YAML output_schema root keys
-            for key in ['seo_audit', 'geo_audit', 'accessibility_audit',
-                        'ux_content_audit', 'gdpr_audit', 'content_quality',
-                        'brand_voice_audit', 'ecommerce_audit', 'translation_audit',
-                        'internal_linking', 'competitive_positioning_audit',
-                        'spelling_grammar_audit', 'readability_audit', 'technical_seo_audit',
-                        'freshness_audit', 'local_seo_audit', 'security_content_audit',
-                        'ai_overview_audit', 'score', 'overall_score']:
+            for key in AUDIT_ROOT_KEYS + ['score', 'overall_score']:
                 if key in result_data:
                     val = result_data[key]
                     if isinstance(val, dict):
