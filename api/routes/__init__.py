@@ -5,6 +5,8 @@ from .audits import router as audits_router
 from .results import router as results_router
 from .health import router as health_router
 from .compare import router as compare_router
+from .dashboard_charts import router as dashboard_charts_router
+from .audit_rerun import router as audit_rerun_router
 from .summary import router as summary_router
 from .benchmarks import router as benchmarks_router
 from .schedules import router as schedules_router

@@ -942,14 +942,48 @@ Teste de regresie: `tests/test_gap_analysis_benchmark_fk.py`,
 `tests/test_benchmarks_comparison_stats.py`. pytest (132 passed), smoke,
 api_diff verde.
 
+#### 5.2c `compare.py` despărțit în 3 fișiere (2026-09-03)
+`compare.py` (631 linii) chiar era trei feature-uri fără nicio legătură,
+sub un singur router: 4 endpoint-uri de dashboard-chart (SQL simplu, fără
+LLM), comparația efemeră reală `/api/compare`, și re-rularea unei singure
+pagini `/api/audits/{id}/rerun/{result_id}`. Despărțit păstrând EXACT
+aceleași căi URL (nicio schimbare de comportament — pură reorganizare):
+- `api/routes/dashboard_charts.py` — cele 4 endpoint-uri de chart.
+- `api/routes/compare.py` — rămâne doar `_extract_criteria_averages` +
+  `/api/compare` (scopul original, real, al numelui fișierului).
+- `api/routes/audit_rerun.py` — endpoint-ul de re-rulare.
+- `api/utils/audit_json.py` — noua locație comună pentru constanta
+  `AUDIT_ROOT_KEYS` (era deja partajată între `compare.py` și
+  `rerun_single_page`, acum ambele o importă din același loc).
+
+Verificat live: toate cele 4 chart-uri răspund 200, `/api/compare` cu 2
+audituri reale găsește 522 pagini comune și extrage corect criteriile,
+`api_diff` confirmă suprafața API identică (367 operații, neschimbată).
+
+**Găsit în timpul verificării, NEATINS acum (semnalat separat via
+spawn_task, `task_06f52aa7`):** endpoint-ul de re-rulare
+(`/api/audits/{id}/rerun/{result_id}`) nu a funcționat niciodată —
+`DirectAnalyzer.__init__()` cere `input_dir`/`output_dir` (nepasate
+deloc, deși endpoint-ul le calculează local cu puțin mai sus), și mai
+grav, `DirectAnalyzer` nu mai are deloc o metodă `analyze_single_page` —
+interfața reală actuală e `_process_single_page` (privată), cu semnătură
+și comportament complet diferite (citește fișierul singură, face propriul
+chunking/rate-limiting, întoarce un `PageResult`, nu text brut). Bug
+confirmat live, pre-existent (identic înainte și după despărțire — cod
+mutat verbatim, nicio logică schimbată) — necesită o rescriere reală
+față de API-ul actual al `DirectAnalyzer`, nu un patch rapid, și
+`core/` nu se modifică fără plan explicit conform CLAUDE.md.
+
+pytest (132 passed), smoke, api_diff verde.
+
 **Rămas neatins, decizie viitoare:**
 1. Extrage un helper comun de „diff scoruri" folosit de `compare.py`,
    `tracking.py` (algoritm similar dar nu identic cu cel din `benchmarks.py`
    — nu s-a forțat unificarea acestora acum).
 2. `content_gaps.py`, `cross_reference.py`, `multilingual.py` rămân module
    separate — domenii distincte, fără suprapunere reală de cod sau date.
-3. `compare.py` ar trebui despărțit (chart-uri de dashboard / rerun pagină /
-   comparație efemeră reală) înainte de orice decizie finală despre el.
+
+Cu aceasta, Etapa 5.2 se consideră închisă.
 
 ### 5.3 `sources/` — trei implementări identice de upload CSV
 `gsc` (18), `ga4` (7), `ads` (7) — toate: upload CSV → parse → tabel → cross-reference.
