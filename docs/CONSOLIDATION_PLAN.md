@@ -1129,6 +1129,35 @@ duplică `prompts/content_quality.yaml` și `prompts/content_freshness.yaml`.
 Se face ultima pentru că e inima produsului (84 de audituri, 6.352 de rezultate) și pentru
 că etapele anterioare îți dau uneltele (client LLM unificat, structured outputs, teste).
 
+**Actualizare (2026-09-03), după citire completă a tuturor celor ~5.000 de linii**
+(`audits.py`, `audit_worker.py`, `content_iq.py`, `contentiq/*` inclusiv `engines/`,
+`draft_optimizer.py`, plus ambele YAML-uri `content_quality`/`content_freshness`):
+premisa „un al doilea motor complet" **nu se confirmă**. `content_iq` nu face nicio
+apelare LLM în calea principală de crawl — `engines/eeat.py`/`freshness.py` sunt
+formule aritmetice pure peste metadate (backlinks/DR/vechime/trafic), nu judecăți
+de conținut; ele nu duplică YAML-urile, răspund la o întrebare complet diferită
+(proxy de autoritate off-page vs. citire efectivă a textului paginii). Modelele
+(`CiqAudit`/`CiqPage`, id întreg) nu au nicio suprapunere cu `Audit`/`AuditResult`
+(id UUID) — zero referințe încrucișate. `draft_optimizer` e la fel de separat:
+intrare text colat (nu URL live), un singur apel LLM, tabelă proprie
+`DraftOptimization`. **Nu se face fuziunea „un motor, patru moduri"** — cele trei
+sunt unelte arhitectural distincte (unitate de analiză, metodă, schemă, model DB
+toate diferite), iar riscul unei restructurări forțate pe cea mai sensibilă parte
+a produsului (`core/`+`prompts/`, date reale, fără beneficiu funcțional) nu se
+justifică. Singura suprapunere reală, minoră: `contentiq/brief.py` instanțiază
+`anthropic.AsyncAnthropic()` direct în loc de clientul LLM comun — parte din
+lista deja cunoscută de 17 fișiere de la Etapa 2.2, nu dovadă de motor duplicat.
+
+**Bug confirmat și reparat:** `contentiq/crawler.py`'s `crawl_audit()` — semaforul
+de concurență proteja doar fetch-ul HTTP (`extract_page_meta`), nu și
+select/add/setattr pe `AsyncSession`-ul comun, care nu suportă acces concurent
+din mai multe task-uri. Cale live: `POST /api/contentiq/audits/{id}/start`.
+Reprodus înainte de fix (`sqlalchemy.exc.ResourceClosedError: This transaction
+is closed`, 40 URL-uri simulate, concurrency=10), reparat cu un `asyncio.Lock()`
+dedicat în jurul secțiunii DB (fetch-urile rămân paralele). Test de regresie:
+`tests/test_contentiq_crawler_concurrency.py`. pytest (144 passed), smoke,
+api_diff verzi (367 operații, neschimbate — fișier de worker, nicio rută atinsă).
+
 ### 5.6 Curățenie (cod dovedit mort)
 Singurele ștergeri propriu-zise, toate verificate cu import-graph:
 - toolchain CLI legacy: `main.py` (root) + `core/{determine_score,generate_dashboard,generate_report,validate_audit}.py` — ~6.600 LOC, **zero importuri din `api/` sau `app/`**.
