@@ -51,6 +51,32 @@
         </div>
     </div>
 
+    <!-- SEO / GEO / AEO Scorecard -->
+    {% if scorecard %}
+    <div class="grid grid-cols-3 gap-3 max-w-xl">
+        {% for axis, label in [('seo', 'SEO'), ('geo', 'GEO'), ('aeo', 'AEO')] %}
+        <div class="bg-white border border-slate-200 rounded-xl px-4 py-3 text-center">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">{{ label }}</div>
+            {% if scorecard[axis].score is not none %}
+            <div class="text-2xl font-bold
+                {% if scorecard[axis].score >= 85 %}text-emerald-500
+                {% elif scorecard[axis].score >= 70 %}text-yellow-500
+                {% elif scorecard[axis].score >= 50 %}text-orange-500
+                {% else %}text-red-500{% endif %}">{{ scorecard[axis].score }}</div>
+            {% if axis == 'seo' and scorecard.seo.gsc %}
+            <div class="text-[10px] text-slate-400 mt-0.5">GSC pos. {{ scorecard.seo.gsc.avg_position }}</div>
+            {% elif axis == 'aeo' and scorecard.aeo.detail %}
+            <div class="text-[10px] text-slate-400 mt-0.5">{{ scorecard.aeo.detail.last_scan_at }}</div>
+            {% endif %}
+            {% else %}
+            <div class="text-2xl font-bold text-slate-300">—</div>
+            <div class="text-[10px] text-slate-400 mt-0.5">not tracked</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- Radar Chart + Score Grid -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

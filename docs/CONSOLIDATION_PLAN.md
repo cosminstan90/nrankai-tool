@@ -1308,6 +1308,33 @@ devin ieftine și diferențiatoare:
    principiul de organizare al produsului, nu doar al codului. Infrastructura de ponderi
    există deja (`_COMPOSITE_WEIGHTS`, `api/routes/settings.py`, tabelul `audit_weight_configs`).
 
+**Executat (2026-09-03).** Scop confirmat explicit cu utilizatorul înainte de cod:
+date reale de la început (nu doar regrupare LLM), doar în cele 2 view-uri unde
+compozitul deja există (nu peste tot). Verificat înainte: "`_COMPOSITE_WEIGHTS`
+atinge UI-ul peste tot" — **fals**, e folosit într-un singur fișier, 2 locuri
+(`api/routes/pages/audit_views.py`: `page_view.html` + `site_health.html`). Alte
+"composite_score" din cod (`FanoutTrackingRun`, `ai_visibility.py`) sunt metrici
+separate, nelegate.
+
+- SEO/GEO = cele 18 tipuri de audit clasificate în 2 bucket-uri (`_SEO_AUDIT_TYPES`/
+  `_GEO_AUDIT_TYPES` în `_shared.py`); SEO se combină 60/40 cu poziția medie GSC reală
+  (`GscProperty`/`GscPageRow`) când există o proprietate care se potrivește. AEO **nu**
+  vine din niciun tip de audit — refolosește exact formula `mention_rate*0.4 +
+  citation_rate*0.6` deja calculată global de `ai_visibility.py`, dar scopată la
+  `CitationTracker`-ele site-ului. Fără date reale → `None` ("not tracked"), niciodată
+  ghicit.
+- **Bug găsit prin verificare pe date reale, nu fixturi sintetice**: `SINGLE_GEO_AUDIT`/
+  `SINGLE_SEO_AUDIT` (din `/api/audits/single`, tool-ul Instant Audit — 48+ rânduri reale
+  doar pentru `SINGLE_GEO_AUDIT`) nu se potriveau cu niciun bucket fără normalizarea
+  prefixului „SINGLE_" — scoruri reale apăreau ca „not tracked". Reparat.
+- **Bug găsit tot prin verificare live, nelegat de scorecard**: `site_health()` arunca
+  `jinja2.exceptions.UndefinedError` la orice apel real — `site_health.html` referea
+  `total_cost_usd` și `cost_usd` per audit, niciodată calculate de rută. Bug pre-existent,
+  a blocat verificarea scorecard-ului până a fost reparat.
+
+19 teste noi, pytest (188 passed), smoke, api_diff verzi (368 operații, neschimbate —
+doar argumente noi în template, nicio rută nouă).
+
 ---
 
 ## Ordinea și dependențele
