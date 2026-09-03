@@ -1059,6 +1059,66 @@ neatins pe tot parcursul testării. Test de regresie:
 ### 5.4 `queries/`
 `keyword_research` (5), `clusteriq` (16), `query_suggestions` (1) + partea de query din `gsc`.
 
+#### 5.4a Survey complet: fără duplicare reală, un bug real reparat (2026-09-03)
+Citire completă a celor 9 fișiere (`keyword_research.py`, `query_suggestions.py`,
+`clusteriq/router.py` + cele 5 fișiere din `services/` + `tasks/pipeline.py`)
+prin agent de research + verificare independentă. Spre deosebire de
+etapele anterioare, planul aici nu afirmă explicit „sunt duplicate" — doar
+le grupează sub „queries/". Confirmat: **nu sunt duplicate**, sunt trei
+unelte distincte care doar împart cuvântul „query":
+- `keyword_research.py` — descoperire de cuvinte cheie (expansiune
+  DataForSEO sau import CSV, etichetare intent/question prin LLM).
+- `query_suggestions.py` — generare de întrebări-probă pentru fan-out/
+  GeoMonitor (ce ar întreba cineva un AI), stateless, fără storage propriu.
+- `clusteriq/*` — clustering de URL-uri proprii ale unui site pe baza
+  co-apariției în SERP, motor de decizie KUCD (Fix/Consolidate/Optimize/
+  Keep/Prune/Create). „Query"-urile sunt doar semnal per-keyword care
+  alimentează clustering-ul de URL-uri, nu obiectul analizei.
+
+Nicio fuziune recomandată — ar amesteca trei modele mentale distincte
+fără beneficiu real.
+
+**Bug confirmat live și reparat:** `clusteriq/router.py` (liniile ~629 și
+~686, `export_decisions_csv`/`export_prune_list_csv`) referenția
+`CluCluster.avg_position` direct într-un `select(...)` — coloană care nu
+există pe model (verificat în `api/models/clusteriq.py`: câmpurile reale
+sunt `total_impressions`, `total_clicks`, `url_count`,
+`search_demand_confirmed`, `louvain_community_id`). `avg_position` există
+doar ca agregare pe-URL, calculată on-the-fly prin join cu `CluSerpData`
+(exact ce face deja `get_cluster_detail`, la granularitate per-URL, nu
+per-cluster) — accesarea ei ca atribut de clasă arunca `AttributeError`
+înainte ca query-ul să apuce să ruleze. **Ambele endpoint-uri de export
+CSV crapau la fiecare apel, de la scrierea codului.** Verificat direct:
+`CluCluster.avg_position` → `AttributeError` confirmat în Python înainte
+de orice altceva.
+
+**Reparat:** helper comun `_avg_position_by_cluster()`, agregă
+`CluSerpData.position` pe toate URL-urile unui cluster (join
+`CluUrlCluster` → `CluUrl` → `CluSerpData`), reutilizând exact pattern-ul
+deja folosit de `get_cluster_detail`, doar cu un nivel de agregare în plus
+(per cluster, nu per URL). Verificat live: proiect de test construit direct
+prin modelele SQLAlchemy (2 URL-uri, 1 cluster, poziții SERP 3.5 și 8.2),
+ambele endpoint-uri de export → 200, `avg_position` calculat corect (5.8 —
+media celor două). Date de test curățate după verificare. Test de
+regresie: `tests/test_clusteriq_export_avg_position.py`. pytest
+(143 passed), smoke, api_diff verde.
+
+**Găsit, nu urgent, semnalat separat (spawn_task, `task_3b8a03e0`):**
+`data_ingestion.py`'s `IngestionOrchestrator` e complet implementată dar
+niciodată instanțiată — `tasks/pipeline.py` (singurul orchestrator conectat
+efectiv la `POST /projects`) reimplementează aceeași secvență inline,
+inclusiv 2 copii aproape identice ale `_top_keywords_without_serp`. Cod
+mort/duplicat, fără impact la utilizatori azi — candidat curat pentru
+consolidare (face `pipeline.py` să delege către orchestrator), nu urgent.
+
+**Găsit, latent, fără impact azi:** `_sync_urls_from_serp_data` (pipeline.py)
+pretinde idempotență via `ON CONFLICT DO NOTHING`, dar `CluUrl` nu are
+constrângere unică pe `(project_id, url)` — doar un index neunic — deci
+clauza e un no-op. Inofensiv azi (pipeline-ul rulează o singură dată per
+proiect, la creare, fără endpoint de re-ingest), dar ar duplica rânduri
+silențios dacă se adaugă vreodată un buton de „refresh data". Documentat,
+nu reparat — nu există cale de declanșare azi.
+
 ### 5.5 `audit/` — ultima, cea mai riscantă
 `audits` (11) e motorul principal. `content_iq` (17) e **un al doilea motor complet**,
 cu engine-uri proprii (`api/workers/contentiq/engines/eeat.py`, `freshness.py`) care

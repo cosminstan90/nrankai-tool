@@ -608,6 +608,39 @@ import json as _json
 from fastapi.responses import StreamingResponse, PlainTextResponse
 
 
+async def _avg_position_by_cluster(
+    db: AsyncSession, project_id: int, cluster_ids: list,
+) -> dict:
+    """
+    Average SERP position across every URL belonging to each cluster.
+
+    CluCluster has no avg_position column of its own (confirmed against
+    api/models/clusteriq.py) -- it's only ever computed per-URL, on the
+    fly, joining CluSerpData (see get_cluster_detail() above). The two
+    export endpoints below used to reference CluCluster.avg_position
+    directly, which doesn't exist and raised AttributeError before the
+    query could even run -- both endpoints crashed on every call. This
+    reuses the same per-URL join pattern, aggregated one level further
+    (per cluster instead of per URL).
+    """
+    if not cluster_ids:
+        return {}
+    rows = (await db.execute(
+        select(
+            CluUrlCluster.cluster_id,
+            func.avg(CluSerpData.position).label("avg_pos"),
+        )
+        .join(CluUrl, CluUrl.id == CluUrlCluster.url_id)
+        .join(CluSerpData, (CluSerpData.url == CluUrl.url) & (CluSerpData.project_id == project_id))
+        .where(CluUrlCluster.cluster_id.in_(cluster_ids))
+        .group_by(CluUrlCluster.cluster_id)
+    )).all()
+    return {
+        r.cluster_id: round(float(r.avg_pos), 1) if r.avg_pos is not None else None
+        for r in rows
+    }
+
+
 @router.get("/projects/{project_id}/export/decisions.csv")
 async def export_decisions_csv(
     project_id: int,
@@ -618,6 +651,7 @@ async def export_decisions_csv(
 
     rows = (await db.execute(
         select(
+            CluDecision.cluster_id,
             CluDecision.verdict,
             CluDecision.confidence,
             CluDecision.evidence,
@@ -626,13 +660,14 @@ async def export_decisions_csv(
             CluCluster.primary_keyword,
             CluCluster.primary_url,
             CluCluster.total_impressions,
-            CluCluster.avg_position,
             CluCluster.url_count,
         )
         .join(CluCluster, CluCluster.id == CluDecision.cluster_id)
         .where(CluCluster.project_id == project_id)
         .order_by(CluDecision.verdict.asc(), CluDecision.confidence.desc().nullslast())
     )).all()
+
+    avg_pos_by_cluster = await _avg_position_by_cluster(db, project_id, [r.cluster_id for r in rows])
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -648,6 +683,7 @@ async def export_decisions_csv(
                 evidence = _json.loads(evidence)
             except Exception:
                 evidence = [evidence]
+        avg_pos = avg_pos_by_cluster.get(r.cluster_id)
         writer.writerow([
             r.verdict,
             f"{round((r.confidence or 0) * 100)}%",
@@ -655,7 +691,7 @@ async def export_decisions_csv(
             r.primary_keyword or "",
             r.primary_url or "",
             r.total_impressions or 0,
-            round(r.avg_position, 1) if r.avg_position else "",
+            avg_pos if avg_pos is not None else "",
             r.url_count or 0,
             " | ".join(evidence),
             r.notes or "",
@@ -679,11 +715,11 @@ async def export_prune_list_csv(
 
     rows = (await db.execute(
         select(
+            CluCluster.id,
             CluCluster.primary_url,
             CluCluster.primary_keyword,
             CluCluster.cluster_label,
             CluCluster.total_impressions,
-            CluCluster.avg_position,
             CluDecision.confidence,
             CluDecision.evidence,
         )
@@ -694,6 +730,8 @@ async def export_prune_list_csv(
         )
         .order_by(CluCluster.total_impressions.asc().nullslast())
     )).all()
+
+    avg_pos_by_cluster = await _avg_position_by_cluster(db, project_id, [r.id for r in rows])
 
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -708,12 +746,13 @@ async def export_prune_list_csv(
                 evidence = _json.loads(evidence)
             except Exception:
                 evidence = [evidence]
+        avg_pos = avg_pos_by_cluster.get(r.id)
         writer.writerow([
             r.primary_url or "",
             r.primary_keyword or "",
             r.cluster_label or "",
             r.total_impressions or 0,
-            round(r.avg_position, 1) if r.avg_position else "",
+            avg_pos if avg_pos is not None else "",
             f"{round((r.confidence or 0) * 100)}%",
             " | ".join(evidence),
         ])
