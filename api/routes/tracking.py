@@ -152,7 +152,7 @@ async def add_snapshot(project_id: str, request: AddSnapshotRequest, db: AsyncSe
         raise_not_found("Audit", request.audit_id)
     
     # Calculate deltas
-    delta_from_baseline = round(score - project.baseline_score, 2) if score and project.baseline_score else None
+    delta_from_baseline = round(score - project.baseline_score, 2) if score is not None and project.baseline_score is not None else None
     
     # Get previous snapshot for delta
     prev = (await db.execute(
@@ -162,7 +162,7 @@ async def add_snapshot(project_id: str, request: AddSnapshotRequest, db: AsyncSe
         .limit(1)
     )).scalar_one_or_none()
     
-    delta_from_previous = round(score - prev.score, 2) if score and prev and prev.score else None
+    delta_from_previous = round(score - prev.score, 2) if score is not None and prev and prev.score is not None else None
     
     # Auto-label if not provided
     existing_count = (await db.execute(
@@ -332,7 +332,7 @@ async def compare_snapshots(
     return {
         "snapshot_a": snap_a.to_dict(),
         "snapshot_b": snap_b.to_dict(),
-        "overall_delta": round(snap_b.score - snap_a.score, 2) if snap_a.score and snap_b.score else None,
+        "overall_delta": round(snap_b.score - snap_a.score, 2) if snap_a.score is not None and snap_b.score is not None else None,
         "pages_improved": improved,
         "pages_declined": declined,
         "pages_unchanged": unchanged,

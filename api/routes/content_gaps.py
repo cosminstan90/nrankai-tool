@@ -106,8 +106,11 @@ def deduplicate_gaps(gaps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         found_similar = False
         for existing in deduplicated:
             if topics_similar(gap["topic"], existing["topic"]):
-                # Merge sources
-                existing["sources"].extend(gap["sources"])
+                # Merge sources. Incoming gaps only ever carry a singular
+                # "source" key (set by collect_gap_signals) -- "sources"
+                # (plural, list) is created below at first-occurrence time,
+                # so the current gap being merged never has it yet.
+                existing["sources"].extend(gap.get("sources") or [gap["source"]])
                 # Boost confidence if multiple sources agree
                 existing["confidence"] = min(1.0, existing["confidence"] + 0.1)
                 found_similar = True
