@@ -1168,6 +1168,49 @@ Singurele ștergeri propriu-zise, toate verificate cu import-graph:
   `heuristic-raman` și `magical-brown` sunt directoare orfane, neînregistrate)
 - `.gitignore` pentru `BUILD_LOG.md`, `*_report.txt`, `website_llm_analyzer.log.*`, `uvicorn_*.txt`
 
+**Executat (2026-09-03).** Re-verificat totul înainte de ștergere, nu doar
+citat planul:
+- Toolchain CLI legacy șters (`main.py` + cele 4 `core/*.py`, ~6.600 LOC,
+  zero importuri confirmate din nou via grep). `core/validate_audit.py`
+  recuperat ca `tests/test_validate_audit_prompts.py` **înainte** de ștergere
+  — logica de validare inlinată direct în test (nu poate importa dintr-un
+  fișier șters). Rulat împotriva celor 20 de prompturi reale: 18 validează
+  curat, `content_brief.yaml`/`draft_optimizer.yaml` eșuează previzibil la
+  verificarea legacy de `output_schema` (schema lor reală vine din
+  `core/output_schemas.py`, nu din YAML) — pinned ca excepții cunoscute, nu
+  bug.
+- `api/models/schemas_clusteriq.py` șters (confirmat: zero importuri).
+- Nu 4, ci **6** fișiere `.db` de 0 bytes erau moarte: cele 4 de la rădăcină
+  din plan, plus `api/audits.db` și `api/geo_tool.db` (nemenționate în plan,
+  găsite separat) — toate zero-byte, `DATABASE_PATH` confirmat hardcodat la
+  `api/data/analyzer.db` (45MB, actualizat azi). Toate șterse.
+- Worktree-urile reale la verificare: nu 8, ci **7** directoare pe disc (5
+  înregistrate + 2 orfane goale `heuristic-raman`/`magical-brown`, exact ca-n
+  plan). **Găsit ceva ce planul nu menționa:** 3 din cele 5 worktree-uri
+  înregistrate aveau modificări necommise reale, nu doar "0 commit-uri față
+  de master" cum spunea planul — `frosty-euler-8c7531` conținea exact fix-ul
+  deja verificat din Etapa 3 (`await track_cost()` în loc de
+  `asyncio.create_task(track_cost())`, care poate pierde silențios commit-ul
+  apelantului pe conexiunea SQLite comună/StaticPool), neaplicat încă în 4
+  fișiere: `content_briefs.py` (2 locuri), `fanout.py`, `schema_gen.py` (2
+  locuri), `summary.py`. Recuperat și aplicat (reprodus fix-ul lipsă cu
+  `git apply --check` unde a mers curat, aplicat manual restul; verificat cu
+  pytest 146 passed înainte de merge). Celelalte 2 (`angry-dijkstra`,
+  `quizzical-poincare`) conțineau reparații UI cosmetice deja suprapuse de
+  schimbări ulterioare de pe master (CSS `[x-cloak]` deja prezent;
+  `fanout.html` deja rescris cu `modelOptionsHtml()`, o abordare mai bună
+  decât cea din worktree) — confirmate depășite, nu doar ipotetic, înainte
+  de a fi abandonate. Toate cele 7 directoare șterse, cu o excepție:
+  `frosty-euler-8c7531` a rămas blocat de un lock Windows la nivel de OS
+  ("device or resource busy") — conținutul lui era deja recuperat și
+  commis, deci fără risc de pierdere, dar directorul necesită ștergere
+  manuală după ce orice proces îl ține deschis e închis.
+- `.gitignore` extins cu cele 4 pattern-uri din plan; `uvicorn_err.txt`/
+  `uvicorn_out.txt` erau de fapt **tracked** (nu doar ignorate-dar-prezente)
+  — untracked explicit cu `git rm --cached` (fișierele locale păstrate).
+
+pytest (146 passed), smoke, api_diff verzi (367 operații, neschimbate).
+
 ---
 
 ## Etapa 6 — Fapte înainte de opinii (upgrade-ul de calitate)
