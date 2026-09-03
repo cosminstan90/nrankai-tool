@@ -286,7 +286,12 @@ Generate a detailed content brief with specific, actionable recommendations."""
             max_tokens=8192
         )
 
-        asyncio.create_task(track_cost(
+        # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens its
+        # own AsyncSessionLocal(), and firing it concurrently while this function's own
+        # `db` session is still open (it commits below) can silently drop that commit --
+        # both sessions share one physical SQLite connection (StaticPool). See the
+        # Etapa 3 fix + comment in api/routes/visibility.py for the reproduced bug.
+        await track_cost(
             source="brief",
             provider=provider,
             model=model,
@@ -294,7 +299,7 @@ Generate a detailed content brief with specific, actionable recommendations."""
             output_tokens=output_tokens,
             audit_id=audit.id,
             website=audit.website
-        ))
+        )
 
         # Clean and parse JSON
         cleaned_json = clean_json_response(response_text)
@@ -840,7 +845,10 @@ Review every question/answer and fill in "existing_faq_review"."""
             max_tokens=3000
         )
 
-        asyncio.create_task(track_cost(
+        # Awaited, not fire-and-forget via asyncio.create_task: see comment on the other
+        # track_cost() call in this file (generate_single_brief) / api/routes/visibility.py
+        # for why racing it against this function's own open `db` session is unsafe.
+        await track_cost(
             source="brief",
             provider=provider,
             model=model,
@@ -848,7 +856,7 @@ Review every question/answer and fill in "existing_faq_review"."""
             output_tokens=output_tokens,
             audit_id=brief.audit_id,
             website=page_url
-        ))
+        )
 
         # ── Parse & save ──────────────────────────────────────────────────────
         cleaned = clean_json_response(response_text)

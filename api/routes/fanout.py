@@ -273,14 +273,19 @@ async def _run_batch(
                 continue  # skip empty/failed
             try:
                 await _save_fanout_result(db, result, target_url=target_url, audit_id=audit_id)
-                # Fire-and-forget cost tracking (best-effort)
-                asyncio.create_task(track_cost(
+                # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens
+                # its own AsyncSessionLocal(), and firing it concurrently while this loop's
+                # own `db` session is still open (the next iteration commits again via
+                # _save_fanout_result) can silently drop that commit -- both sessions share
+                # one physical SQLite connection (StaticPool). See the Etapa 3 fix + comment
+                # in api/routes/visibility.py for the reproduced bug.
+                await track_cost(
                     source="fanout_batch",
                     provider=result.provider,
                     model=result.model,
                     input_tokens=0,   # token counts not surfaced by Responses API
                     output_tokens=0,
-                ))
+                )
             except Exception as exc:
                 logger.error("Failed to save batch result for prompt %r: %s", result.prompt, exc)
 
