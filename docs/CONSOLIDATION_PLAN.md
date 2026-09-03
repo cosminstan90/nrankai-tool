@@ -840,6 +840,82 @@ Cu aceasta, Etapa 5.1 se consideră închisă.
 `benchmarks` (5), `multilingual` (2). `compare` și `benchmarks` fac amândouă comparație
 între audituri. Trei module diferite detectează „gap". Adaugă `tracking` (evoluție în timp).
 
+#### 5.2a Survey complet + 3 bug-uri reparate (2026-09-03)
+Citire completă a celor 7 fișiere (`content_gaps`, `compare`, `gap_analysis`,
+`cross_reference`, `benchmarks`, `multilingual`, `tracking` — prin agent de
+research + verificare independentă a fiecărei afirmații-cheie, exact
+disciplina din 5.1).
+
+**Premisa „compare + benchmarks fac comparație, 3 module detectează gap"
+se confirmă doar parțial:**
+- `compare.py`/`benchmarks.py` chiar au suprapunere algoritmică reală
+  (agregare scor din N audituri), dar `compare.py` e de fapt **trei lucruri
+  diferite sub un singur router**: 4 endpoint-uri de dashboard-chart (SQL
+  simplu, fără LLM), comparația ad-hoc efemeră `/compare` (2-4 audituri,
+  nimic persistat), și `POST /rerun/{result_id}` (re-rulează o singură
+  pagină prin `DirectAnalyzer` — nimic de-a face cu „comparație").
+- „3 module detectează gap" e adevărat doar la nivel de cuvânt:
+  `content_gaps` (topicuri lipsă din GEO/citation monitoring → conținut nou),
+  `gap_analysis` (scor pe criteriu vs. competitor cunoscut → fix pagini
+  existente), `multilingual` (pagină lipsă per limbă) — zero cod comun,
+  aproape zero model DB comun.
+- **Pereche reală, mai puternică decât zice planul:** `gap_analysis.py` ↔
+  `benchmarks.py` — aceeași formă (1 țintă + N competitori), același ciclu
+  de viață (pending→generating→completed/failed, proiect persistat), și
+  **deja cuplate structural în schemă** (`CompetitorGapAnalysis.benchmark_id`
+  → FK către `benchmark_projects.id`, CASCADE) — dar FK-ul e decorativ azi:
+  crearea unei `CompetitorGapAnalysis` cu `benchmark_id` NU derivă
+  `target_audit_id`/`competitor_audit_ids` din benchmark-ul legat; apelantul
+  trebuie să le retrimită oricum.
+- `cross_reference.py` — înfășoară un engine legacy separat
+  (`core/cross_reference_analyzer.py`, 1943 linii) care citește din
+  directoare de fișiere plate, nu din `AuditResult` — unitate de analiză
+  complet diferită (toate paginile unui SINGUR audit, nu compară două).
+  Nu se fuzionează.
+- Logica de „diff două seturi de scoruri" apare de fapt de **trei ori**
+  independent: `compare.py` (`/compare`), `tracking.py`
+  (`/{project_id}/compare`), și **duplicat chiar în interiorul
+  `benchmarks.py`** (aceeași logică weighted-avg/rank la liniile ~241-258
+  și ~552-568) — candidat real pentru un helper comun, separat de decizia
+  de fuziune a modulelor.
+
+**3 bug-uri confirmate live și reparate, independent de orice decizie de
+fuziune:**
+- `content_gaps.py:110` (`deduplicate_gaps`) — `existing["sources"].extend(
+  gap["sources"])` crapă cu `KeyError` de fiecare dată când două gap-uri
+  din surse diferite sunt destul de similare pentru fuziune — exact
+  scenariul pentru care există funcția („boost confidence dacă mai multe
+  surse sunt de acord"). Fiecare generator de gap-uri setează doar cheia
+  singulară `"source"`; `"sources"` (plural) se creează doar la prima
+  apariție a unui topic, niciodată pe duplicatul care tocmai se fuzionează.
+  Prins de un `except Exception` gol din task-ul de fundal — eșec complet
+  silențios. Verificat live: crash confirmat înainte, fuziune corectă
+  (cu `confidence` crescut) după reparare. Test: `tests/test_content_gaps_dedup.py`.
+- `tracking.py` (3 locuri) — verificări de tip `if score and baseline_score`
+  în loc de `is not None`: un scor de exact `0.0` (valoare validă pentru o
+  pagină foarte slabă) e „falsy" în Python, deci delta rezultată era
+  silențios `None` în loc de valoarea reală. Verificat live: proiect real
+  cu snapshot la scor 0.0 → `overall_delta: null` înainte, `50.0` după.
+- `compare.py` — două liste divergente de „chei root audit" (14 vs. 20,
+  unele cu denumiri diferite: `internal_linking_audit` vs. `internal_linking`)
+  în `_extract_criteria_averages()` și `rerun_single_page()` — același
+  `audit_type` putea extrage scorul cu succes într-un endpoint și eșua
+  silențios în celălalt. Unificate într-o singură constantă comună
+  `AUDIT_ROOT_KEYS` (reuniune, aditiv — nimic pierdut din ce recunoștea
+  fiecare înainte).
+
+pytest (124 passed), smoke, api_diff verde. Commit-uri, merge pe master.
+
+**Decizie de fuziune — încă deschisă, propusă utilizatorului:**
+1. Fuzionează `gap_analysis.py` + `benchmarks.py` (pereche reală, cuplare FK
+   deja existentă) — și repară FK-ul decorativ ca parte din fuziune.
+2. Extrage un helper comun de „diff scoruri" folosit de `compare.py`,
+   `tracking.py`, și cele 2 locuri duplicate din `benchmarks.py`.
+3. `content_gaps.py`, `cross_reference.py`, `multilingual.py` rămân module
+   separate — domenii distincte, fără suprapunere reală de cod sau date.
+4. `compare.py` ar trebui despărțit (chart-uri de dashboard / rerun pagină /
+   comparație efemeră reală) înainte de orice decizie finală despre el.
+
 ### 5.3 `sources/` — trei implementări identice de upload CSV
 `gsc` (18), `ga4` (7), `ads` (7) — toate: upload CSV → parse → tabel → cross-reference.
 Extrage un pipeline comun de ingestie, parametrizat pe schema de coloane.
