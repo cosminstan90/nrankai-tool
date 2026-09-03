@@ -992,6 +992,70 @@ Extrage un pipeline comun de ingestie, parametrizat pe schema de coloane.
 date din proiect. Tratează migrarea ei cu grijă maximă.*
 Adaugă `bot_access` (fetch robots.txt) — devine relevant în Etapa 6.
 
+#### 5.3a Survey complet + premisă corectată (2026-09-03)
+Citire completă a celor 8 fișiere (`gsc/__init__.py`, `gsc/_shared.py`,
+`gsc/oauth_sync.py`, `gsc/properties.py`, `gsc/optimizer.py`, `ga4.py`,
+`ads.py`, `bot_access.py`) prin agent de research + verificare
+independentă a fiecărei afirmații-cheie (inclusiv un query read-only
+direct pe DB pentru a confirma proveniența datelor reale, dat fiind
+avertismentul explicit din plan despre valoarea lor).
+
+**Premisa „3 pipeline-uri CSV identice" nu se confirmă — GSC nu are deloc
+unul funcțional:**
+- **`_parse_gsc_csv` era apelată în `gsc/properties.py:135` dar nu era
+  definită NICĂIERI în tot repo-ul** — confirmat prin grep pe întregul
+  proiect (o singură apariție, punctul de apel). `git log -p` arată exact
+  momentul: commit-ul `e14df80` (2026-04-05, împărțirea `gsc.py` monolitic
+  de 1541 linii în subpachetul actual `gsc/`) a șters definiția funcției
+  din fișierul vechi, dar punctul de apel a supraviețuit în noul
+  `properties.py`. **100% din apeluri la `POST /api/gsc/properties/{id}/
+  upload` crapau cu `NameError`, dintotdeauna.**
+- **Verificat live, cu grijă maximă dat fiind avertismentul din plan:**
+  query read-only direct pe `api/data/analyzer.db` confirmă că singurul
+  `GscProperty` real (`site_url='sc-domain:conso.ro'`, `sync_type='api'`,
+  `total_queries=25000`, `total_pages=11832`) — și toate cele 25.000/11.832
+  rânduri din `gsc_query_rows`/`gsc_page_rows` — au ajuns **exclusiv prin
+  sincronizarea live OAuth din `gsc/oauth_sync.py`**, niciodată prin CSV.
+  **Zero risc de date** — funcționalitatea CSV nu a scris niciodată nimic,
+  deci bug-ul nu a putut cauza pierdere sau corupere de date reale.
+- `gsc/_shared.py` importă `csv, io, uuid, sqlite3, UploadFile, File, Form,
+  ...` — nefolosite deloc în cele 121 de linii reale ale fișierului (doar
+  helper-e OAuth) — semn clar că logica CSV era menită să locuiască acolo
+  dar nu a supraviețuit refactorizării.
+- GA4 (`ga4.py`) și Ads (`ads.py`) sunt de fapt auto-suficiente, fiecare cu
+  propriul `_parse_ga4_csv`/`_parse_ads_csv` complet funcțional — aceeași
+  formă generală (decode BOM → `csv.DictReader` → detectare tip raport din
+  primul header → cast per-câmp → delete-apoi-insert), dar regulile de
+  parsare diferă semnificativ și nu sunt interschimbabile: GA4 parsează
+  durate `mm:ss`, Ads are CTR mereu cu `%` și costuri cu simboluri
+  valutare, fiecare detectează o pereche diferită de tipuri de raport.
+  Ambele tabele sunt goale azi (0 rânduri) — zero risc de date oricum.
+
+**Reparat: `_parse_gsc_csv` scrisă de la zero** (aprobat explicit ca prim
+pas, izolat de GA4/Ads), potrivită formatului real de export GSC
+(„Top queries"/„Top pages", CTR ca procent `"12.34%"`), urmând stilul deja
+stabilit în `_parse_ads_csv`. CTR normalizat la scara 0.0–1.0 deja folosită
+de calea OAuth funcțională (API-ul Google întoarce CTR ca fracție brută —
+CSV-ul trebuia să fie pe aceeași scară, altfel cele două căi de ingestie
+ar fi fost silențios inconsistente pe unități).
+
+Verificat live: property de test creat, upload real CSV queries (3 rânduri)
+→ 200, rânduri persistate corect (CTR convertit corect: `2.4%` → `0.024`),
+upload CSV pages (2 rânduri) → 200, header nerecunoscut → 422 corect.
+Confirmat explicit că property-ul real (25.000/11.832 rânduri) a rămas
+neatins pe tot parcursul testării. Test de regresie:
+`tests/test_gsc_csv_parser.py`. pytest (139 passed), smoke, api_diff verde.
+
+**Rămas neatins, decizie viitoare (fără risc de date, cosmetic):**
+1. Scaffolding comun GA4+Ads (decode BOM, detectare tip raport, pattern
+   delete-apoi-insert) — casterele specifice (`_dur`/`_ctr`/`_cost`) rămân
+   neschimbate per sursă. Ambele tabele goale azi — zero urgență.
+2. Helper comun pentru cele 3 endpoint-uri `cross_reference` (construiește
+   lookup normalizat din sursa B, grupează rândurile sursei A, sortează,
+   limitează la N) — regulile de grupare rămân specifice per pereche.
+3. `bot_access.py` rămâne neatins — devine relevant în Etapa 6, nu participă
+   deloc la pattern-ul de upload CSV.
+
 ### 5.4 `queries/`
 `keyword_research` (5), `clusteriq` (16), `query_suggestions` (1) + partea de query din `gsc`.
 
