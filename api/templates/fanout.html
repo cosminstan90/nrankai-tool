@@ -814,6 +814,34 @@
                     </div>
                 </div>
             </template>
+
+            <!-- Recurring competitors: who keeps getting cited instead of you, across tracking history -->
+            <template x-if="tlCompetitors && tlCompetitors.competitors.length">
+                <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mt-4">
+                    <div class="px-4 py-3 border-b border-gray-100">
+                        <h4 class="text-sm font-semibold text-gray-700">Recurring Competitors</h4>
+                        <p class="text-xs text-gray-400 mt-0.5">Domains cited instead of you across this config's tracking history</p>
+                    </div>
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50"><tr>
+                            <th class="px-4 py-2 text-left font-medium text-gray-500">Domain</th>
+                            <th class="px-4 py-2 text-right font-medium text-gray-500">Total appearances</th>
+                            <th class="px-4 py-2 text-right font-medium text-gray-500">Runs appeared in</th>
+                            <th class="px-4 py-2 text-right font-medium text-gray-500">Last seen</th>
+                        </tr></thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="comp in tlCompetitors.competitors.slice(0, 10)" :key="comp.domain">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-4 py-2 text-gray-700" x-text="comp.domain"></td>
+                                    <td class="px-4 py-2 text-right font-mono text-gray-600" x-text="comp.total_appearances"></td>
+                                    <td class="px-4 py-2 text-right font-mono text-gray-600" x-text="comp.runs_appeared_in"></td>
+                                    <td class="px-4 py-2 text-right text-gray-500" x-text="comp.last_seen_date || '—'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
         </div>
 
         <!-- ══ Tab: Competitive ═══════════════════════════════════════════ -->
@@ -1509,6 +1537,7 @@ function fanoutApp() {
         },
         tlResult:         null,
         tlLoading:        false,
+        tlCompetitors:    null,
         tlShowCreate:     false,
         tlCreating:       false,
         tlSelectedConfig: null,
@@ -1581,12 +1610,17 @@ function fanoutApp() {
         async loadTimeline(configId, period) {
             this.tlLoading = true;
             this.tlResult  = null;
+            this.tlCompetitors = null;
             try {
                 const qs  = period ? `?period=${period}` : '';
                 const res = await fetch(`/api/fanout/tracking/${configId}/timeline${qs}`);
                 if (res.ok) {
                     this.tlResult = await res.json();
                     this.$nextTick(() => this.renderTimelineChart());
+                }
+                const compRes = await fetch(`/api/fanout/tracking/${configId}/competitors${qs}`);
+                if (compRes.ok) {
+                    this.tlCompetitors = await compRes.json();
                 }
             } catch (_) {}
             finally { this.tlLoading = false; }

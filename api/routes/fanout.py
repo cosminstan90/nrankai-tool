@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from api.limiter import limiter
 from pydantic import BaseModel, field_validator
-from sqlalchemy import select, desc, func
+from sqlalchemy import select, desc, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -900,6 +900,70 @@ async def get_tracking_timeline(
         "model_drift_detected":  model_drift_detected,
         "period":                period,
         "run_count":             len(runs),
+    }
+
+
+@router.get("/tracking/{config_id}/competitors")
+async def get_tracking_competitors(
+    config_id: str,
+    period: str = "30d",
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Aggregate FanoutTrackingRun.top_competitors across a config's history:
+    which domains keep getting cited instead of the target, across already-
+    completed tracking runs -- no fresh LLM calls, no need to name competitors
+    up front. (Etapa 7 of docs/CONSOLIDATION_PLAN.md.)
+
+    Each run already stores its own [{domain, appearances}] snapshot
+    (api/workers/fanout_tracker_worker.py) -- this folds them into one
+    ranked view. period: 7d | 30d | 90d | all
+    """
+    config = await db.get(FanoutTrackingConfig, config_id)
+    if not config:
+        raise_not_found("Tracking config")
+
+    from datetime import datetime, timedelta
+    period_days = {"7d": 7, "30d": 30, "90d": 90}.get(period, None)
+
+    q = select(FanoutTrackingRun).where(
+        and_(
+            FanoutTrackingRun.config_id == config_id,
+            FanoutTrackingRun.status == "completed",
+        )
+    ).order_by(FanoutTrackingRun.run_date)
+
+    if period_days:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=period_days)).strftime("%Y-%m-%d")
+        q = q.where(FanoutTrackingRun.run_date >= cutoff)
+
+    runs = (await db.execute(q)).scalars().all()
+
+    aggregate: dict = {}
+    for r in runs:
+        for entry in (r.top_competitors or []):
+            domain = (entry or {}).get("domain")
+            if not domain:
+                continue
+            appearances = entry.get("appearances") or 0
+            bucket = aggregate.setdefault(domain, {
+                "domain": domain,
+                "total_appearances": 0,
+                "runs_appeared_in": 0,
+                "last_seen_date": None,
+            })
+            bucket["total_appearances"] += appearances
+            bucket["runs_appeared_in"] += 1
+            if appearances > 0 and (bucket["last_seen_date"] is None or r.run_date > bucket["last_seen_date"]):
+                bucket["last_seen_date"] = r.run_date
+
+    competitors = sorted(aggregate.values(), key=lambda d: d["total_appearances"], reverse=True)
+
+    return {
+        "config":     config.to_dict(),
+        "competitors": competitors,
+        "period":     period,
+        "run_count":  len(runs),
     }
 
 
