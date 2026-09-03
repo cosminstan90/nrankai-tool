@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from api.models.database import (
-    get_db, Audit, AuditResult, AuditSummary,
+    get_db, Audit, AuditResult, AuditSummary, CostRecord,
 )
-from ._shared import templates, _AUDIT_TYPE_LABELS, _load_weights, _compute_composite
+from ._shared import templates, _AUDIT_TYPE_LABELS, _load_weights, _compute_composite, compute_scorecard
 
 router = APIRouter()
 
@@ -312,6 +312,13 @@ async def page_view(
     # Composite score
     composite = _compute_composite({r["audit_type"]: r["score"] for r in audit_results}, weights)
 
+    # SEO / GEO / AEO scorecard (Etapa 7)
+    scorecard = await compute_scorecard(
+        db, audit_results[0]["website"] if audit_results else "",
+        {r["audit_type"]: r["score"] for r in audit_results}, weights,
+        page_url=decoded_url,
+    )
+
     # Chart data (radar)
     chart_labels = [r["audit_type_label"] for r in audit_results if r["score"] is not None]
     chart_scores = [r["score"] for r in audit_results if r["score"] is not None]
@@ -348,6 +355,7 @@ async def page_view(
         "website": audit_results[0]["website"] if audit_results else "",
         "audit_results": audit_results,
         "composite_score": composite,
+        "scorecard": scorecard,
         "chart_labels": _json.dumps(chart_labels),
         "chart_scores": _json.dumps(chart_scores),
         "history_data": _json.dumps(history_data),
@@ -462,6 +470,9 @@ async def site_health(
         count_q = select(func.count(AuditResult.id)).where(AuditResult.audit_id == audit.id)
         page_count = (await db.execute(count_q)).scalar() or 0
 
+        cost_q = select(func.sum(CostRecord.estimated_cost_usd)).where(CostRecord.audit_id == audit.id)
+        cost_usd = (await db.execute(cost_q)).scalar() or 0.0
+
         audit_summaries.append({
             "audit_type": atype,
             "audit_type_label": _AUDIT_TYPE_LABELS.get(atype, atype),
@@ -472,10 +483,24 @@ async def site_health(
             "model": audit.model,
             "completed_at": audit.completed_at.strftime("%Y-%m-%d") if audit.completed_at else None,
             "weight_pct": round(weights.get(atype, 0.02) * 100),
+            "cost_usd": cost_usd,
         })
 
     # Composite health score
     composite = _compute_composite({s["audit_type"]: s["avg_score"] for s in audit_summaries}, weights)
+
+    # SEO / GEO / AEO scorecard (Etapa 7) -- site-wide, no single page_url
+    scorecard = await compute_scorecard(
+        db, website, {s["audit_type"]: s["avg_score"] for s in audit_summaries}, weights,
+    )
+
+    # Total cost for this site -- referenced by site_health.html but never
+    # actually computed by this route (pre-existing bug, found while
+    # verifying the scorecard above: any real call to this page raised
+    # jinja2.exceptions.UndefinedError: 'total_cost_usd' is undefined).
+    total_cost_usd = (await db.execute(
+        select(func.sum(CostRecord.estimated_cost_usd)).where(CostRecord.website == website)
+    )).scalar() or 0.0
 
     # Chart data (radar)
     chart_labels = [s["audit_type_label"] for s in audit_summaries if s["avg_score"] is not None]
@@ -534,11 +559,13 @@ async def site_health(
         "website": website,
         "audit_summaries": audit_summaries,
         "composite_score": composite,
+        "scorecard": scorecard,
         "chart_labels": _json.dumps(chart_labels),
         "chart_scores": _json.dumps(chart_scores),
         "history_data": _json.dumps(history_data),
         "total_audit_types": len(audit_summaries),
         "total_audits_run": len(all_audits),
+        "total_cost_usd": total_cost_usd,
         "worst_pages_by_type": worst_pages_by_type,
     })
 
