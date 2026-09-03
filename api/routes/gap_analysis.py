@@ -14,7 +14,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
-from api.utils.errors import raise_not_found
+from api.utils.errors import raise_not_found, raise_bad_request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,11 +37,18 @@ router = APIRouter(prefix="/api/gap-analysis", tags=["gap_analysis"])
 # ============================================================================
 
 class GenerateGapAnalysisRequest(BaseModel):
-    """Request to generate a new gap analysis."""
+    """Request to generate a new gap analysis.
+
+    target_audit_id/competitor_audit_ids may be omitted if benchmark_id is
+    given -- they're then derived from that BenchmarkProject instead of
+    needing to be redundantly re-supplied. If both are given, the explicit
+    values win (so existing callers that already send both keep working
+    unchanged).
+    """
     name: str = Field(..., description="Gap analysis name")
-    target_audit_id: str = Field(..., description="Target audit ID (client)")
-    competitor_audit_ids: List[str] = Field(..., min_length=1, max_length=3, description="Competitor audit IDs (1-3)")
-    benchmark_id: Optional[str] = Field(None, description="Optional benchmark project ID")
+    target_audit_id: Optional[str] = Field(None, description="Target audit ID (client) -- required unless benchmark_id is given")
+    competitor_audit_ids: Optional[List[str]] = Field(None, min_length=1, max_length=3, description="Competitor audit IDs (1-3) -- required unless benchmark_id is given")
+    benchmark_id: Optional[str] = Field(None, description="Optional benchmark project ID -- derives target/competitor audit IDs if they aren't explicitly given")
     provider: str = Field("anthropic", description="LLM provider")
     model: Optional[str] = Field(None, description="LLM model (uses provider default if not set)")
 
@@ -886,12 +893,36 @@ async def generate_gap_analysis(
     Returns immediately and runs analysis in background.
     """
     async with AsyncSessionLocal() as db:
+        target_audit_id = request.target_audit_id
+        competitor_audit_ids = request.competitor_audit_ids
+
+        # Derive target/competitor audit IDs from the linked benchmark when
+        # they weren't explicitly supplied, instead of requiring the caller
+        # to redundantly re-provide data the benchmark already has.
+        if request.benchmark_id and (not target_audit_id or not competitor_audit_ids):
+            bm_result = await db.execute(
+                select(BenchmarkProject).where(BenchmarkProject.id == request.benchmark_id)
+            )
+            benchmark = bm_result.scalar_one_or_none()
+            if not benchmark:
+                raise_not_found("Benchmark project", request.benchmark_id)
+            target_audit_id = target_audit_id or benchmark.target_audit_id
+            competitor_audit_ids = competitor_audit_ids or (
+                json.loads(benchmark.competitor_audit_ids) if benchmark.competitor_audit_ids else []
+            )
+
+        if not target_audit_id or not competitor_audit_ids:
+            raise_bad_request(
+                "target_audit_id and competitor_audit_ids are required unless "
+                "benchmark_id refers to an existing benchmark"
+            )
+
         # Validate target audit exists and is completed
         target_result = await db.execute(
-            select(Audit).where(Audit.id == request.target_audit_id)
+            select(Audit).where(Audit.id == target_audit_id)
         )
         target_audit = target_result.scalar_one_or_none()
-        
+
         if not target_audit:
             raise_not_found("Target audit")
         
@@ -902,24 +933,24 @@ async def generate_gap_analysis(
             )
         
         # Validate competitor audits exist and are completed
-        for comp_id in request.competitor_audit_ids:
+        for comp_id in competitor_audit_ids:
             comp_result = await db.execute(
                 select(Audit).where(Audit.id == comp_id)
             )
             comp_audit = comp_result.scalar_one_or_none()
-            
+
             if not comp_audit:
                 raise_not_found("Competitor audit", comp_id)
-            
+
             if comp_audit.status != "completed":
                 raise HTTPException(
                     status_code=400,
                     detail=f"All competitor audits must be completed (audit {comp_id} status: {comp_audit.status})"
                 )
-        
+
         # Get model
         model = request.model or get_default_model(request.provider)
-        
+
         # Create gap analysis record
         gap_id = str(uuid.uuid4())
         new_gap = CompetitorGapAnalysis(
@@ -927,8 +958,8 @@ async def generate_gap_analysis(
             benchmark_id=request.benchmark_id,
             name=request.name,
             target_website=target_audit.website,
-            target_audit_id=request.target_audit_id,
-            competitor_audit_ids=json.dumps(request.competitor_audit_ids),
+            target_audit_id=target_audit_id,
+            competitor_audit_ids=json.dumps(competitor_audit_ids),
             status="pending",
             provider=request.provider,
             model=model,
@@ -942,8 +973,8 @@ async def generate_gap_analysis(
         background_tasks.add_task(
             generate_gap_analysis_task,
             gap_id=gap_id,
-            target_audit_id=request.target_audit_id,
-            competitor_audit_ids=request.competitor_audit_ids,
+            target_audit_id=target_audit_id,
+            competitor_audit_ids=competitor_audit_ids,
             provider=request.provider,
             model=model
         )

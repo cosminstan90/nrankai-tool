@@ -906,14 +906,49 @@ fuziune:**
 
 pytest (124 passed), smoke, api_diff verde. Commit-uri, merge pe master.
 
-**Decizie de fuziune — încă deschisă, propusă utilizatorului:**
-1. Fuzionează `gap_analysis.py` + `benchmarks.py` (pereche reală, cuplare FK
-   deja existentă) — și repară FK-ul decorativ ca parte din fuziune.
-2. Extrage un helper comun de „diff scoruri" folosit de `compare.py`,
-   `tracking.py`, și cele 2 locuri duplicate din `benchmarks.py`.
-3. `content_gaps.py`, `cross_reference.py`, `multilingual.py` rămân module
+#### 5.2b `gap_analysis.py` + `benchmarks.py`: FK reparat + helper comun (2026-09-03)
+Aprobat de utilizator: fuzionează perechea reală (nu literal într-un singur
+fișier — cele două servesc scopuri diferite, narativ larg vs. listă de
+fix-uri per criteriu — ci cuplarea lor structurală).
+
+**FK decorativ reparat:** `GenerateGapAnalysisRequest.target_audit_id`/
+`competitor_audit_ids` erau `Optional`-izate; când `benchmark_id` e dat și
+ele lipsesc, `generate_gap_analysis()` încarcă acum `BenchmarkProject`-ul
+legat și le derivă din `target_audit_id`/`competitor_audit_ids` proprii —
+apelantul nu mai trebuie să le retrimită redundant. Dacă ambele sunt date
+explicit, valorile explicite câștigă (niciun apelant existent nu-și schimbă
+comportamentul). Verificat live: creat un benchmark real (2 audituri
+GEO_AUDIT reale), apoi o gap analysis cu **doar** `benchmark_id` (fără
+`target_audit_id`/`competitor_audit_ids`) — confirmat că ambele au fost
+derivate corect, identic cu benchmark-ul legat, înainte ca task-ul de
+fundal să pornească apelul LLM.
+
+**Helper comun extras:** `_compute_comparison_stats()` în `benchmarks.py` —
+media ponderată pe număr de pagini, scorul celui mai bun competitor, rank-ul
+țintei — înlocuiește cele 2 copii identice din `_build_benchmark_data_payload`
+și `get_benchmark_detail`.
+
+**Găsit în timpul verificării live, NEATINS acum (semnalat separat via
+spawn_task, `task_b3d32e2e`):** `generate_gap_analysis_task` a eșuat pe
+perechea de audituri mari (531 + 1045 pagini) cu o eroare de parsare JSON —
+`max_tokens=4096` e insuficient pentru un răspuns LLM cu o matrice de gap
+completă pe atâtea date (comparativ, `content_briefs.py` folosește 8192
+pentru un brief de-o singură pagină, deci 4096 aici pare sub-dimensionat).
+Independent de fix-ul FK (care a funcționat corect înainte ca acest eșec să
+apară în etapa LLM) — nu s-a atins acum, e o problemă de tuning/design
+separată.
+
+Teste de regresie: `tests/test_gap_analysis_benchmark_fk.py`,
+`tests/test_benchmarks_comparison_stats.py`. pytest (132 passed), smoke,
+api_diff verde.
+
+**Rămas neatins, decizie viitoare:**
+1. Extrage un helper comun de „diff scoruri" folosit de `compare.py`,
+   `tracking.py` (algoritm similar dar nu identic cu cel din `benchmarks.py`
+   — nu s-a forțat unificarea acestora acum).
+2. `content_gaps.py`, `cross_reference.py`, `multilingual.py` rămân module
    separate — domenii distincte, fără suprapunere reală de cod sau date.
-4. `compare.py` ar trebui despărțit (chart-uri de dashboard / rerun pagină /
+3. `compare.py` ar trebui despărțit (chart-uri de dashboard / rerun pagină /
    comparație efemeră reală) înainte de orice decizie finală despre el.
 
 ### 5.3 `sources/` — trei implementări identice de upload CSV

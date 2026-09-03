@@ -141,6 +141,31 @@ async def _batch_load_audit_summaries(
     return summaries
 
 
+def _compute_comparison_stats(target_avg_score: float, competitor_summaries: List[dict]) -> dict:
+    """
+    Compute the page-count-weighted competitor average, best competitor
+    score, and the target's rank among all scores.
+
+    This exact computation used to be duplicated verbatim in
+    _build_benchmark_data_payload() and get_benchmark_detail().
+
+    Returns {"weighted_avg", "best_competitor_score", "target_rank", "total_count"}
+    """
+    total_pages = sum(c["pages_analyzed"] for c in competitor_summaries) or 1
+    weighted_avg = sum(
+        c["avg_score"] * (c["pages_analyzed"] / total_pages) for c in competitor_summaries
+    ) if competitor_summaries else 0
+    best_competitor_score = max((c["avg_score"] for c in competitor_summaries), default=0)
+    all_scores = [target_avg_score] + [c["avg_score"] for c in competitor_summaries]
+    target_rank = sorted(all_scores, reverse=True).index(target_avg_score) + 1
+    return {
+        "weighted_avg": weighted_avg,
+        "best_competitor_score": best_competitor_score,
+        "target_rank": target_rank,
+        "total_count": len(all_scores),
+    }
+
+
 def _build_benchmark_system_prompt(audit_type: str = "SEO_AUDIT") -> str:
     """
     Build an audit-type-aware system prompt for the competitive analysis LLM call.
@@ -239,22 +264,16 @@ def _build_benchmark_data_payload(
                 parts.append(f"    {j}. [{issue['priority']}] {issue['category']}: {issue['issue']}")
 
     # Page-count-weighted competitor average (more representative than a simple mean)
-    total_pages    = sum(c["pages_analyzed"] for c in competitor_summaries) or 1
-    weighted_avg   = sum(
-        c["avg_score"] * (c["pages_analyzed"] / total_pages) for c in competitor_summaries
-    ) if competitor_summaries else 0
-    best_comp      = max((c["avg_score"] for c in competitor_summaries), default=0)
-    all_scores     = [target_summary["avg_score"]] + [c["avg_score"] for c in competitor_summaries]
-    target_rank    = sorted(all_scores, reverse=True).index(target_summary["avg_score"]) + 1
+    stats = _compute_comparison_stats(target_summary["avg_score"], competitor_summaries)
 
     parts.extend([
         "",
         "COMPARATIVE STATISTICS:",
         f"  Target Score: {target_summary['avg_score']}",
-        f"  Competitor Weighted Average: {weighted_avg:.1f}",
-        f"  Best Competitor Score: {best_comp}",
-        f"  Target vs Weighted Average: {target_summary['avg_score'] - weighted_avg:+.1f} pts",
-        f"  Target Rank: {target_rank} out of {len(all_scores)}",
+        f"  Competitor Weighted Average: {stats['weighted_avg']:.1f}",
+        f"  Best Competitor Score: {stats['best_competitor_score']}",
+        f"  Target vs Weighted Average: {target_summary['avg_score'] - stats['weighted_avg']:+.1f} pts",
+        f"  Target Rank: {stats['target_rank']} out of {stats['total_count']}",
     ])
 
     return "\n".join(parts)
@@ -550,22 +569,15 @@ async def get_benchmark_detail(benchmark_id: str):
         ]
 
         # Page-count-weighted competitor average
-        total_pages   = sum(c["pages_analyzed"] for c in competitor_summaries) or 1
-        comp_avg      = sum(
-            c["avg_score"] * (c["pages_analyzed"] / total_pages)
-            for c in competitor_summaries
-        ) if competitor_summaries else 0
-        comp_best     = max((c["avg_score"] for c in competitor_summaries), default=0)
-        all_scores    = [target_summary["avg_score"]] + [c["avg_score"] for c in competitor_summaries]
-        target_rank   = sorted(all_scores, reverse=True).index(target_summary["avg_score"]) + 1
+        stats = _compute_comparison_stats(target_summary["avg_score"], competitor_summaries)
 
         comparison_metrics = {
-            "target_score":   target_summary["avg_score"],
-            "competitor_avg": round(comp_avg, 1),
-            "competitor_best": comp_best,
-            "delta_vs_avg":   round(target_summary["avg_score"] - comp_avg, 1),
-            "rank":           target_rank,
-            "position":       f"{target_rank} out of {len(all_scores)}",
+            "target_score":    target_summary["avg_score"],
+            "competitor_avg":  round(stats["weighted_avg"], 1),
+            "competitor_best": stats["best_competitor_score"],
+            "delta_vs_avg":    round(target_summary["avg_score"] - stats["weighted_avg"], 1),
+            "rank":            stats["target_rank"],
+            "position":        f"{stats['target_rank']} out of {stats['total_count']}",
         }
 
         ai_analysis = None
