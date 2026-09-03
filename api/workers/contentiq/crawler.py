@@ -192,6 +192,7 @@ async def crawl_audit(
     await db.commit()
 
     sem     = asyncio.Semaphore(concurrency)
+    db_lock = asyncio.Lock()
     crawled = 0
 
     async with httpx.AsyncClient(
@@ -205,35 +206,37 @@ async def crawl_audit(
             async with sem:
                 meta = await extract_page_meta(url, client)
 
-            # Upsert CiqPage
-            existing = (await db.execute(
-                select(CiqPage).where(CiqPage.audit_id == audit_id, CiqPage.url == url)
-            )).scalar_one_or_none()
+            # A single AsyncSession is not safe for concurrent use — serialize
+            # all DB access here even though fetches above run with concurrency.
+            async with db_lock:
+                existing = (await db.execute(
+                    select(CiqPage).where(CiqPage.audit_id == audit_id, CiqPage.url == url)
+                )).scalar_one_or_none()
 
-            now = datetime.now(timezone.utc)
-            if existing:
-                for k, v in meta.items():
-                    if k not in ("url",) and hasattr(existing, k):
-                        setattr(existing, k, v)
-                existing.crawled_at = now
-            else:
-                db.add(CiqPage(
-                    audit_id        = audit_id,
-                    url             = url,
-                    title           = meta.get("title"),
-                    h1              = meta.get("h1"),
-                    meta_description= meta.get("meta_description"),
-                    canonical       = meta.get("canonical"),
-                    word_count      = meta.get("word_count"),
-                    last_modified   = meta.get("last_modified"),
-                    status_code     = meta.get("status_code"),
-                    crawled_at      = now,
-                ))
+                now = datetime.now(timezone.utc)
+                if existing:
+                    for k, v in meta.items():
+                        if k not in ("url",) and hasattr(existing, k):
+                            setattr(existing, k, v)
+                    existing.crawled_at = now
+                else:
+                    db.add(CiqPage(
+                        audit_id        = audit_id,
+                        url             = url,
+                        title           = meta.get("title"),
+                        h1              = meta.get("h1"),
+                        meta_description= meta.get("meta_description"),
+                        canonical       = meta.get("canonical"),
+                        word_count      = meta.get("word_count"),
+                        last_modified   = meta.get("last_modified"),
+                        status_code     = meta.get("status_code"),
+                        crawled_at      = now,
+                    ))
 
-            crawled += 1
-            if crawled % 25 == 0:
-                logger.info("[Crawler] %d/%d pages crawled for audit %d", crawled, total, audit_id)
-                await db.commit()
+                crawled += 1
+                if crawled % 25 == 0:
+                    logger.info("[Crawler] %d/%d pages crawled for audit %d", crawled, total, audit_id)
+                    await db.commit()
 
         await asyncio.gather(*[_fetch_and_save(u) for u in urls])
         await db.commit()
