@@ -201,6 +201,15 @@ Mic-spre-mediu. API-uri gratuite, bine documentate, fără OAuth (doar API key).
 
 ## 3. Indexare — GSC URL Inspection API
 
+**Executat (2026-09-04).** `api/routes/gsc/url_inspection.py` (`POST /inspect`,
+`GET /inspect/quota`, `GET /inspections`), modele `UrlInspection` +
+`UrlInspectionQuotaLog` (migrația `0014`), reutilizează OAuth-ul existent din
+`_shared.py`. Cotă contorizată separat de rezultate (tabel append-only) —
+un recheck forțat pe aceeași pagină în aceeași zi tot consumă o unitate de
+cotă, chiar dacă rezultatul se suprascrie (upsert). Refuz la 1900/zi, sub
+limita reală de ~2000 a Google, ca marjă de siguranță. Detalii complete în
+mesajul de commit `feat(gsc): add URL Inspection API integration…`.
+
 ### Problema
 
 Din GSC folosești doar `searchanalytics` și listarea de site-uri (verificat prin
