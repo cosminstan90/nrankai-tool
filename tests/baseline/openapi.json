@@ -1734,12 +1734,54 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "period_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period End"
+          },
+          "period_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period Start"
           }
         },
         "required": [
           "file"
         ],
         "title": "Body_upload_csv_api_gsc_properties__property_id__upload_post",
+        "type": "object"
+      },
+      "Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post": {
+        "properties": {
+          "p_daily": {
+            "items": {},
+            "title": "P Daily",
+            "type": "array"
+          },
+          "q_daily": {
+            "items": {},
+            "title": "Q Daily",
+            "type": "array"
+          }
+        },
+        "required": [
+          "q_daily",
+          "p_daily"
+        ],
+        "title": "Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post",
         "type": "object"
       },
       "BotAccessRequest": {
@@ -15641,6 +15683,83 @@
         ]
       }
     },
+    "/api/gsc/properties/{property_id}/history": {
+      "get": {
+        "description": "Time series from gsc_page_history / gsc_query_history.\n\nWithout `key`: an aggregate daily trend across every page/query the\nproperty has history for (sum of clicks/impressions per period, plus a\nclicks-weighted average position -- a plain average would let a handful\nof near-zero-traffic rows swing the number, which is misleading for a\ntrend meant to answer \"is this property doing better or worse\").\n\nWith `key`: the series for that one exact page URL or query string.\n\nPeriods narrower than a day (an API sync) and periods spanning a CSV\nupload's whole range both come back as-is; this does not try to\nresample CSV ranges down to daily buckets, since a CSV upload only ever\nrepresents one aggregate number for whatever range the user picked in\nthe GSC UI.",
+        "operationId": "get_history_api_gsc_properties__property_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity",
+            "required": false,
+            "schema": {
+              "default": "page",
+              "title": "Entity",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Key"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get History",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
     "/api/gsc/properties/{property_id}/page-optimize": {
       "post": {
         "description": "Create an LLM optimization job for a specific page URL.\n\nFetches the page content, retrieves GSC queries for that page (if OAuth\nis connected), augments the SEO/GEO audit prompts with the known keywords,\nthen calls the LLM. Poll GET /api/guide/{guide_id} for results.",
@@ -15936,29 +16055,38 @@
     },
     "/api/gsc/properties/{property_id}/sync": {
       "post": {
-        "description": "Pull queries + pages from the GSC API and replace existing rows.",
-        "operationId": "sync_property_api_gsc_properties__property_id__sync_post",
+        "description": "Upsert per-day GSC rows into gsc_query_history / gsc_page_history.\n\nModule-level (not nested in sync_property) specifically so it is directly\ntestable without mocking google-api-python-client: q_daily/p_daily only\nneed to look like Search Console API rows ({\"keys\": [key, date], \"clicks\":\n..., ...}), not come from a real API call.\n\nKeyed on the same (property_id, key, period_start, period_end, source)\nunique constraint the migration defines, so re-syncing a day updates that\nrow's numbers instead of accumulating duplicates forever.",
+        "operationId": "upsert_gsc_history_api_gsc_properties__property_id__sync_post",
         "parameters": [
           {
-            "in": "path",
-            "name": "property_id",
+            "in": "query",
+            "name": "db_path",
             "required": true,
             "schema": {
-              "title": "Property Id",
+              "title": "Db Path",
               "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "days",
-            "required": false,
+            "name": "pid",
+            "required": true,
             "schema": {
-              "default": 90,
-              "title": "Days",
-              "type": "integer"
+              "title": "Pid",
+              "type": "string"
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "content": {
@@ -15979,7 +16107,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Sync Property",
+        "summary": "Upsert Gsc History",
         "tags": [
           "gsc"
         ]
@@ -15987,7 +16115,7 @@
     },
     "/api/gsc/properties/{property_id}/upload": {
       "post": {
-        "description": "Upload a GSC Performance CSV (queries OR pages).\nReport type is auto-detected from column headers.\nReplaces any previously uploaded data of that type for this property.",
+        "description": "Upload a GSC Performance CSV (queries OR pages).\nReport type is auto-detected from column headers.\nReplaces any previously uploaded data of that type for this property.\n\nperiod_start/period_end (YYYY-MM-DD) should be the date range selected in\nthe GSC UI when this export was generated -- a standard GSC CSV export\ncarries no date range in the file itself, so there is no way to derive it\nfrom the upload. Every row is additionally recorded to gsc_page_history /\ngsc_query_history stamped with that range (source=\"csv\"), which is what\nmakes trend data possible instead of each upload erasing the last one.\nOmitting both falls back to today for both, which is very likely wrong\nfor a historical export -- period_source in the response tells you which\nhappened.",
         "operationId": "upload_csv_api_gsc_properties__property_id__upload_post",
         "parameters": [
           {

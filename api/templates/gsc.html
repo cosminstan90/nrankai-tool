@@ -189,6 +189,21 @@
                         </span>
                     </div>
 
+                    <!-- Date range this export covers (for gsc_page_history/gsc_query_history trend data) -->
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="text-[10px] text-slate-400 block mb-0.5">Range start</label>
+                            <input type="date" class="w-full text-xs border border-slate-200 rounded px-2 py-1"
+                                   x-model="(uploadPeriod[p.id] = uploadPeriod[p.id] || {}).start">
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-slate-400 block mb-0.5">Range end</label>
+                            <input type="date" class="w-full text-xs border border-slate-200 rounded px-2 py-1"
+                                   x-model="(uploadPeriod[p.id] = uploadPeriod[p.id] || {}).end">
+                        </div>
+                    </div>
+                    <p class="text-[10px] text-slate-400 mb-2">Match the date range you picked in Search Console when exporting. Left blank, today is assumed -- wrong for a historical export.</p>
+
                     <!-- Upload zone -->
                     <div class="grid grid-cols-2 gap-2">
                         <!-- Queries upload -->
@@ -258,6 +273,7 @@ function gscList() {
         uploading:  {},
         uploadMsg:  {},
         uploadErr:  {},
+        uploadPeriod: {},  // { [propertyId]: { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' } } -- the date range selected in the GSC UI when this export was generated. A standard GSC CSV carries no date range in the file itself; without this every upload is stamped "today" in the history table, which is very likely wrong for a historical export.
         oauth:       { connected: false, email: null },
         syncing:     {},
         syncMsg:     {},
@@ -437,6 +453,9 @@ function gscList() {
 
             const fd = new FormData();
             fd.append('file', file);
+            const period = this.uploadPeriod[propertyId] || {};
+            if (period.start) fd.append('period_start', period.start);
+            if (period.end)   fd.append('period_end', period.end);
             try {
                 const res = await fetch('/api/gsc/properties/' + propertyId + '/upload', {
                     method: 'POST',
@@ -447,9 +466,11 @@ function gscList() {
                     this.uploadMsg = { ...this.uploadMsg, [propertyId]: data.detail || 'Upload failed' };
                     this.uploadErr = { ...this.uploadErr, [propertyId]: true };
                 } else {
+                    const assumedNote = data.period && data.period.source === 'assumed'
+                        ? ` (no range given — stamped as ${data.period.start})` : '';
                     this.uploadMsg = {
                         ...this.uploadMsg,
-                        [propertyId]: `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported`,
+                        [propertyId]: `✓ ${data.rows_imported.toLocaleString()} ${data.report_type} rows imported${assumedNote}`,
                     };
                     await this.loadProperties();
                 }

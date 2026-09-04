@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func,
+    Index, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -102,6 +103,74 @@ class GscPageRow(Base):
     impressions = Column(Integer,     nullable=False, default=0)
     ctr         = Column(Float,       nullable=True)
     position    = Column(Float,       nullable=True)
+
+
+class GscQueryHistory(Base):
+    """
+    Dated snapshots of query performance, additive alongside GscQueryRow.
+
+    GscQueryRow is a single current snapshot: every sync/upload deletes and
+    replaces it, and 8 call sites across the app (ads.py, meta_generator.py,
+    guide.py, etc.) filter it by property_id alone, assuming exactly one row
+    per query. Turning that table itself into a time series would silently
+    break every one of those aggregates and order_by(clicks.desc()) queries.
+
+    This table accumulates instead of replacing, so it can carry real history
+    without touching any existing behavior. GSC's Search Analytics API only
+    serves the trailing 16 months -- data not captured here going forward is
+    gone for good once that window rolls past it.
+    """
+    __tablename__ = "gsc_query_history"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    property_id  = Column(String(36),  ForeignKey("gsc_properties.id", ondelete="CASCADE"),
+                          nullable=False)
+    query        = Column(String(1000), nullable=False)
+    clicks       = Column(Integer,     nullable=False, default=0)
+    impressions  = Column(Integer,     nullable=False, default=0)
+    ctr          = Column(Float,       nullable=True)
+    position     = Column(Float,       nullable=True)
+    period_start = Column(String(10), nullable=False)   # YYYY-MM-DD, inclusive
+    period_end   = Column(String(10), nullable=False)   # YYYY-MM-DD, inclusive
+                                                          # (== period_start for one API day)
+    source       = Column(String(10), nullable=False)   # "csv" | "api"
+    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        # Re-syncing the same day/period is an update, not a duplicate; kept
+        # separate per source so a CSV upload and an API sync covering the
+        # same period never silently clobber each other's numbers.
+        UniqueConstraint("property_id", "query", "period_start", "period_end", "source",
+                          name="uq_gsc_query_history_period"),
+        Index("ix_gsc_query_history_prop_period", "property_id", "period_start"),
+        Index("ix_gsc_query_history_prop_query_period", "property_id", "query", "period_start"),
+    )
+
+
+class GscPageHistory(Base):
+    """Dated snapshots of page performance. See GscQueryHistory for why this
+    is a separate additive table rather than a column added to GscPageRow."""
+    __tablename__ = "gsc_page_history"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    property_id  = Column(String(36),  ForeignKey("gsc_properties.id", ondelete="CASCADE"),
+                          nullable=False)
+    page         = Column(String(2000), nullable=False)
+    clicks       = Column(Integer,     nullable=False, default=0)
+    impressions  = Column(Integer,     nullable=False, default=0)
+    ctr          = Column(Float,       nullable=True)
+    position     = Column(Float,       nullable=True)
+    period_start = Column(String(10), nullable=False)
+    period_end   = Column(String(10), nullable=False)
+    source       = Column(String(10), nullable=False)
+    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("property_id", "page", "period_start", "period_end", "source",
+                          name="uq_gsc_page_history_period"),
+        Index("ix_gsc_page_history_prop_period", "property_id", "period_start"),
+        Index("ix_gsc_page_history_prop_page_period", "property_id", "page", "period_start"),
+    )
 
 
 # ---------------------------------------------------------------------------

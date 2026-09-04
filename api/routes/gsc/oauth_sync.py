@@ -22,20 +22,8 @@ from api.models.database import (
     GscProperty,
     GscQueryRow,
     GscPageRow,
-    GoogleOAuthToken,
-    KeywordResult,
-    KeywordSession,
-    AuditResult,
-    UrlGuide,
-)
-from api.routes.costs import track_cost
-
-from api.models.database import (
-    AsyncSessionLocal,
-    DATABASE_PATH,
-    GscProperty,
-    GscQueryRow,
-    GscPageRow,
+    GscQueryHistory,
+    GscPageHistory,
     GoogleOAuthToken,
     KeywordResult,
     KeywordSession,
@@ -203,6 +191,79 @@ async def oauth_list_sites():
 
 
 @router.post("/properties/{property_id}/sync")
+def upsert_gsc_history(db_path: str, pid: str, q_daily: list, p_daily: list) -> None:
+    """
+    Upsert per-day GSC rows into gsc_query_history / gsc_page_history.
+
+    Module-level (not nested in sync_property) specifically so it is directly
+    testable without mocking google-api-python-client: q_daily/p_daily only
+    need to look like Search Console API rows ({"keys": [key, date], "clicks":
+    ..., ...}), not come from a real API call.
+
+    Keyed on the same (property_id, key, period_start, period_end, source)
+    unique constraint the migration defines, so re-syncing a day updates that
+    row's numbers instead of accumulating duplicates forever.
+    """
+    conn = sqlite3.connect(db_path, timeout=60, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    try:
+        cur = conn.cursor()
+        if q_daily:
+            cur.executemany(
+                "INSERT INTO gsc_query_history"
+                " (property_id, query, clicks, impressions, ctr, position,"
+                "  period_start, period_end, source)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'api')"
+                " ON CONFLICT(property_id, query, period_start, period_end, source)"
+                " DO UPDATE SET clicks=excluded.clicks, impressions=excluded.impressions,"
+                "                ctr=excluded.ctr, position=excluded.position",
+                [
+                    (
+                        pid,
+                        r.get("keys", ["", ""])[0],
+                        int(r.get("clicks", 0)),
+                        int(r.get("impressions", 0)),
+                        r.get("ctr"),
+                        r.get("position"),
+                        r.get("keys", ["", ""])[1],
+                        r.get("keys", ["", ""])[1],
+                    )
+                    for r in q_daily
+                ],
+            )
+            conn.commit()
+        if p_daily:
+            cur.executemany(
+                "INSERT INTO gsc_page_history"
+                " (property_id, page, clicks, impressions, ctr, position,"
+                "  period_start, period_end, source)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'api')"
+                " ON CONFLICT(property_id, page, period_start, period_end, source)"
+                " DO UPDATE SET clicks=excluded.clicks, impressions=excluded.impressions,"
+                "                ctr=excluded.ctr, position=excluded.position",
+                [
+                    (
+                        pid,
+                        r.get("keys", ["", ""])[0],
+                        int(r.get("clicks", 0)),
+                        int(r.get("impressions", 0)),
+                        r.get("ctr"),
+                        r.get("position"),
+                        r.get("keys", ["", ""])[1],
+                        r.get("keys", ["", ""])[1],
+                    )
+                    for r in p_daily
+                ],
+            )
+            conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 async def sync_property(property_id: str, days: int = 90):
     """Pull queries + pages from the GSC API and replace existing rows."""
     creds = await _get_gsc_credentials()
@@ -237,9 +298,45 @@ async def sync_property(property_id: str, days: int = 90):
         resp = svc.searchanalytics().query(siteUrl=site_url, body=body).execute()
         return resp.get("rows", [])
 
-    query_rows, page_rows = await asyncio.gather(
+    # ── Daily-granularity fetch, for gsc_page_history / gsc_query_history ──
+    # dimensions=[dimension, "date"] returns one row per (key, day) instead of
+    # one aggregated row per key -- this is what makes real trend data
+    # possible. rowLimit is per page, so this paginates via startRow rather
+    # than trusting a single 25000-row response: a busy property easily
+    # exceeds that for query+date or page+date combinations, and silently
+    # dropping the tail here would be the exact kind of data loss this
+    # feature exists to stop.
+    _DAILY_ROW_LIMIT = 25000
+    _DAILY_MAX_PAGES = 20  # 500k rows/property/sync -- generous safety cap, not a real limit
+
+    def _fetch_daily(dimension: str):
+        svc = build("searchconsole", "v1", credentials=creds)
+        rows, start_row, truncated = [], 0, False
+        for _ in range(_DAILY_MAX_PAGES):
+            body = {
+                "startDate":  start_str,
+                "endDate":    end_str,
+                "dimensions": [dimension, "date"],
+                "rowLimit":   _DAILY_ROW_LIMIT,
+                "startRow":   start_row,
+            }
+            resp = svc.searchanalytics().query(siteUrl=site_url, body=body).execute()
+            page = resp.get("rows", [])
+            rows.extend(page)
+            if len(page) < _DAILY_ROW_LIMIT:
+                break
+            start_row += _DAILY_ROW_LIMIT
+        else:
+            truncated = True
+        return rows, truncated
+
+    (query_rows, page_rows,
+     (query_daily_rows, query_daily_truncated),
+     (page_daily_rows, page_daily_truncated)) = await asyncio.gather(
         asyncio.get_event_loop().run_in_executor(None, _fetch, "query"),
         asyncio.get_event_loop().run_in_executor(None, _fetch, "page"),
+        asyncio.get_event_loop().run_in_executor(None, _fetch_daily, "query"),
+        asyncio.get_event_loop().run_in_executor(None, _fetch_daily, "page"),
     )
 
     # ── 2-4. Bulk replace rows using synchronous sqlite3 in a thread ──────────
@@ -301,6 +398,10 @@ async def sync_property(property_id: str, days: int = 90):
         None, _bulk_replace, DATABASE_PATH, property_id, query_rows, page_rows
     )
 
+    await asyncio.get_event_loop().run_in_executor(
+        None, upsert_gsc_history, DATABASE_PATH, property_id, query_daily_rows, page_daily_rows
+    )
+
     # ── 5. Update property metadata via SQLAlchemy ─────────────────────────
     async with AsyncSessionLocal() as db:
         await db.execute(
@@ -322,6 +423,11 @@ async def sync_property(property_id: str, days: int = 90):
         "queries":  len(query_rows),
         "pages":    len(page_rows),
         "date_range": {"start": start_str, "end": end_str},
+        "history": {
+            "query_days_captured": len(query_daily_rows),
+            "page_days_captured":  len(page_daily_rows),
+            "truncated": query_daily_truncated or page_daily_truncated,
+        },
     }
 
 

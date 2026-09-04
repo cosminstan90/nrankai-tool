@@ -15,6 +15,7 @@ from api.utils.errors import raise_not_found
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy import delete as sql_delete, update as sql_update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from api.models.database import (
     AsyncSessionLocal,
@@ -22,20 +23,8 @@ from api.models.database import (
     GscProperty,
     GscQueryRow,
     GscPageRow,
-    GoogleOAuthToken,
-    KeywordResult,
-    KeywordSession,
-    AuditResult,
-    UrlGuide,
-)
-from api.routes.costs import track_cost
-
-from api.models.database import (
-    AsyncSessionLocal,
-    DATABASE_PATH,
-    GscProperty,
-    GscQueryRow,
-    GscPageRow,
+    GscQueryHistory,
+    GscPageHistory,
     GoogleOAuthToken,
     KeywordResult,
     KeywordSession,
@@ -223,12 +212,33 @@ def _parse_gsc_csv(content: bytes) -> tuple:
 
 
 @router.post("/properties/{property_id}/upload")
-async def upload_csv(property_id: str, file: UploadFile = File(...)):
+async def upload_csv(
+    property_id: str,
+    file: UploadFile = File(...),
+    period_start: Optional[str] = Form(None),
+    period_end: Optional[str] = Form(None),
+):
     """
     Upload a GSC Performance CSV (queries OR pages).
     Report type is auto-detected from column headers.
     Replaces any previously uploaded data of that type for this property.
+
+    period_start/period_end (YYYY-MM-DD) should be the date range selected in
+    the GSC UI when this export was generated -- a standard GSC CSV export
+    carries no date range in the file itself, so there is no way to derive it
+    from the upload. Every row is additionally recorded to gsc_page_history /
+    gsc_query_history stamped with that range (source="csv"), which is what
+    makes trend data possible instead of each upload erasing the last one.
+    Omitting both falls back to today for both, which is very likely wrong
+    for a historical export -- period_source in the response tells you which
+    happened.
     """
+    period_source = "user" if (period_start and period_end) else "assumed"
+    if not period_start or not period_end:
+        today = datetime.now(timezone.utc).date().isoformat()
+        period_start = period_start or today
+        period_end   = period_end or today
+
     async with AsyncSessionLocal() as db:
         prop = await db.get(GscProperty, property_id)
         if not prop:
@@ -256,6 +266,24 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
                 for r in rows
             ])
             prop.total_queries = len(rows)
+            if rows:
+                hist_stmt = sqlite_insert(GscQueryHistory).values([
+                    dict(
+                        property_id=property_id, query=r["key"],
+                        clicks=r["clicks"], impressions=r["impressions"],
+                        ctr=r["ctr"], position=r["position"],
+                        period_start=period_start, period_end=period_end, source="csv",
+                    )
+                    for r in rows
+                ])
+                hist_stmt = hist_stmt.on_conflict_do_update(
+                    index_elements=["property_id", "query", "period_start", "period_end", "source"],
+                    set_=dict(
+                        clicks=hist_stmt.excluded.clicks, impressions=hist_stmt.excluded.impressions,
+                        ctr=hist_stmt.excluded.ctr, position=hist_stmt.excluded.position,
+                    ),
+                )
+                await db.execute(hist_stmt)
 
         else:  # pages
             await db.execute(
@@ -273,6 +301,24 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
                 for r in rows
             ])
             prop.total_pages = len(rows)
+            if rows:
+                hist_stmt = sqlite_insert(GscPageHistory).values([
+                    dict(
+                        property_id=property_id, page=r["key"],
+                        clicks=r["clicks"], impressions=r["impressions"],
+                        ctr=r["ctr"], position=r["position"],
+                        period_start=period_start, period_end=period_end, source="csv",
+                    )
+                    for r in rows
+                ])
+                hist_stmt = hist_stmt.on_conflict_do_update(
+                    index_elements=["property_id", "page", "period_start", "period_end", "source"],
+                    set_=dict(
+                        clicks=hist_stmt.excluded.clicks, impressions=hist_stmt.excluded.impressions,
+                        ctr=hist_stmt.excluded.ctr, position=hist_stmt.excluded.position,
+                    ),
+                )
+                await db.execute(hist_stmt)
 
         prop.updated_at = datetime.now(timezone.utc)
         await db.commit()
@@ -280,6 +326,7 @@ async def upload_csv(property_id: str, file: UploadFile = File(...)):
     return {
         "report_type":   report_type,
         "rows_imported": len(rows),
+        "period": {"start": period_start, "end": period_end, "source": period_source},
         "property_id":   property_id,
     }
 
@@ -399,6 +446,86 @@ async def get_pages(
             for r in items
         ],
     }
+
+
+# ── History / trend endpoint ──────────────────────────────────────────────────
+
+@router.get("/properties/{property_id}/history")
+async def get_history(
+    property_id: str,
+    entity: str = "page",     # "page" | "query"
+    key:    Optional[str] = None,
+    days:   int = 90,
+):
+    """
+    Time series from gsc_page_history / gsc_query_history.
+
+    Without `key`: an aggregate daily trend across every page/query the
+    property has history for (sum of clicks/impressions per period, plus a
+    clicks-weighted average position -- a plain average would let a handful
+    of near-zero-traffic rows swing the number, which is misleading for a
+    trend meant to answer "is this property doing better or worse").
+
+    With `key`: the series for that one exact page URL or query string.
+
+    Periods narrower than a day (an API sync) and periods spanning a CSV
+    upload's whole range both come back as-is; this does not try to
+    resample CSV ranges down to daily buckets, since a CSV upload only ever
+    represents one aggregate number for whatever range the user picked in
+    the GSC UI.
+    """
+    if entity not in ("page", "query"):
+        raise HTTPException(422, "entity must be 'page' or 'query'")
+
+    Model = GscPageHistory if entity == "page" else GscQueryHistory
+    key_col = Model.page if entity == "page" else Model.query
+
+    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()
+
+    async with AsyncSessionLocal() as db:
+        if key:
+            stmt = (
+                select(Model.period_start, Model.period_end, Model.clicks,
+                       Model.impressions, Model.ctr, Model.position, Model.source)
+                .where(Model.property_id == property_id, key_col == key,
+                       Model.period_start >= cutoff)
+                .order_by(Model.period_start)
+            )
+            rows = (await db.execute(stmt)).all()
+            points = [
+                {
+                    "period_start": r.period_start, "period_end": r.period_end,
+                    "clicks": r.clicks, "impressions": r.impressions,
+                    "ctr": round(r.ctr * 100, 2) if r.ctr is not None else None,
+                    "position": round(r.position, 1) if r.position is not None else None,
+                    "source": r.source,
+                }
+                for r in rows
+            ]
+        else:
+            stmt = (
+                select(
+                    Model.period_start,
+                    func.sum(Model.clicks).label("clicks"),
+                    func.sum(Model.impressions).label("impressions"),
+                    func.sum(Model.position * Model.clicks).label("_pos_weighted"),
+                )
+                .where(Model.property_id == property_id, Model.period_start >= cutoff)
+                .group_by(Model.period_start)
+                .order_by(Model.period_start)
+            )
+            rows = (await db.execute(stmt)).all()
+            points = [
+                {
+                    "period_start": r.period_start,
+                    "clicks": r.clicks or 0,
+                    "impressions": r.impressions or 0,
+                    "position": round(r._pos_weighted / r.clicks, 1) if r.clicks else None,
+                }
+                for r in rows
+            ]
+
+    return {"entity": entity, "key": key, "days": days, "points": points}
 
 
 # ── Cross-reference endpoint ──────────────────────────────────────────────────
