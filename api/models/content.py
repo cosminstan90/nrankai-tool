@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import (
     Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 from api.models._base import Base
 
@@ -346,7 +346,8 @@ class ActionCard(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
-    audit = relationship("Audit", backref="action_cards")
+    # action_cards.audit_id is NOT NULL -- same reason as AuditSummary above.
+    audit = relationship("Audit", backref=backref("action_cards", cascade="all, delete-orphan"))
     
     def to_dict(self):
         return {

@@ -7,7 +7,7 @@ from typing import Optional
 from sqlalchemy import (
     Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 
 from api.models._base import Base
 
@@ -156,7 +156,10 @@ class AuditSummary(Base):
     generated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationship back to audit
-    audit = relationship("Audit", backref="summary")
+    # cascade is required, not cosmetic: audit_summaries.audit_id is NOT NULL, so
+    # without it SQLAlchemy tries to de-associate the child (SET audit_id=NULL)
+    # on parent delete and the whole DELETE /api/audits/{id} fails with a 500.
+    audit = relationship("Audit", backref=backref("summary", cascade="all, delete-orphan"))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
