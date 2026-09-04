@@ -57,6 +57,18 @@ Din cele 9 lipsuri de mai jos, patru sunt **date pe care nu le ai**, două sunt
 
 **Prioritatea 1. Singura unde amânarea costă ceva ce nu se mai recuperează.**
 
+**Executat (2026-09-04).** Implementat **aditiv**, nu ca în planul de mai jos
+(coloană de dată direct pe `gsc_page_rows`/`gsc_query_rows`) — verificarea la
+implementare a găsit 8 locuri în cod care filtrează acele tabele doar după
+`property_id`, câteva cu `func.avg`/`func.sum`/`order_by(clicks.desc())`,
+toate presupunând un singur rând per pagină/query. A transforma tabelele alea
+într-o serie temporală ar fi stricat tăcut toate agregatele alea. În loc,
+două tabele noi, `gsc_page_history`/`gsc_query_history` (migrația `0012`),
+acumulează separat; `GscPageRow`/`GscQueryRow` rămân neschimbate.
+Detalii complete în mesajul de commit `feat(gsc): add time-series history…`.
+Rămas neatins din planul original: pasul 5 (worker de arhivare lunară) —
+nu era necesar pentru pornire, poate veni separat.
+
 ### Problema
 
 `gsc_page_rows` și `gsc_query_rows` au exact aceste coloane:
