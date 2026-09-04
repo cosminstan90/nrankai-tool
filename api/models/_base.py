@@ -14,7 +14,10 @@ from sqlalchemy.pool import StaticPool
 # Database file location
 DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 os.makedirs(DATABASE_DIR, exist_ok=True)
-DATABASE_PATH = os.path.join(DATABASE_DIR, "analyzer.db")
+# GEO_TOOL_DB_PATH lets the test suite point at a throwaway database.
+# Read at import time, so anything overriding it must do so before this
+# module is first imported (see tests/conftest.py).
+DATABASE_PATH = os.environ.get("GEO_TOOL_DB_PATH") or os.path.join(DATABASE_DIR, "analyzer.db")
 
 # Async SQLite URL
 DATABASE_URL = f"sqlite+aiosqlite:///{DATABASE_PATH}"

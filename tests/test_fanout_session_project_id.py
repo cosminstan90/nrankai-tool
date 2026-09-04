@@ -3,10 +3,11 @@ Pins the fix from Etapa 4.2 of the consolidation (docs/CONSOLIDATION_PLAN.md):
 api/routes/projects.py used to link a FanoutSession to a FanoutProject by
 writing the project's UUID into FanoutSession.audit_id -- a column declared
 as a real ForeignKey to the unrelated `audits` table. It only worked because
-PRAGMA foreign_keys=ON is applied to sync_engine only, never to the async
-engine every real request uses. FanoutSession.project_id is the dedicated
-column that replaces that reuse (migrations/versions/
-0011_fanout_session_project_id.py).
+FK enforcement never reached the async engine every real request uses, so
+SQLite ignored the constraint. That hole is now closed (the pragma is applied
+to both engines in api/models/database.py), which means the old reuse would
+fail loudly today. FanoutSession.project_id is the dedicated column that
+replaces it (migrations/versions/0011_fanout_session_project_id.py).
 """
 import unittest
 
