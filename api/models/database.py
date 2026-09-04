@@ -64,6 +64,7 @@ from api.models.serpiq import SiqSnapshot, SiqSerpItem
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,
+    PerformanceSnapshot,
 )
 
 DEFAULT_TEMPLATES = [

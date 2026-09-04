@@ -1884,6 +1884,34 @@
         "title": "CannibalizationRequest",
         "type": "object"
       },
+      "CheckRequest": {
+        "properties": {
+          "include_psi": {
+            "default": true,
+            "title": "Include Psi",
+            "type": "boolean"
+          },
+          "is_origin": {
+            "default": false,
+            "title": "Is Origin",
+            "type": "boolean"
+          },
+          "strategy": {
+            "default": "mobile",
+            "title": "Strategy",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "CheckRequest",
+        "type": "object"
+      },
       "ClientBillingCreate": {
         "description": "Schema for creating/updating client billing.",
         "properties": {
@@ -17507,6 +17535,117 @@
         "summary": "Upsert Note",
         "tags": [
           "notes"
+        ]
+      }
+    },
+    "/api/performance/check": {
+      "post": {
+        "description": "Fetch current CrUX field data (+ up to 25 weeks of CrUX history on first\ncheck) and, unless include_psi=False, one PSI lab run. Stores everything,\nreturns the current reading plus how many history points were captured.\n\nNeither Google API requires a key to exist server-side before calling --\nif PAGESPEED_API_KEY isn't set, fetch_crux/fetch_psi log a warning and\nreturn None, and this degrades to reporting \"no data\" per source rather\nthan crashing. That is the actual state of this deployment right now.",
+        "operationId": "check_performance_api_performance_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Check Performance",
+        "tags": [
+          "performance"
+        ]
+      }
+    },
+    "/api/performance/history": {
+      "get": {
+        "description": "Stored trend for a URL. source=\"crux\" for field data, \"psi\" for lab runs.",
+        "operationId": "get_performance_history_api_performance_history_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "strategy",
+            "required": false,
+            "schema": {
+              "default": "mobile",
+              "title": "Strategy",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "default": "crux",
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 180,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Performance History",
+        "tags": [
+          "performance"
         ]
       }
     },
