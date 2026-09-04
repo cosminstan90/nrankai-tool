@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func,
+    Index, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 
@@ -389,4 +390,97 @@ class TrackingSnapshot(Base):
         }
 
 
+# ---------------------------------------------------------------------------
+# Core Web Vitals (Etapa 2 of docs/IMPROVEMENTS_PLAN.md)
+# ---------------------------------------------------------------------------
+
+class PerformanceSnapshot(Base):
+    """
+    One dated Core Web Vitals reading for a URL, from one of two sources:
+
+    - "crux": real-user field data from the Chrome UX Report API. p75_* are
+      Google's own 75th-percentile numbers for real visitors; *_rating is
+      derived here from Google's published thresholds (good/needs-
+      improvement/poor), not returned by the API itself.
+    - "psi": lab data from PageSpeed Insights (a Lighthouse run against one
+      URL under simulated conditions) -- no real users involved, useful for
+      "what to fix", not for "how are real visitors experiencing this".
+
+    Dated and additive like gsc_page_history/gsc_query_history (see that
+    model's docstring in analytics.py): CrUX field data changes week to week,
+    and CrUX's own History API only keeps 25 weeks, so what isn't captured
+    here as it happens is eventually gone from Google too, not just here.
+    A single row never mixes sources -- a "crux" row for 2026-06-01 and a
+    "psi" row for 2026-06-01 are different rows, not one row with both sets
+    of fields, since they measure fundamentally different things (real users
+    vs one simulated run) and conflating them would make the trend
+    meaningless.
+    """
+    __tablename__ = "performance_snapshots"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    url          = Column(String(2000), nullable=False)
+    strategy     = Column(String(10), nullable=False)   # "mobile" | "desktop"
+    source       = Column(String(10), nullable=False)   # "crux" | "psi"
+
+    # Field data (source="crux") -- p75 in ms, cls unitless, *_rating in
+    # {"good", "needs-improvement", "poor"}, or NULL if CrUX had no data for
+    # that specific metric (a real, common outcome -- see fetch_crux).
+    p75_lcp        = Column(Float, nullable=True)
+    p75_inp        = Column(Float, nullable=True)
+    p75_cls        = Column(Float, nullable=True)
+    p75_fcp        = Column(Float, nullable=True)
+    p75_ttfb       = Column(Float, nullable=True)
+    lcp_rating     = Column(String(20), nullable=True)
+    inp_rating     = Column(String(20), nullable=True)
+    cls_rating     = Column(String(20), nullable=True)
+    fcp_rating     = Column(String(20), nullable=True)
+    ttfb_rating    = Column(String(20), nullable=True)
+
+    # Lab data (source="psi") -- performance_score is Lighthouse's 0-100
+    # score; the rest are the same metric names but from one simulated run,
+    # not real visitors, so never averaged together with the crux_* columns.
+    performance_score = Column(Integer, nullable=True)
+    lab_lcp           = Column(Float, nullable=True)
+    lab_cls            = Column(Float, nullable=True)
+    lab_tbt            = Column(Float, nullable=True)   # Total Blocking Time, ms
+    lab_fcp            = Column(Float, nullable=True)
+    lab_speed_index     = Column(Float, nullable=True)
+
+    period_start = Column(String(10), nullable=False)   # YYYY-MM-DD
+    period_end   = Column(String(10), nullable=False)   # == period_start for a live PSI/CrUX-current check;
+                                                          # wider for a CrUX History backfill entry
+    raw_json     = Column(Text, nullable=True)           # full API response, for reprocessing without a re-fetch
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("url", "strategy", "source", "period_start", "period_end",
+                          name="uq_performance_snapshot_period"),
+        Index("ix_performance_snapshot_url_period", "url", "period_start"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "url": self.url,
+            "strategy": self.strategy,
+            "source": self.source,
+            "period_start": self.period_start,
+            "period_end": self.period_end,
+            "field": {
+                "lcp": {"p75": self.p75_lcp, "rating": self.lcp_rating},
+                "inp": {"p75": self.p75_inp, "rating": self.inp_rating},
+                "cls": {"p75": self.p75_cls, "rating": self.cls_rating},
+                "fcp": {"p75": self.p75_fcp, "rating": self.fcp_rating},
+                "ttfb": {"p75": self.p75_ttfb, "rating": self.ttfb_rating},
+            } if self.source == "crux" else None,
+            "lab": {
+                "performance_score": self.performance_score,
+                "lcp": self.lab_lcp,
+                "cls": self.lab_cls,
+                "tbt": self.lab_tbt,
+                "fcp": self.lab_fcp,
+                "speed_index": self.lab_speed_index,
+            } if self.source == "psi" else None,
+        }
 

@@ -16,6 +16,7 @@ from .pdf_reports import router as pdf_reports_router
 from .schema_gen import router as schema_gen_router
 from .portfolio import router as portfolio_router
 from .costs import router as costs_router
+from .performance import router as performance_router
 from .gap_analysis import router as gap_analysis_router
 from .content_gaps import router as content_gaps_router
 from .action_cards import router as action_cards_router
