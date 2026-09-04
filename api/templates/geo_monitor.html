@@ -233,6 +233,13 @@
                         <span>Google Gemini</span>
                     </label>
                     {% endif %}
+                    {% if google_aio_available %}
+                    <label class="flex items-center">
+                        <input type="checkbox" x-model="newProject.providers.google_aio"
+                               class="mr-2">
+                        <span>Google AI Overviews (real SERP check, not an LLM question)</span>
+                    </label>
+                    {% endif %}
                 </div>
             </div>
             
@@ -627,7 +634,8 @@ function geoMonitor() {
                 chatgpt: {{ 'true' if providers.chatgpt else 'false' }},
                 claude: {{ 'true' if providers.claude else 'false' }},
                 perplexity: {{ 'true' if providers.perplexity else 'false' }},
-                gemini: {{ 'true' if gemini_available else 'false' }}
+                gemini: {{ 'true' if gemini_available else 'false' }},
+                google_aio: false
             },
             competitors: []
         },
@@ -830,7 +838,8 @@ function geoMonitor() {
                     chatgpt: {{ 'true' if providers.chatgpt else 'false' }},
                     claude: {{ 'true' if providers.claude else 'false' }},
                     perplexity: {{ 'true' if providers.perplexity else 'false' }},
-                    gemini: {{ 'true' if gemini_available else 'false' }}
+                    gemini: {{ 'true' if gemini_available else 'false' }},
+                    google_aio: false
                 },
                 competitors: []
             };

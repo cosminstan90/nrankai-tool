@@ -134,7 +134,7 @@ class CreateTrackerRequest(BaseModel):
     @field_validator("providers_config")
     @classmethod
     def validate_providers_config(cls, v: Dict[str, bool]) -> Dict[str, bool]:
-        valid_providers = {"chatgpt", "claude", "perplexity"}
+        valid_providers = {"chatgpt", "claude", "perplexity", "google_aio"}
         if not any(v.get(p, False) for p in valid_providers):
             raise ValueError("At least one provider must be enabled")
         return v
@@ -380,6 +380,40 @@ async def _query_provider(
                 input_tokens = int(len(query.split()) * 1.3)
                 output_tokens = int(len(response_text.split()) * 1.3)
                 return response_text, input_tokens, output_tokens, _model
+
+            elif provider == "google_aio":
+                # Not an LLM: checks whether Google's actual SERP shows an AI
+                # Overview for this query, via DataForSEO (Etapa 4 of
+                # docs/IMPROVEMENTS_PLAN.md). Reuses this same function so the
+                # existing text-based extract_cited_urls/analyze_mentions
+                # pipeline below runs unchanged against it -- one tracking
+                # system with google_aio as a fourth "provider", not a second,
+                # parallel AI Overview feature.
+                #
+                # 0 tokens is correct (no LLM involved), but note DataForSEO's
+                # SERP call has a real flat per-call cost (~$0.002-0.003) that
+                # track_cost() cannot record -- its cost model is token-based
+                # only. Left untracked deliberately rather than forcing a
+                # fake token count through it; a real fix means extending
+                # costs.py's pricing model, out of scope here.
+                from core.ai_overview_client import dfs_configured, fetch_ai_overview
+                _model = model or "dataforseo-serp"
+                if not dfs_configured():
+                    return "", 0, 0, _model
+                aio = await fetch_ai_overview(query)
+                if not aio:
+                    # No AI Overview for this query at all -- the overwhelming
+                    # majority of queries, and genuinely informative (it means
+                    # "not currently showing"), not a fetch failure. Collapses
+                    # to the same empty-response handling every other provider
+                    # uses for "nothing to report", consistent with how this
+                    # pipeline already treats absence uniformly.
+                    return "", 0, 0, _model
+                text = aio["markdown"]
+                urls = [r["url"] for r in aio["references"] if r.get("url")]
+                if urls:
+                    text += "\n\nCited sources:\n" + "\n".join(urls)
+                return text, 0, 0, _model
 
             else:
                 return "", 0, 0, provider
@@ -865,7 +899,7 @@ async def get_tracker_trend(tracker_id: str, db: AsyncSession = Depends(get_db))
         "label": "Overall Citation Rate", "data": overall_data,
         "borderColor": "rgb(59, 130, 246)", "backgroundColor": "rgba(59, 130, 246, 0.1)", "tension": 0.3,
     }]
-    provider_colors = {"chatgpt": "rgb(16, 163, 127)", "claude": "rgb(168, 85, 247)", "perplexity": "rgb(245, 158, 11)"}
+    provider_colors = {"chatgpt": "rgb(16, 163, 127)", "claude": "rgb(168, 85, 247)", "perplexity": "rgb(245, 158, 11)", "google_aio": "rgb(66, 133, 244)"}
     for provider in enabled_providers:
         color = provider_colors.get(provider, "rgb(107, 114, 128)")
         datasets.append({
@@ -1099,7 +1133,7 @@ async def get_geo_trend(project_id: str, db: AsyncSession = Depends(get_db)):
         "label": "Overall Visibility", "data": overall_scores,
         "borderColor": "rgb(59, 130, 246)", "backgroundColor": "rgba(59, 130, 246, 0.1)", "tension": 0.4,
     }]
-    provider_colors = {"chatgpt": "rgb(16, 163, 127)", "claude": "rgb(168, 85, 247)", "perplexity": "rgb(236, 72, 153)"}
+    provider_colors = {"chatgpt": "rgb(16, 163, 127)", "claude": "rgb(168, 85, 247)", "perplexity": "rgb(236, 72, 153)", "google_aio": "rgb(66, 133, 244)"}
     for provider, data in provider_data.items():
         datasets.append({
             "label": provider.capitalize(), "data": data,

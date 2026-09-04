@@ -168,6 +168,12 @@
                                 <span class="text-gray-700">Google Gemini</span>
                             </label>
                             {% endif %}
+                            {% if google_aio_available %}
+                            <label class="flex items-center">
+                                <input type="checkbox" x-model="newTracker.providers.google_aio" class="mr-2">
+                                <span class="text-gray-700">Google AI Overviews (real SERP check, not an LLM question)</span>
+                            </label>
+                            {% endif %}
                         </div>
                     </div>
 
@@ -417,7 +423,8 @@ function citationTrackerApp() {
                 chatgpt: true,
                 claude: true,
                 perplexity: true,
-                gemini: {{ 'true' if gemini_available else 'false' }}
+                gemini: {{ 'true' if gemini_available else 'false' }},
+                google_aio: false
             },
             schedule_preset: '',
             schedule_cron: null
@@ -562,7 +569,8 @@ function citationTrackerApp() {
                     chatgpt: true,
                     claude: true,
                     perplexity: true,
-                    gemini: {{ 'true' if gemini_available else 'false' }}
+                    gemini: {{ 'true' if gemini_available else 'false' }},
+                    google_aio: false
                 },
                 schedule_preset: '',
                 schedule_cron: null
