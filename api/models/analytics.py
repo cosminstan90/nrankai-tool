@@ -173,6 +173,100 @@ class GscPageHistory(Base):
     )
 
 
+class UrlInspection(Base):
+    """
+    Dated snapshot of one URL's indexation state, from GSC's URL Inspection
+    API (Etapa 3 of docs/IMPROVEMENTS_PLAN.md). searchanalytics (what
+    GscPageRow/GscPageHistory come from) tells you how a URL performs in
+    search; this tells you whether Google can find, crawl, and index it at
+    all -- coverage state, which canonical Google actually chose vs what the
+    page declares, mobile usability, rich results eligibility.
+
+    Dated like gsc_page_history for the same reason: indexation state
+    changes (a page can slip out of the index), and a single "latest state"
+    row would erase the fact that it used to be indexed. Unlike GSC
+    performance data there is no CSV alternative source -- URL Inspection is
+    API-only -- so there's no `source` column here.
+
+    Upserted on (property_id, page_url, checked_date): re-inspecting the
+    same URL on the same day updates that day's row rather than duplicating
+    it, but each such re-inspection still consumes one unit of Google's
+    daily quota -- see UrlInspectionQuotaLog, a separate append-only table,
+    for why quota usage can't be derived from counting rows here.
+    """
+    __tablename__ = "url_inspections"
+
+    id           = Column(Integer,     primary_key=True, autoincrement=True)
+    property_id  = Column(String(36),  ForeignKey("gsc_properties.id", ondelete="CASCADE"),
+                          nullable=False)
+    page_url     = Column(String(2000), nullable=False)
+    checked_date = Column(String(10),  nullable=False)   # YYYY-MM-DD
+
+    verdict             = Column(String(20),  nullable=True)   # PASS | NEUTRAL | FAIL | VERDICT_UNSPECIFIED
+    coverage_state       = Column(String(200), nullable=True)   # Google's human-readable status, e.g. "Submitted and indexed"
+    robots_txt_state      = Column(String(30),  nullable=True)   # ALLOWED | DISALLOWED
+    indexing_state        = Column(String(40),  nullable=True)   # INDEXING_ALLOWED | BLOCKED_BY_META_TAG | ...
+    page_fetch_state      = Column(String(30),  nullable=True)   # SUCCESSFUL | NOT_FOUND | ...
+    google_canonical      = Column(String(2000), nullable=True)  # what Google actually picked
+    user_canonical        = Column(String(2000), nullable=True)  # what the page declares
+    sitemaps_json          = Column(Text, nullable=True)          # JSON list of sitemap URLs this page was found in
+    last_crawl_time        = Column(DateTime, nullable=True)
+
+    mobile_usability_verdict = Column(String(20), nullable=True)
+    rich_results_verdict     = Column(String(20), nullable=True)
+
+    raw_json     = Column(Text, nullable=True)
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("property_id", "page_url", "checked_date",
+                          name="uq_url_inspection_period"),
+        Index("ix_url_inspection_prop_page", "property_id", "page_url"),
+    )
+
+    def to_dict(self):
+        import json as _json
+        return {
+            "id": self.id,
+            "page_url": self.page_url,
+            "checked_date": self.checked_date,
+            "verdict": self.verdict,
+            "coverage_state": self.coverage_state,
+            "robots_txt_state": self.robots_txt_state,
+            "indexing_state": self.indexing_state,
+            "page_fetch_state": self.page_fetch_state,
+            "google_canonical": self.google_canonical,
+            "user_canonical": self.user_canonical,
+            "sitemaps": _json.loads(self.sitemaps_json) if self.sitemaps_json else [],
+            "last_crawl_time": self.last_crawl_time.isoformat() if self.last_crawl_time else None,
+            "mobile_usability_verdict": self.mobile_usability_verdict,
+            "rich_results_verdict": self.rich_results_verdict,
+        }
+
+
+class UrlInspectionQuotaLog(Base):
+    """
+    One row per real call made to GSC's URL Inspection API -- append-only,
+    never upserted, so COUNT(*) for (property_id, checked_date) is always
+    the true number of quota units spent that day, regardless of how many
+    of those calls landed on the same URL (a forced re-check of an already-
+    cached page still costs a quota unit, and must still count as one).
+    Google enforces roughly 2000 inspections/day/property; api/routes/gsc/
+    url_inspection.py refuses to call out once this count would exceed that,
+    rather than finding out from a 429 mid-request.
+    """
+    __tablename__ = "url_inspection_quota_log"
+
+    id           = Column(Integer, primary_key=True, autoincrement=True)
+    property_id  = Column(String(36), ForeignKey("gsc_properties.id", ondelete="CASCADE"), nullable=False)
+    checked_date = Column(String(10), nullable=False)
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_url_inspection_quota_prop_date", "property_id", "checked_date"),
+    )
+
+
 # ---------------------------------------------------------------------------
 # GA4 Analytics Models
 # ---------------------------------------------------------------------------
