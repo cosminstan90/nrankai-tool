@@ -347,7 +347,7 @@ class ActionCard(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # action_cards.audit_id is NOT NULL -- same reason as AuditSummary above.
-    audit = relationship("Audit", backref=backref("action_cards", cascade="all, delete-orphan"))
+    audit = relationship("Audit", backref=backref("action_cards", cascade="all, delete-orphan", passive_deletes=True))
     
     def to_dict(self):
         return {
