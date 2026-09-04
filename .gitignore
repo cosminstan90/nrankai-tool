@@ -18,6 +18,7 @@ venv/
 dist/
 build/
 .pytest_cache/
+.pytest_tmp/
 
 # Old domain scrape folders
 ahrefs.com/
