@@ -242,6 +242,22 @@ Mic. Infrastructura de auth există deja.
 
 ## 4. Google AI Overviews — măsurare, nu doar sfaturi
 
+**Executat (2026-09-04).** `core/ai_overview_client.py` (verificat live,
+2 apeluri reale, ~$0.006 total). Integrat ca al patrulea „provider"
+(`google_aio`) direct în `_query_provider` din `visibility.py` — exact ce
+cerea planul: același sistem de tracking, nu unul paralel. Textul construit
+(markdown + surse citate) trece prin `extract_cited_urls`/`analyze_mentions`
+existente, nemodificate. Bifă nouă în UI (`citation_tracker.html` +
+`geo_monitor.html`), implicit oprită (cost real per apel, spre deosebire de
+providerii LLM gratuiți din perspectiva acestui tool). Detalii complete în
+mesajul de commit `feat(visibility): measure Google AI Overview presence…`.
+
+**Nerezolvat, asumat explicit:** costul DataForSEO per apel nu e înregistrat
+în `costs.py` — modelul de cost de acolo e per-token, nu per-apel-flat.
+Poziția exactă în lista de surse ("poziția în surse" din plan) nu e
+capturată ca prim câmp structurat — se bazează pe potrivire de text ca toți
+ceilalți provideri, nu pe un câmp explicit `position`.
+
 ### Problema
 
 Contradicția cea mai vizibilă din tool: `api/routes/visibility.py` măsoară real
