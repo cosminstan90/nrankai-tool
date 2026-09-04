@@ -25,6 +25,7 @@ from api.models.audit import (
 from api.models.analytics import (
     KeywordSession, KeywordResult, GscProperty, GscQueryRow, GscPageRow,
     GscQueryHistory, GscPageHistory,
+    UrlInspection, UrlInspectionQuotaLog,
     Ga4Property, Ga4PageRow, Ga4ChannelRow, AdsAccount, AdsSearchTermRow,
     AdsCampaignRow, InsightRun, InsightCard, GoogleOAuthToken,
 )

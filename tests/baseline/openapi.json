@@ -3475,6 +3475,29 @@
         "title": "ImportSessionRequest",
         "type": "object"
       },
+      "InspectRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "max_age_days": {
+            "default": 3,
+            "title": "Max Age Days",
+            "type": "integer"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "InspectRequest",
+        "type": "object"
+      },
       "MentionSeedingConfigCreate": {
         "properties": {
           "is_active": {
@@ -15783,6 +15806,146 @@
           }
         },
         "summary": "Get History",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
+    "/api/gsc/properties/{property_id}/inspect": {
+      "post": {
+        "operationId": "inspect_url_api_gsc_properties__property_id__inspect_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InspectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inspect Url",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
+    "/api/gsc/properties/{property_id}/inspect/quota": {
+      "get": {
+        "operationId": "get_inspection_quota_api_gsc_properties__property_id__inspect_quota_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Inspection Quota",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
+    "/api/gsc/properties/{property_id}/inspections": {
+      "get": {
+        "operationId": "list_inspections_api_gsc_properties__property_id__inspections_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Inspections",
         "tags": [
           "gsc"
         ]
