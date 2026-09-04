@@ -131,6 +131,20 @@ import.
 
 ## 2. Performanță — Core Web Vitals (categorie complet absentă)
 
+**Executat (2026-09-04).** `core/performance_client.py` (CrUX + PSI),
+`api/routes/performance.py` (`POST /check`, `GET /history`), model
+`PerformanceSnapshot` (migrația `0013`), dated/additiv la fel ca istoricul
+GSC. **Nu** integrat în `_COMPOSITE_WEIGHTS`, intenționat — exact avertismentul
+de mai jos despre auditurile vechi fără acest pilon. Detalii complete în
+mesajul de commit `feat(performance): add Core Web Vitals…`.
+
+**Găsit pe drum, neplănuit:** discul `C:` al mașinii de dezvoltare avea **0
+bytes liberi** — cauza unor eșecuri intermitente de test, nimic la codul
+scris. `tests/conftest.py` a fost mutat să folosească un director lângă repo
+(`.pytest_tmp/`) în loc de `%TEMP%` implicit, ca suita de teste să nu mai
+depindă de starea discului de sistem. Nu rezolvă discul plin — doar
+independentizează testele de el.
+
 ### Problema
 
 Zero. Nu există nici PageSpeed, nici CrUX, nici Lighthouse, niciun LCP/INP/CLS
