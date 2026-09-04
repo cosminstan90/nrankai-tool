@@ -44,8 +44,10 @@ class Audit(Base):
     prompt_version = Column(String(10), nullable=True, default="v3")
 
     # Relationship to results
-    results = relationship("AuditResult", back_populates="audit", cascade="all, delete-orphan")
-    logs = relationship("AuditLog", back_populates="audit", cascade="all, delete-orphan")
+    # passive_deletes: audit_results.audit_id is ON DELETE CASCADE in the schema, so
+    # let SQLite do the cascade instead of loading every child row just to delete it.
+    results = relationship("AuditResult", back_populates="audit", cascade="all, delete-orphan", passive_deletes=True)
+    logs = relationship("AuditLog", back_populates="audit", cascade="all, delete-orphan", passive_deletes=True)
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -159,7 +161,7 @@ class AuditSummary(Base):
     # cascade is required, not cosmetic: audit_summaries.audit_id is NOT NULL, so
     # without it SQLAlchemy tries to de-associate the child (SET audit_id=NULL)
     # on parent delete and the whole DELETE /api/audits/{id} fails with a 500.
-    audit = relationship("Audit", backref=backref("summary", cascade="all, delete-orphan"))
+    audit = relationship("Audit", backref=backref("summary", cascade="all, delete-orphan", passive_deletes=True))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""

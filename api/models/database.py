@@ -250,3 +250,14 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
+
+
+# The listener above only ever covered sync_engine, which is used for migrations.
+# Every HTTP request goes through the async engine, and its connections never got
+# the pragma -- so on that path SQLite silently ignored every ON DELETE CASCADE in
+# the schema, and deleting a parent left its children behind as orphan rows.
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma_async(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
