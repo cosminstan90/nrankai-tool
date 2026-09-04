@@ -57,6 +57,12 @@ Thumbs.db
 .claude/settings.local.json
 .claude/launch.json
 
+# Screaming Frog MCP server URL is machine-local (localhost, this machine's
+# SF install and licence) -- not portable to anyone else, so not committed.
+# The port itself is stable: mcpserver.port in ~/.ScreamingFrogSEOSpider/
+# spider.config, currently 11435.
+.mcp.json
+
 # Debug scripts
 debug_*.py
 plan2.md
