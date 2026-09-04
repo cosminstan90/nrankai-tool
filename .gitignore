@@ -65,3 +65,8 @@ BUILD_LOG.md
 *_report.txt
 website_llm_analyzer.log.*
 uvicorn_*.txt
+
+# Production database directory: the live DB plus cleanup backups/dumps.
+# *.db already covers the databases; this also catches deleted_orphans.json,
+# which scripts/cleanup_orphans.py writes next to the DB it cleans.
+api/data/
