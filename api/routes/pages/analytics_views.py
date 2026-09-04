@@ -60,11 +60,13 @@ async def geo_monitor_page(request: Request):
         "perplexity": bool(os.getenv("PERPLEXITY_API_KEY"))
     }
     from api.provider_registry import get_available_providers
+    from core.ai_overview_client import dfs_configured
     available = get_available_providers()
     return templates.TemplateResponse("geo_monitor.html", {
         "request": request,
         "providers": providers,
         "gemini_available": available.get("google", False),
+        "google_aio_available": dfs_configured(),
     })
 
 

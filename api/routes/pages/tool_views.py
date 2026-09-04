@@ -135,10 +135,12 @@ async def llms_txt_page(request: Request):
 @router.get("/citations", response_class=HTMLResponse)
 async def citation_tracker_page(request: Request):
     from api.provider_registry import get_available_providers
+    from core.ai_overview_client import dfs_configured
     available = get_available_providers()
     return templates.TemplateResponse("citation_tracker.html", {
         "request": request,
         "gemini_available": available.get("google", False),
+        "google_aio_available": dfs_configured(),
     })
 
 
