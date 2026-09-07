@@ -139,7 +139,7 @@ Parser tests must not require Screaming Frog to be installed or a site to be cra
 - Create: `tests/fixtures/sf/internal_html.csv`
 - Create: `tests/fixtures/sf/response_codes_internal_client_error_(4xx).csv`
 
-- [ ] **Step 1: Write `tests/fixtures/sf/all_inlinks.csv`**
+- [x] **Step 1: Write `tests/fixtures/sf/all_inlinks.csv`**
 
 Real header, six rows covering every branch of the storage rule: a content link, a nav link, an aside link, a JavaScript-type link, a content link to a 404, and a nav link to a 404.
 
@@ -153,7 +153,7 @@ Real header, six rows covering every branch of the storage rule: a content link,
 "Hyperlink","https://example.com/about","https://example.com/missing","512","","Missing page","404","Not Found","Crawlable","true","","","Absolute","//body/nav/a[3]","Navigation","HTML"
 ```
 
-- [ ] **Step 2: Write `tests/fixtures/sf/internal_html.csv`**
+- [x] **Step 2: Write `tests/fixtures/sf/internal_html.csv`**
 
 Only the columns the parser reads, in SF's real spelling.
 
@@ -165,7 +165,7 @@ Only the columns the parser reads, in SF's real spelling.
 "https://example.com/orphan-ish","200","Indexable","2","0","0","2","2"
 ```
 
-- [ ] **Step 3: Write `tests/fixtures/sf/response_codes_internal_client_error_(4xx).csv`**
+- [x] **Step 3: Write `tests/fixtures/sf/response_codes_internal_client_error_(4xx).csv`**
 
 ```csv
 "Address","Content Type","Status Code","Status","Indexability","Indexability Status","Inlinks","Response Time","Redirect URL","Redirect Type"
@@ -173,7 +173,7 @@ Only the columns the parser reads, in SF's real spelling.
 "https://example.com/missing","text/html","404","Not Found","Non-Indexable","Client Error","1","0.006","",""
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/sf/
@@ -192,7 +192,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `core/sf_crawler.py`
 - Test: `tests/test_sf_crawler.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_sf_crawler.py
@@ -216,12 +216,12 @@ class TestCrawlRefusesWithoutConfig(unittest.TestCase):
                 run_crawl("https://example.com", output_dir="/tmp/nope")
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_sf_crawler.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.sf_crawler'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # core/sf_crawler.py
@@ -349,12 +349,12 @@ def run_crawl(website: str, output_dir: str, timeout: int = 1800) -> CrawlArtifa
     )
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_sf_crawler.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Add an argv-construction test**
+- [x] **Step 5: Add an argv-construction test**
 
 This is the regression guard for finding #5 — spaced arguments must stay single argv elements.
 
@@ -381,12 +381,12 @@ class TestArgvConstruction(unittest.TestCase):
         self.assertEqual(argv[argv.index("--config") + 1], r"C:\cfg.seospiderconfig")
 ```
 
-- [ ] **Step 6: Run tests**
+- [x] **Step 6: Run tests**
 
 Run: `python -m pytest tests/test_sf_crawler.py -v`
 Expected: 3 passed
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add core/sf_crawler.py tests/test_sf_crawler.py
@@ -411,7 +411,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `core/sf_parser.py`
 - Test: `tests/test_sf_parser.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_sf_parser.py
@@ -447,12 +447,12 @@ class TestParseInternalHtml(unittest.TestCase):
         self.assertTrue(all(p["url"].startswith("https://") for p in pages))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_sf_parser.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.sf_parser'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # core/sf_parser.py
@@ -507,12 +507,12 @@ def parse_internal_html(path: Path) -> List[dict]:
     return pages
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -m pytest tests/test_sf_parser.py -v`
 Expected: 2 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/sf_parser.py tests/test_sf_parser.py
@@ -534,7 +534,7 @@ This is the task that keeps the database from exploding. Verified ratio: 174,244
 - Modify: `core/sf_parser.py`
 - Test: `tests/test_sf_parser.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # append to tests/test_sf_parser.py
@@ -579,12 +579,12 @@ class TestParseInlinks(unittest.TestCase):
         self.assertEqual(counts["https://example.com/about"]["non_content"], 2)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_sf_parser.py::TestParseInlinks -v`
 Expected: FAIL — `ImportError: cannot import name 'parse_inlinks'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # append to core/sf_parser.py
@@ -663,12 +663,12 @@ def parse_inlinks(path: Path) -> Tuple[List[dict], Dict[str, dict]]:
     return edges, dict(counts)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `python -m pytest tests/test_sf_parser.py -v`
 Expected: 6 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/sf_parser.py tests/test_sf_parser.py
@@ -695,7 +695,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Modify: `api/models/database.py`
 - Create: `migrations/versions/0015_site_crawls.py`
 
-- [ ] **Step 1: Write the models**
+- [x] **Step 1: Write the models**
 
 ```python
 # api/models/crawl.py
@@ -817,7 +817,7 @@ class CrawlLink(Base):
         }
 ```
 
-- [ ] **Step 2: Re-export from `database.py`**
+- [x] **Step 2: Re-export from `database.py`**
 
 Find the block of `from api.models.<domain> import ...` lines and add, matching the existing style:
 
@@ -827,7 +827,7 @@ from api.models.crawl import CrawlLink, CrawlPage, SiteCrawl  # noqa: F401
 
 If the file has an `__all__`, add `"SiteCrawl", "CrawlPage", "CrawlLink"` to it.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 ```python
 # migrations/versions/0015_site_crawls.py
@@ -928,7 +928,7 @@ def downgrade() -> None:
     op.drop_table("site_crawls")
 ```
 
-- [ ] **Step 4: Test the migration against a COPY of the database first**
+- [x] **Step 4: Test the migration against a COPY of the database first**
 
 `api/data/analyzer.db` is in WAL mode — copy it with the sqlite3 backup API, never `cp`.
 
@@ -946,7 +946,7 @@ GEO_TOOL_DB_PATH=D:/scratch_temp/analyzer_copy.db alembic upgrade head
 
 Expected: all three succeed with no error.
 
-- [ ] **Step 5: Verify integrity on the copy**
+- [x] **Step 5: Verify integrity on the copy**
 
 ```bash
 python -c "
@@ -960,12 +960,12 @@ print('tables:', [r[0] for r in c.execute(\"SELECT name FROM sqlite_master WHERE
 
 Expected: `fk violations: 0`, `integrity: ok`, three crawl tables listed.
 
-- [ ] **Step 6: Apply to the real database**
+- [x] **Step 6: Apply to the real database**
 
 Run: `alembic upgrade head`
 Expected: `Running upgrade 0014 -> 0015`
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add api/models/crawl.py api/models/database.py migrations/versions/0015_site_crawls.py
@@ -989,7 +989,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `api/workers/crawl_worker.py`
 - Test: `tests/test_crawl_worker.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_crawl_worker.py
@@ -1075,12 +1075,12 @@ class TestPersistCrawl(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(orphan.is_orphan)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_crawl_worker.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'api.workers.crawl_worker'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # api/workers/crawl_worker.py
@@ -1198,12 +1198,12 @@ async def run_site_crawl(website: str) -> str:
     return crawl_id
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `python -m pytest tests/test_crawl_worker.py -v`
 Expected: 3 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add api/workers/crawl_worker.py tests/test_crawl_worker.py
@@ -1231,7 +1231,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `core/crawl_insights.py`
 - Test: `tests/test_crawl_insights.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_crawl_insights.py
@@ -1286,12 +1286,12 @@ class TestDepthHistogram(unittest.TestCase):
         self.assertEqual(depth_histogram(pages), {0: 1, 1: 2, 4: 1})
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_crawl_insights.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.crawl_insights'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # core/crawl_insights.py
@@ -1372,12 +1372,12 @@ def depth_histogram(pages: List[dict]) -> Dict[int, int]:
     return dict(histogram)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `python -m pytest tests/test_crawl_insights.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/crawl_insights.py tests/test_crawl_insights.py
@@ -1404,7 +1404,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `core/crawl_facts.py`
 - Test: `tests/test_crawl_facts.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/test_crawl_facts.py
@@ -1469,12 +1469,12 @@ class TestFormatCrawlFactsBlock(unittest.TestCase):
         self.assertIn("404", block)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_crawl_facts.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'core.crawl_facts'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # core/crawl_facts.py
@@ -1542,12 +1542,12 @@ def format_crawl_facts_block(page_facts: Optional[dict]) -> str:
     return "\n".join(lines)
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `python -m pytest tests/test_crawl_facts.py -v`
 Expected: 4 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/crawl_facts.py tests/test_crawl_facts.py
@@ -1571,7 +1571,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Modify: `core/crawl_facts.py`
 - Test: `tests/test_crawl_facts.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # append to tests/test_crawl_facts.py
@@ -1620,12 +1620,12 @@ class TestLoadPageFacts(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(facts)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -m pytest tests/test_crawl_facts.py::TestLoadPageFacts -v`
 Expected: FAIL — `ImportError: cannot import name 'load_page_facts'`
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```python
 # append to core/crawl_facts.py
@@ -1693,12 +1693,12 @@ async def load_page_facts(website: str, page_url: str) -> Optional[dict]:
     }
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `python -m pytest tests/test_crawl_facts.py -v`
 Expected: 7 passed
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add core/crawl_facts.py tests/test_crawl_facts.py
@@ -1719,13 +1719,13 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `core/direct_analyzer.py` (the `question_type == "TECHNICAL_SEO"` block around line 955)
 
-- [ ] **Step 1: Read the surrounding code**
+- [x] **Step 1: Read the surrounding code**
 
 Run: `sed -n '943,980p' core/direct_analyzer.py`
 
 You will see the TECHNICAL_SEO facts injection. The new block goes immediately after it, before the research-context injection.
 
-- [ ] **Step 2: Add the injection**
+- [x] **Step 2: Add the injection**
 
 Insert after the TECHNICAL_SEO block's `page_text = facts_block + "\n\n" + page_text` line and before the `# Inject research context if available` comment:
 
@@ -1751,7 +1751,7 @@ Insert after the TECHNICAL_SEO block's `page_text = facts_block + "\n\n" + page_
                     page_text = format_crawl_facts_block(crawl_page_facts) + "\n\n" + page_text
 ```
 
-- [ ] **Step 3: Add the filename→URL helper**
+- [x] **Step 3: Add the filename→URL helper**
 
 `load_page_facts` needs the page's URL, and the analyzer works from filenames. Add this method to the same class (put it next to the other private helpers):
 
@@ -1769,7 +1769,7 @@ Insert after the TECHNICAL_SEO block's `page_text = facts_block + "\n\n" + page_
         return self._url_map.get(os.path.splitext(filename)[0])
 ```
 
-- [ ] **Step 4: Populate `_url_map` where `_domain_facts` is set**
+- [x] **Step 4: Populate `_url_map` where `_domain_facts` is set**
 
 Find the `run()` method around line 1224 where `self._domain_facts = await fetch_domain_facts(self.website)` happens, and add beside it:
 
@@ -1794,17 +1794,17 @@ Run: `grep -rn "url_map" core/web_scraper.py api/workers/audit_worker.py`
 
 If there are no hits, add Task 10b below before continuing.
 
-- [ ] **Step 5: Verify the app still imports**
+- [x] **Step 5: Verify the app still imports**
 
 Run: `python -c "import core.direct_analyzer; print('ok')"`
 Expected: `ok`
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `python -m pytest -q`
 Expected: all pass, 222 existing plus the new ones.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add core/direct_analyzer.py
@@ -1821,7 +1821,16 @@ crawled, so an unmeasured page is never scored as if it had zero inlinks.
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
-## Task 10b: Write `url_map.json` during scraping (only if Step 4 found no mapping)
+## Task 10b: ~~Write `url_map.json` during scraping~~ — NOT NEEDED
+
+**Superseded during implementation.** The scrape step already records
+url -> file_path in `scrape_state.json`, so no new file was needed. That
+source turned out to cover only 157 of 545 real scraped pages, so the map is
+instead built from the crawl's own URLs via `safe_filename_stem()` extracted
+from `core/web_scraper.py` -- verified to resolve 200/200 real filenames.
+The original steps below are left for the record only.
+
+### Original (unused) steps
 
 **Files:**
 - Modify: `core/web_scraper.py` (in `scrape()`, after the page loop completes)
@@ -1870,7 +1879,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 - Create: `api/routes/crawl.py`
 - Modify: `api/routes/__init__.py`, `api/main.py`
 
-- [ ] **Step 1: Write the router**
+- [x] **Step 1: Write the router**
 
 ```python
 # api/routes/crawl.py
@@ -1954,7 +1963,7 @@ async def latest_crawl(website: str, db: AsyncSession = Depends(get_db)):
     }
 ```
 
-- [ ] **Step 2: Register the router**
+- [x] **Step 2: Register the router**
 
 In `api/routes/__init__.py` add, matching the existing style:
 
@@ -1968,12 +1977,12 @@ In `api/main.py`, beside the other `app.include_router(...)` calls:
 app.include_router(crawl_router)
 ```
 
-- [ ] **Step 3: Verify it loads**
+- [x] **Step 3: Verify it loads**
 
 Run: `python -c "import api.main; print('ok')"`
 Expected: `ok`
 
-- [ ] **Step 4: Restart and smoke the endpoints**
+- [x] **Step 4: Restart and smoke the endpoints**
 
 ```bash
 taskkill /F /IM uvicorn.exe
@@ -1988,7 +1997,7 @@ curl -s "http://127.0.0.1:8000/api/crawl/site/https%3A%2F%2Fnot-crawled.example/
 
 Expected: `HTTP 404` with a "No completed crawl" message — proving the route is wired and fails cleanly.
 
-- [ ] **Step 5: Run the gate**
+- [x] **Step 5: Run the gate**
 
 ```bash
 python -m pytest -q
@@ -2000,7 +2009,7 @@ Expected: all tests pass, smoke reports no new 500s, api_diff lists exactly the 
 
 Run: `python3 tests/api_diff.py --update`
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add api/routes/crawl.py api/routes/__init__.py api/main.py tests/baseline/openapi.json

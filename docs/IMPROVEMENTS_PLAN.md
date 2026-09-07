@@ -293,6 +293,34 @@ Mic-spre-mediu. Clientul DataForSEO există; e vorba de endpoint-uri noi.
 
 ## 5. Crawler care urmărește linkuri
 
+**Executat parțial (2026-09-07).** Rescopat: în loc de crawler propriu, conduce
+Screaming Frog headless prin CLI (licența există). Plan complet în
+`docs/superpowers/plans/2026-09-04-sf-crawler-link-graph.md`.
+
+Livrat: `core/sf_crawler.py` (rulare headless, refuză să pornească fără limite
+configurate), `core/sf_parser.py` (parsare + filtrare graf), modelele
+`SiteCrawl`/`CrawlPage`/`CrawlLink` (migrația `0015`),
+`api/workers/crawl_worker.py`, `core/crawl_insights.py` (anchor text, 404-uri
+interne cu sursele lor, distribuție adâncime), `core/crawl_facts.py` +
+injectare în `direct_analyzer.py` pentru `INTERNAL_LINKING`, și
+`api/routes/crawl.py` (3 endpoint-uri).
+
+**Decizia care a modelat tot:** un crawl real a produs 174.244 muchii
+hyperlink, din care 152.277 (87%) navigație și doar 157 (0,09%) linkuri de
+conținut. Stocăm doar muchiile de conținut, rupte și redirect; navigația
+rămâne contor per pagină — exact distincția pe care `internal_linking.yaml` o
+cerea deja.
+
+**Rămâne de făcut:** Task 0 din plan — exportul `.seospiderconfig` din GUI-ul
+Screaming Frog (limite de adâncime/pagini, respectare robots.txt, URI/s). E
+acțiune manuală, nu se poate genera din cod, și până există codul refuză
+deliberat să pornească un crawl. Task 12 (verificare end-to-end pe un site
+real) depinde de el.
+
+**Nelivrat, asumat:** lanțurile de redirect sunt exportate dar neparsate;
+muchiile de navigație nu se pot recupera ulterior, doar numărate; licența
+Screaming Frog devine dependență obligatorie pentru crawl.
+
 ### Problema
 
 `core/web_scraper.py` pornește de la sitemap și atât (`fetch_sitemap_urls`) —
