@@ -4963,6 +4963,21 @@
         "title": "StandaloneOptimizeRequest",
         "type": "object"
       },
+      "StartCrawlRequest": {
+        "properties": {
+          "website": {
+            "maxLength": 500,
+            "minLength": 4,
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "website"
+        ],
+        "title": "StartCrawlRequest",
+        "type": "object"
+      },
       "StatsResponse": {
         "description": "Schema for dashboard statistics.",
         "properties": {
@@ -11468,6 +11483,128 @@
         "summary": "Get Cost Summary",
         "tags": [
           "costs"
+        ]
+      }
+    },
+    "/api/crawl/site/{website}/latest": {
+      "get": {
+        "description": "Newest completed crawl for a site, with its derived findings.",
+        "operationId": "latest_crawl_api_crawl_site__website__latest_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "website",
+            "required": true,
+            "schema": {
+              "title": "Website",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Latest Crawl",
+        "tags": [
+          "crawl"
+        ]
+      }
+    },
+    "/api/crawl/start": {
+      "post": {
+        "description": "Start a crawl in the background. Returns immediately with the crawl id.\n\nRate limited to 5/hour deliberately: a crawl is the heaviest thing this\ntool does to someone else's server -- a verified run took over 10 minutes\n-- so accidental repeat triggering should be hard.",
+        "operationId": "start_crawl_api_crawl_start_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartCrawlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Crawl",
+        "tags": [
+          "crawl"
+        ]
+      }
+    },
+    "/api/crawl/{crawl_id}": {
+      "get": {
+        "description": "Status of a single crawl -- poll this after /start.",
+        "operationId": "get_crawl_api_crawl__crawl_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Crawl",
+        "tags": [
+          "crawl"
         ]
       }
     },
