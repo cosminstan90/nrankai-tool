@@ -77,6 +77,36 @@ return getDeepHTML(document.body);
 """
 
 
+def safe_filename_stem(url: str) -> str:
+    """
+    The filename (without extension) this scraper writes for a URL.
+
+    Extracted so other stages can map a stored URL back to the file that holds
+    it without duplicating -- and subtly diverging from -- these rules. Etapa 5
+    (docs/IMPROVEMENTS_PLAN.md) needs it to match crawl rows against analyzer
+    input files; verified against 545 real scraped pages, reproducing every
+    filename exactly.
+
+    Deterministic and one-way: two URLs differing only past 150 characters, or
+    only in characters that get sanitised, collapse to the same stem.
+    """
+    import urllib.parse
+
+    safe_name = re.sub(r'https?://', '', url)
+    safe_name = urllib.parse.unquote(safe_name)
+    # Remove all invalid Windows filename characters, including control characters
+    safe_name = re.sub(r'[\\/*?:"<>|\x00-\x1F\x7F]', '_', safe_name)
+    # Strip trailing dots and whitespace
+    safe_name = safe_name.strip('. \t\n\r')
+    if not safe_name:
+        safe_name = "index"
+
+    if len(safe_name) > 150:
+        safe_name = safe_name[:150]
+
+    return safe_name
+
+
 @dataclass
 class SitemapEntry:
     """Represents a URL entry from the sitemap with optional metadata."""
@@ -639,18 +669,7 @@ def scrape(
             rendered_html = driver.execute_script(DEEP_HTML_SCRIPT)
 
             # Generate safe filename
-            import urllib.parse
-            safe_name = re.sub(r'https?://', '', url)
-            safe_name = urllib.parse.unquote(safe_name)
-            # Remove all invalid Windows filename characters, including control characters
-            safe_name = re.sub(r'[\\/*?:"<>|\x00-\x1F\x7F]', '_', safe_name)
-            # Strip trailing dots and whitespace
-            safe_name = safe_name.strip('. \t\n\r')
-            if not safe_name:
-                safe_name = "index"
-                
-            if len(safe_name) > 150: 
-                safe_name = safe_name[:150]
+            safe_name = safe_filename_stem(url)
 
             file_path = os.path.join(output_dir, f"{safe_name}.html")
             

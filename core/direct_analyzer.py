@@ -851,6 +851,9 @@ class DirectAnalyzer:
         self.prompts_dir = prompts_dir  # Custom prompts directory (None = use default)
         self.html_dir = html_dir        # Original (pre-conversion) HTML, for TECHNICAL_SEO facts
         self._domain_facts: Optional[dict] = None
+        # filename stem -> source URL, built from the scrape state file for
+        # INTERNAL_LINKING crawl-fact lookup (Etapa 5). Empty when unavailable.
+        self._url_by_stem: Dict[str, str] = {}
 
         # Initialize content chunker for intelligent handling of large pages
         self.chunker = ContentChunker(provider=self.provider)
@@ -896,7 +899,37 @@ class DirectAnalyzer:
         
         # Initialize client
         self.client: Optional[AsyncLLMClient] = None
-    
+
+    async def _load_url_map(self) -> Dict[str, str]:
+        """
+        Build {analyzer filename stem: crawled URL} for crawl-fact lookup.
+
+        Built from the newest completed crawl's own URLs. The scrape state file
+        looked like the natural source, but on real data it covered only 157 of
+        545 scraped pages (the rest predate state tracking), which would have
+        left most pages rendering "no crawl data" while the feature appeared to
+        work. The scraper's URL -> filename rule is deterministic, so applying
+        it to the crawl's URLs covers every crawled page instead.
+
+        Returns {} on any problem: missing facts degrade to an explicit "no
+        crawl data" block, which is safe, so this must never break an audit.
+        """
+        if not self.website:
+            return {}
+
+        try:
+            from core.crawl_facts import load_crawl_url_map
+            url_by_stem = await load_crawl_url_map(self.website)
+        except Exception as exc:
+            logger.warning("Could not build crawl URL map for %s: %s", self.website, exc)
+            return {}
+
+        if url_by_stem:
+            logger.info("Loaded %d crawled URLs for internal-linking facts", len(url_by_stem))
+        else:
+            logger.info("No completed crawl for %s -- crawl facts unavailable", self.website)
+        return url_by_stem
+
     def _setup_signal_handlers(self):
         """Setup graceful shutdown on Ctrl+C."""
         def signal_handler(signum, frame):
@@ -968,6 +1001,27 @@ class DirectAnalyzer:
 
                     facts_block = format_facts_block(self._domain_facts, structured_data_types)
                     page_text = facts_block + "\n\n" + page_text
+
+                # Internal-linking crawl facts (Etapa 5 of
+                # docs/IMPROVEMENTS_PLAN.md). The prompt's rubric turns on how
+                # many BODY-content links point at this page and caps it at
+                # 20/100 when there are none -- a fact the page's own HTML
+                # cannot supply, so until now the model was guessing at it.
+                # When the site has never been crawled the block says so
+                # explicitly rather than reporting zero, which would invent a
+                # failing score for an unmeasured page.
+                if self.question_type == "INTERNAL_LINKING":
+                    from core.crawl_facts import format_crawl_facts_block, load_page_facts
+
+                    crawl_page_facts = None
+                    page_url = self._url_by_stem.get(os.path.splitext(filename)[0])
+                    if page_url and self.website:
+                        try:
+                            crawl_page_facts = await load_page_facts(self.website, page_url)
+                        except Exception as exc:
+                            logger.warning("Could not load crawl facts for %s: %s", page_url, exc)
+
+                    page_text = format_crawl_facts_block(crawl_page_facts) + "\n\n" + page_text
 
                 # Inject research context if available
                 if self.research_dir:
@@ -1223,6 +1277,12 @@ class DirectAnalyzer:
         if self.question_type == "TECHNICAL_SEO" and self.website:
             from core.technical_facts import fetch_domain_facts
             self._domain_facts = await fetch_domain_facts(self.website)
+
+        # Same idea for internal linking (Etapa 5): crawl facts are keyed by
+        # URL, but the analyzer works from filenames. Built once here rather
+        # than per page.
+        if self.question_type == "INTERNAL_LINKING" and self.website:
+            self._url_by_stem = await self._load_url_map()
 
         # Create semaphore for concurrency control
         semaphore = asyncio.Semaphore(self.concurrency)

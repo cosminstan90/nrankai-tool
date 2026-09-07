@@ -75,6 +75,40 @@ def format_crawl_facts_block(page_facts: Optional[dict]) -> str:
     return "\n".join(lines)
 
 
+async def load_crawl_url_map(website: str) -> dict:
+    """
+    {analyzer filename stem: crawled URL} for the newest completed crawl.
+
+    Built from the crawl's own URLs rather than from the scrape state file.
+    The state file was the obvious source, but on real data it covered only
+    157 of 545 scraped pages -- the rest predate state tracking -- which would
+    have left 71% of pages rendering "no crawl data" while the feature looked
+    like it worked. The scraper's URL -> filename rule is deterministic and
+    verified to reproduce all 157 known filenames exactly, so applying it to
+    the crawl's URLs covers every crawled page instead.
+
+    Returns {} when the site has never been crawled, which is the case where
+    no mapping is needed anyway.
+    """
+    from core.web_scraper import safe_filename_stem
+
+    async with AsyncSessionLocal() as db:
+        crawl = (await db.execute(
+            select(SiteCrawl)
+            .where(SiteCrawl.website == website, SiteCrawl.status == "completed")
+            .order_by(SiteCrawl.completed_at.desc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if crawl is None:
+            return {}
+
+        urls = (await db.execute(
+            select(CrawlPage.url).where(CrawlPage.crawl_id == crawl.id)
+        )).scalars().all()
+
+    return {safe_filename_stem(url): url for url in urls}
+
+
 async def load_page_facts(website: str, page_url: str) -> Optional[dict]:
     """
     Facts for one page from the newest COMPLETED crawl of that site.
