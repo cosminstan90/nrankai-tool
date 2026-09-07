@@ -1,0 +1,5 @@
+﻿"Address","Status Code","Indexability","Crawl Depth","Inlinks","Unique Inlinks","Outlinks","Unique Outlinks"
+"https://example.com/","200","Indexable","0","5","3","12","8"
+"https://example.com/pricing","200","Indexable","1","3","2","6","5"
+"https://example.com/about","200","Indexable","1","4","3","5","4"
+"https://example.com/orphan-ish","200","Indexable","2","0","0","2","2"

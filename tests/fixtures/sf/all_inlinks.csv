@@ -1,0 +1,7 @@
+﻿"Type","Source","Destination","Size (Bytes)","Alt Text","Anchor","Status Code","Status","Crawlability","Follow","Target","Rel","Path Type","Link Path","Link Position","Link Origin"
+"Hyperlink","https://example.com/","https://example.com/pricing","1024","","See our pricing","200","OK","Crawlable","true","","","Absolute","//body/main/a[1]","Content","HTML"
+"Hyperlink","https://example.com/","https://example.com/about","1024","","About","200","OK","Crawlable","true","","","Absolute","//body/nav/a[1]","Navigation","HTML"
+"Hyperlink","https://example.com/pricing","https://example.com/about","1024","","About","200","OK","Crawlable","true","","","Absolute","//body/aside/a[1]","Aside","HTML"
+"JavaScript","https://example.com/","https://example.com/app.js","2048","","","200","OK","Crawlable","true","","","Absolute","//head/script[1]","Header","HTML"
+"Hyperlink","https://example.com/pricing","https://example.com/gone","512","","click here","404","Not Found","Crawlable","true","","","Absolute","//body/main/a[2]","Content","HTML"
+"Hyperlink","https://example.com/about","https://example.com/missing","512","","Missing page","404","Not Found","Crawlable","true","","","Absolute","//body/nav/a[3]","Navigation","HTML"
