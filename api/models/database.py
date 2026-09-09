@@ -67,7 +67,7 @@ from api.models.infra import (
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,
     PerformanceSnapshot,
 )
-from api.models.crawl import SiteCrawl, CrawlPage, CrawlLink
+from api.models.crawl import SiteCrawl, CrawlPage, CrawlLink, CrawlRedirect
 
 DEFAULT_TEMPLATES = [
     {

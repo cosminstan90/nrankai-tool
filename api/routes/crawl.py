@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.limiter import limiter
-from api.models.database import CrawlLink, CrawlPage, SiteCrawl, get_db
+from api.models.database import CrawlLink, CrawlPage, CrawlRedirect, SiteCrawl, get_db
 from api.utils.errors import raise_bad_request, raise_not_found
 from api.workers.crawl_worker import run_site_crawl
 from core.crawl_insights import anchor_distribution, broken_internal_links, depth_histogram
@@ -71,9 +71,15 @@ async def latest_crawl(website: str, db: AsyncSession = Depends(get_db)):
         select(CrawlLink).where(CrawlLink.crawl_id == crawl.id)
     )).scalars().all()
 
+    redirects = (await db.execute(
+        select(CrawlRedirect).where(CrawlRedirect.crawl_id == crawl.id)
+        .order_by(CrawlRedirect.hops.desc())
+    )).scalars().all()
+
     edge_dicts = [link.to_dict() for link in links]
     page_dicts = [page.to_dict() for page in pages]
     orphans = [p for p in page_dicts if p["is_orphan"]]
+    redirect_dicts = [r.to_dict() for r in redirects]
 
     return {
         **crawl.to_dict(),
@@ -82,6 +88,10 @@ async def latest_crawl(website: str, db: AsyncSession = Depends(get_db)):
         "broken_internal_links": broken_internal_links(edge_dicts),
         "anchor_text": anchor_distribution(edge_dicts),
         "depth_histogram": depth_histogram(page_dicts),
+        "redirects": redirect_dicts,
+        # Surfaced separately because they are always bugs, never a tradeoff.
+        "redirect_loops": [r for r in redirect_dicts if r["is_loop"]],
+        "redirect_chains": [r for r in redirect_dicts if r["hops"] > 1],
     }
 
 

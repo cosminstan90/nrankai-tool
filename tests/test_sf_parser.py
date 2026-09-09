@@ -8,7 +8,7 @@ endings exactly as SF writes them.
 import unittest
 from pathlib import Path
 
-from core.sf_parser import parse_inlinks, parse_internal_html
+from core.sf_parser import parse_inlinks, parse_internal_html, parse_redirect_chains
 
 FIXTURES = Path(__file__).parent / "fixtures" / "sf"
 
@@ -131,6 +131,56 @@ class TestParseInlinks(unittest.TestCase):
         self.assertEqual(app_edge["reason"], "auth")
         self.assertEqual(app_edge["dest_status_code"], 401)
 
+class TestParseRedirectChains(unittest.TestCase):
+    """
+    Redirect chains were exported by the crawl from the start but never parsed
+    -- a gap stated in the Etapa 5 commits. Closed here.
+    """
+
+    def test_external_redirects_are_filtered_out(self):
+        """
+        Measured on a real crawl: the report had 1,836 rows covering only 7
+        distinct addresses, none of them internal. Four external CDN assets
+        (tailwind, unpkg) produced 1,833 of those rows, once per page that
+        loads them. Storing that is the nav-menu problem again.
+        """
+        chains = parse_redirect_chains(FIXTURES / "redirect_chains.csv", "https://example.com")
+
+        addresses = {c["address"] for c in chains}
+        self.assertNotIn("https://cdn.tailwindcss.com/", addresses)
+        self.assertTrue(all("example.com" in c["address"] for c in chains))
+
+    def test_one_row_per_redirecting_address_not_per_linking_page(self):
+        """The same redirect linked from ten pages is one finding, not ten."""
+        chains = parse_redirect_chains(FIXTURES / "redirect_chains.csv", "https://example.com")
+        addresses = [c["address"] for c in chains]
+        self.assertEqual(len(addresses), len(set(addresses)))
+
+    def test_captures_hop_count_and_final_destination(self):
+        chains = parse_redirect_chains(FIXTURES / "redirect_chains.csv", "https://example.com")
+        three = next(c for c in chains if c["address"] == "https://example.com/a")
+
+        self.assertEqual(three["hops"], 3)
+        self.assertEqual(three["final_url"], "https://example.com/d")
+        self.assertEqual(three["final_status_code"], 200)
+        self.assertFalse(three["is_loop"])
+        self.assertTrue(three["has_temp_redirect"])
+
+    def test_flags_redirect_loops(self):
+        chains = parse_redirect_chains(FIXTURES / "redirect_chains.csv", "https://example.com")
+        loop = next(c for c in chains if c["address"] == "https://example.com/loop-a")
+        self.assertTrue(loop["is_loop"])
+
+    def test_keeps_the_page_that_links_to_the_redirect(self):
+        """Without the source page the finding is not actionable."""
+        chains = parse_redirect_chains(FIXTURES / "redirect_chains.csv", "https://example.com")
+        single = next(c for c in chains if c["address"] == "https://example.com/old-pricing")
+        self.assertEqual(single["source_url"], "https://example.com/")
+        self.assertEqual(single["anchor"], "our pricing")
+
+    def test_missing_file_returns_empty_rather_than_raising(self):
+        """--skip-empty means SF writes no file when a site has no chains."""
+        self.assertEqual(parse_redirect_chains(FIXTURES / "nope.csv", "https://example.com"), [])
 
 if __name__ == "__main__":
     unittest.main()

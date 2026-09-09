@@ -16,7 +16,7 @@ from typing import Optional
 from sqlalchemy import select
 
 from api.models._base import AsyncSessionLocal
-from api.models.database import CrawlLink, CrawlPage, SiteCrawl
+from api.models.database import CrawlLink, CrawlPage, CrawlRedirect, SiteCrawl
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,21 @@ def format_crawl_facts_block(page_facts: Optional[dict]) -> str:
         lines.append(f"crawl depth: {depth} click(s) from the home page")
 
     lines.append(f"outbound links from this page: {page_facts.get('outlinks_total') or 0}")
+
+    # Redirects this page links into. Mentioned only when there are some: a
+    # "no redirects" line on every page is noise, unlike broken links where
+    # silence could be mistaken for "not checked".
+    redirects = page_facts.get("redirect_outlinks") or []
+    if redirects:
+        parts = []
+        for r in redirects[:10]:
+            if r.get("is_loop"):
+                parts.append(f"{r['address']} is a redirect LOOP ({r.get('hops', 0)} hops, never resolves)")
+            else:
+                parts.append(
+                    f"{r['address']} redirects {r.get('hops', 0)} time(s) to {r.get('final_url')}"
+                )
+        lines.append("redirects this page links into: " + "; ".join(parts))
 
     broken = page_facts.get("broken_outlinks") or []
     if broken:
@@ -167,6 +182,13 @@ async def load_page_facts(website: str, page_url: str) -> Optional[dict]:
             )
         )).scalars().all()
 
+        outbound_redirects = (await db.execute(
+            select(CrawlRedirect).where(
+                CrawlRedirect.crawl_id == crawl.id,
+                CrawlRedirect.source_url == page_url,
+            ).order_by(CrawlRedirect.hops.desc())
+        )).scalars().all()
+
     return {
         "url": page.url,
         "content_inlinks": page.content_inlinks,
@@ -178,5 +200,10 @@ async def load_page_facts(website: str, page_url: str) -> Optional[dict]:
         "broken_outlinks": [
             {"dest_url": link.dest_url, "status_code": link.dest_status_code}
             for link in outbound_broken
+        ],
+        "redirect_outlinks": [
+            {"address": r.address, "final_url": r.final_url,
+             "hops": r.hops, "is_loop": r.is_loop}
+            for r in outbound_redirects
         ],
     }

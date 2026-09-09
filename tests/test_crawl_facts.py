@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from api.models._base import AsyncSessionLocal
-from api.models.database import CrawlLink, CrawlPage, SiteCrawl
+from api.models.database import CrawlLink, CrawlPage, CrawlRedirect, SiteCrawl
 from core.crawl_facts import format_crawl_facts_block, load_page_facts
 
 
@@ -57,6 +57,49 @@ class TestFormatCrawlFactsBlock(unittest.TestCase):
         })
         self.assertNotIn("orphan", block.lower())
         self.assertIn("home page", block.lower())
+
+    def test_redirect_chains_this_page_links_into_are_listed(self):
+        """
+        A page linking into a 3-hop chain wastes crawl budget and link equity
+        on every visit. The prompt cannot see this from the page's own HTML --
+        the link looks perfectly ordinary there.
+        """
+        block = format_crawl_facts_block({
+            "url": "https://example.com/a",
+            "content_inlinks": 2, "nav_inlinks": 5, "crawl_depth": 1,
+            "outlinks_total": 9, "is_orphan": False, "inbound_anchors": [],
+            "broken_outlinks": [],
+            "redirect_outlinks": [
+                {"address": "https://example.com/old", "final_url": "https://example.com/new",
+                 "hops": 3, "is_loop": False},
+            ],
+        })
+        self.assertIn("https://example.com/old", block)
+        self.assertIn("3", block)
+        self.assertIn("https://example.com/new", block)
+
+    def test_redirect_loops_are_called_out_as_loops(self):
+        block = format_crawl_facts_block({
+            "url": "https://example.com/a",
+            "content_inlinks": 2, "nav_inlinks": 5, "crawl_depth": 1,
+            "outlinks_total": 9, "is_orphan": False, "inbound_anchors": [],
+            "broken_outlinks": [],
+            "redirect_outlinks": [
+                {"address": "https://example.com/loop", "final_url": "https://example.com/loop",
+                 "hops": 2, "is_loop": True},
+            ],
+        })
+        self.assertIn("LOOP", block.upper())
+
+    def test_no_redirects_is_not_mentioned_at_all(self):
+        """Absence of a problem should not add noise to every page's block."""
+        block = format_crawl_facts_block({
+            "url": "https://example.com/a",
+            "content_inlinks": 2, "nav_inlinks": 5, "crawl_depth": 1,
+            "outlinks_total": 9, "is_orphan": False, "inbound_anchors": [],
+            "broken_outlinks": [], "redirect_outlinks": [],
+        })
+        self.assertNotIn("redirect", block.lower())
 
     def test_orphan_page_is_stated_plainly(self):
         block = format_crawl_facts_block({
@@ -118,6 +161,11 @@ class TestLoadPageFacts(unittest.IsolatedAsyncioTestCase):
             db.add(CrawlLink(id=str(uuid.uuid4()), crawl_id=self.new_id,
                              source_url=f"{self.website}/p", dest_url=f"{self.website}/dead",
                              anchor="old doc", reason="error", dest_status_code=404))
+            db.add(CrawlRedirect(id=str(uuid.uuid4()), crawl_id=self.new_id,
+                                 source_url=f"{self.website}/p", address=f"{self.website}/old",
+                                 final_url=f"{self.website}/new", final_status_code=200,
+                                 hops=3, is_loop=False, has_temp_redirect=True,
+                                 anchor="the guide", link_position="Content"))
             await db.commit()
 
     async def asyncTearDown(self):
@@ -145,6 +193,12 @@ class TestLoadPageFacts(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(facts["broken_outlinks"]), 1)
         self.assertEqual(facts["broken_outlinks"][0]["dest_url"], f"{self.website}/dead")
         self.assertEqual(facts["broken_outlinks"][0]["status_code"], 404)
+
+    async def test_collects_redirects_this_page_links_into(self):
+        facts = await load_page_facts(self.website, f"{self.website}/p")
+        self.assertEqual(len(facts["redirect_outlinks"]), 1)
+        self.assertEqual(facts["redirect_outlinks"][0]["hops"], 3)
+        self.assertEqual(facts["redirect_outlinks"][0]["final_url"], f"{self.website}/new")
 
     async def test_unknown_page_returns_none(self):
         facts = await load_page_facts(self.website, f"{self.website}/never-crawled")

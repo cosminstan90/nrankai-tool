@@ -16,6 +16,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,57 @@ def _edge_reason(link_position: str, dest_status: Optional[int]) -> Optional[str
     if link_position == CONTENT_POSITION:
         return "content"
     return None
+
+
+def parse_redirect_chains(path, website: str) -> List[dict]:
+    """
+    Internal redirects and redirect chains, one row per redirecting address.
+
+    Two filters, both from measurement on a real crawl whose report held 1,836
+    rows covering just 7 distinct addresses:
+
+    * External destinations are dropped. All 7 addresses in that report were
+      external assets -- four CDN scripts (tailwind, unpkg) accounted for 1,833
+      rows, once per page that loads them. A CDN versioning its own asset is
+      not a finding about the audited site.
+    * Rows are deduplicated by address. The same redirect linked from ten pages
+      is one thing to fix, not ten. The first row's linking page is kept so the
+      finding stays actionable.
+
+    Returns [] when the file is absent, which is normal: SF runs with
+    --skip-empty and a site with no redirects produces no report.
+    """
+    path = Path(path)
+    if not path.is_file():
+        logger.info("redirect chains export not present at %s (no redirects found)", path)
+        return []
+
+    site_host = urlparse(website).netloc.lower()
+    chains: List[dict] = []
+    seen: set = set()
+
+    with open(path, encoding=_ENCODING, newline="") as fh:
+        for row in csv.DictReader(fh):
+            address = (row.get("Address") or "").strip()
+            if not address or address in seen:
+                continue
+            if urlparse(address).netloc.lower() != site_host:
+                continue
+            seen.add(address)
+
+            chains.append({
+                "source_url": (row.get("Source") or "").strip() or None,
+                "address": address,
+                "final_url": (row.get("Final Address") or "").strip() or None,
+                "final_status_code": _int(row.get("Final Status Code")),
+                "hops": _int(row.get("Number of Redirects")) or 0,
+                "is_loop": (row.get("Loop") or "").strip().lower() == "true",
+                "has_temp_redirect": (row.get("Temp Redirect in Chain") or "").strip().lower() == "true",
+                "anchor": (row.get("Anchor Text") or "").strip() or None,
+                "link_position": (row.get("Link Position") or "").strip() or None,
+            })
+
+    return chains
 
 
 def parse_inlinks(path) -> Tuple[List[dict], Dict[str, dict]]:

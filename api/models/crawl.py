@@ -43,6 +43,7 @@ class SiteCrawl(Base):
 
     pages = relationship("CrawlPage", back_populates="crawl", cascade="all, delete-orphan")
     links = relationship("CrawlLink", back_populates="crawl", cascade="all, delete-orphan")
+    redirects = relationship("CrawlRedirect", back_populates="crawl", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -95,6 +96,46 @@ class CrawlPage(Base):
             "nav_inlinks": self.nav_inlinks,
             "outlinks_total": self.outlinks_total,
             "is_orphan": self.is_orphan,
+        }
+
+
+class CrawlRedirect(Base):
+    """
+    One internal redirect (or chain), deduplicated by the redirecting address.
+
+    Separate from CrawlLink because a chain is not an edge: it carries a hop
+    count and a final destination that an edge has no place for. Kept small by
+    the same discipline as the rest -- a real report held 1,836 rows for 7
+    distinct addresses, none of them internal, because four external CDN assets
+    repeated once per page that loaded them.
+    """
+    __tablename__ = "crawl_redirects"
+
+    id = Column(String(36), primary_key=True)
+    crawl_id = Column(String(36), ForeignKey("site_crawls.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_url = Column(String(2048), nullable=True)   # a page that links to it
+    address = Column(String(2048), nullable=False, index=True)
+    final_url = Column(String(2048), nullable=True)
+    final_status_code = Column(Integer, nullable=True)
+    hops = Column(Integer, default=0)
+    is_loop = Column(Boolean, default=False)
+    has_temp_redirect = Column(Boolean, default=False)
+    anchor = Column(Text, nullable=True)
+    link_position = Column(String(50), nullable=True)
+
+    crawl = relationship("SiteCrawl", back_populates="redirects")
+
+    def to_dict(self):
+        return {
+            "source_url": self.source_url,
+            "address": self.address,
+            "final_url": self.final_url,
+            "final_status_code": self.final_status_code,
+            "hops": self.hops,
+            "is_loop": self.is_loop,
+            "has_temp_redirect": self.has_temp_redirect,
+            "anchor": self.anchor,
+            "link_position": self.link_position,
         }
 
 

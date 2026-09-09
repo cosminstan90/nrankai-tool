@@ -19,9 +19,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from api.models._base import AsyncSessionLocal
-from api.models.database import CrawlLink, CrawlPage, SiteCrawl
+from api.models.database import CrawlLink, CrawlPage, CrawlRedirect, SiteCrawl
 from core.sf_crawler import CrawlArtifacts, run_crawl
-from core.sf_parser import parse_inlinks, parse_internal_html
+from core.sf_parser import parse_inlinks, parse_internal_html, parse_redirect_chains
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ async def persist_crawl(crawl_id: str, website: str, artifacts: CrawlArtifacts) 
     """Parse the exports and write one SiteCrawl plus its pages and edges."""
     pages = parse_internal_html(artifacts.internal_html_csv)
     edges, counts = parse_inlinks(artifacts.inlinks_csv)
+    redirects = parse_redirect_chains(artifacts.redirect_chains_csv, website)
 
     nav_discarded = sum(c["non_content"] for c in counts.values())
 
@@ -81,6 +82,21 @@ async def persist_crawl(crawl_id: str, website: str, artifacts: CrawlArtifacts) 
                 reason=edge["reason"],
             ))
 
+        for redirect in redirects:
+            db.add(CrawlRedirect(
+                id=str(uuid.uuid4()),
+                crawl_id=crawl_id,
+                source_url=redirect["source_url"],
+                address=redirect["address"],
+                final_url=redirect["final_url"],
+                final_status_code=redirect["final_status_code"],
+                hops=redirect["hops"],
+                is_loop=redirect["is_loop"],
+                has_temp_redirect=redirect["has_temp_redirect"],
+                anchor=redirect["anchor"],
+                link_position=redirect["link_position"],
+            ))
+
         crawl.status = "completed"
         crawl.pages_crawled = len(pages)
         crawl.content_edges = sum(1 for e in edges if e["reason"] == "content")
@@ -89,8 +105,9 @@ async def persist_crawl(crawl_id: str, website: str, artifacts: CrawlArtifacts) 
         await db.commit()
 
     logger.info(
-        "Crawl %s persisted: %d pages, %d stored edges, %d nav edges discarded",
-        crawl_id, len(pages), len(edges), nav_discarded,
+        "Crawl %s persisted: %d pages, %d stored edges, %d internal redirects, "
+        "%d nav edges discarded",
+        crawl_id, len(pages), len(edges), len(redirects), nav_discarded,
     )
 
 

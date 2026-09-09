@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from api.models._base import AsyncSessionLocal
-from api.models.database import CrawlLink, CrawlPage, SiteCrawl
+from api.models.database import CrawlLink, CrawlPage, CrawlRedirect, SiteCrawl
 from api.workers.crawl_worker import persist_crawl
 from core.sf_crawler import CrawlArtifacts
 
@@ -28,7 +28,7 @@ def _artifacts() -> CrawlArtifacts:
         internal_html_csv=FIXTURES / "internal_html.csv",
         errors_4xx_csv=FIXTURES / "response_codes_internal_client_error_(4xx).csv",
         orphan_urls_csv=FIXTURES / "does_not_exist.csv",
-        redirect_chains_csv=FIXTURES / "does_not_exist.csv",
+        redirect_chains_csv=FIXTURES / "redirect_chains.csv",
     )
 
 
@@ -116,6 +116,28 @@ class TestPersistCrawl(unittest.IsolatedAsyncioTestCase):
         by_dest = {b.dest_url: b for b in broken}
         self.assertEqual(by_dest["https://example.com/gone"].source_url, "https://example.com/pricing")
         self.assertEqual(by_dest["https://example.com/missing"].source_url, "https://example.com/about")
+
+    async def test_internal_redirects_are_persisted_and_external_ones_are_not(self):
+        """
+        Closes the gap the Etapa 5 commits stated: the chain report was
+        exported but never parsed. A real report held 1,836 rows for 7 distinct
+        addresses, all external CDN assets -- only internal ones are stored.
+        """
+        async with AsyncSessionLocal() as db:
+            redirects = (await db.execute(
+                select(CrawlRedirect).where(CrawlRedirect.crawl_id == self.crawl_id)
+            )).scalars().all()
+
+        by_address = {r.address: r for r in redirects}
+        self.assertNotIn("https://cdn.tailwindcss.com/", by_address)
+        self.assertEqual(len(redirects), 3)
+
+        chain = by_address["https://example.com/a"]
+        self.assertEqual(chain.hops, 3)
+        self.assertEqual(chain.final_url, "https://example.com/d")
+        self.assertEqual(chain.source_url, "https://example.com/blog")
+
+        self.assertTrue(by_address["https://example.com/loop-a"].is_loop)
 
 
 if __name__ == "__main__":
