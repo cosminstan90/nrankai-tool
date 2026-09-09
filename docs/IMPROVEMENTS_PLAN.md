@@ -368,6 +368,31 @@ Mare. E singurul task din listă care merită împărțit în etape.
 
 ## 6. Detectarea schimbărilor de conținut
 
+**Executat (2026-09-09).** `core/page_snapshot.py` (extragere),
+`core/page_diff.py` (diff SEO cu severitate), modelele `SnapshotRun` +
+`PageSnapshot` (migrația `0017`), `api/workers/snapshot_worker.py`,
+`api/routes/snapshots.py` (4 endpoint-uri). Nu în `compare.py` — acela compară
+scoruri de audit, nu conținut.
+
+Verificat pe 545 de pagini reale `ing.ro`: o copie cu o singură pagină
+modificată a produs exact o pagină schimbată, cu H1, linkurile interne
+eliminate și scăderea de cuvinte, 544 neschimbate, zero fals-pozitive.
+
+**Premisa planului era greșită parțial.** Scraper-ul stochează doar
+`document.body`, deci `<title>`, meta description și canonical **nu există în
+date** — 0 din 40 de pagini reale, deși există pe site-ul live. Sunt `None` =
+„necapturat", iar diff-ul sare peste orice comparație cu `None`, altfel ar
+raporta „title eliminat" pe fiecare pagină.
+
+**Consecință de raportat separat:** `core/technical_facts.py` citește același
+HTML body-only, deci ratează JSON-LD din `<head>` și îi spune modelului
+„JSON-LD: NONE detected" ca fapt de necontrazis. Verificat pe pagini live:
+schema e în ambele locuri. Nereparat — schimbă comportamentul auditelor
+TECHNICAL_SEO livrate.
+
+**Rămâne:** captura separată a `<head>` (ar debloca title/meta și ar repara și
+punctul de mai sus).
+
 ### Problema
 
 Tool-ul n-are memorie în afară de scorurile de audit
