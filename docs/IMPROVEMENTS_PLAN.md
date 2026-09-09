@@ -293,7 +293,7 @@ Mic-spre-mediu. Clientul DataForSEO există; e vorba de endpoint-uri noi.
 
 ## 5. Crawler care urmărește linkuri
 
-**Executat parțial (2026-09-07).** Rescopat: în loc de crawler propriu, conduce
+**Executat (2026-09-09).** Rescopat: în loc de crawler propriu, conduce
 Screaming Frog headless prin CLI (licența există). Plan complet în
 `docs/superpowers/plans/2026-09-04-sf-crawler-link-graph.md`.
 
@@ -311,11 +311,17 @@ conținut. Stocăm doar muchiile de conținut, rupte și redirect; navigația
 rămâne contor per pagină — exact distincția pe care `internal_linking.yaml` o
 cerea deja.
 
-**Rămâne de făcut:** Task 0 din plan — exportul `.seospiderconfig` din GUI-ul
-Screaming Frog (limite de adâncime/pagini, respectare robots.txt, URI/s). E
-acțiune manuală, nu se poate genera din cod, și până există codul refuză
-deliberat să pornească un crawl. Task 12 (verificare end-to-end pe un site
-real) depinde de el.
+**Verificat end-to-end** pe `nrankai.com` (site propriu): crawl real,
+404 confirmat cu `curl`, serverul a rămas responsiv 5/5 în timpul rulării.
+Primul crawl real a scos 4 defecte pe care fixture-urile nu le puteau arăta:
+subprocess-ul bloca event loop-ul (tot API-ul îngheța pe durata crawl-ului),
+auto-linkurile umflau `content_inlinks`, 401/403 erau raportate ca linkuri
+rupte, iar blocul de fapte numea homepage-ul „orfan". Toate reparate, fiecare
+cu test de regresie.
+
+**Configul** `config/sf_audit.seospiderconfig` e gitignorat, nu comis: e
+serializare Java binară care nu poate fi auditată complet, iar `spider.config`
+al Screaming Frog stochează chei API în clar. Ține o copie în afara repo-ului.
 
 **Nelivrat, asumat:** lanțurile de redirect sunt exportate dar neparsate;
 muchiile de navigație nu se pot recupera ulterior, doar numărate; licența
