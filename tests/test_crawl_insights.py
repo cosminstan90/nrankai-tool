@@ -85,6 +85,20 @@ class TestBrokenInternalLinks(unittest.TestCase):
                   "reason": "redirect", "anchor": None}]
         self.assertEqual(broken_internal_links(edges), [])
 
+    def test_auth_protected_pages_are_not_reported_as_broken(self):
+        """
+        From the first real crawl: the footer linked to app.nrankai.com, which
+        returned 401 because it is behind BasicAuth. The page exists -- calling
+        it a broken link would put a false finding in an SEO report.
+        """
+        edges = [
+            {"source_url": "/a", "dest_url": "/admin", "dest_status_code": 401,
+             "reason": "auth", "anchor": None},
+            {"source_url": "/a", "dest_url": "/secret", "dest_status_code": 403,
+             "reason": "auth", "anchor": None},
+        ]
+        self.assertEqual(broken_internal_links(edges), [])
+
     def test_unknown_status_is_not_guessed_as_broken(self):
         edges = [{"source_url": "/a", "dest_url": "/x", "dest_status_code": None,
                   "reason": "content", "anchor": None}]

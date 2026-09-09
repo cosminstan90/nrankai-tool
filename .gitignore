@@ -77,3 +77,9 @@ uvicorn_*.txt
 # *.db already covers the databases; this also catches deleted_orphans.json,
 # which scripts/cleanup_orphans.py writes next to the DB it cleans.
 api/data/
+
+# Screaming Frog crawl config (Etapa 5). Binary Java serialization that
+# cannot be fully audited, and SF's own spider.config is known to store API
+# keys in plaintext -- so this is kept local, not pushed. Back it up outside
+# the repo; losing it means redoing Task 0 in the GUI.
+config/*.seospiderconfig

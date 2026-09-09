@@ -60,7 +60,11 @@ class TestParseInlinks(unittest.TestCase):
         self.assertIn(("https://example.com/about", "https://example.com/missing"), kept)
         self.assertNotIn(("https://example.com/", "https://example.com/about"), kept)
         self.assertNotIn(("https://example.com/pricing", "https://example.com/about"), kept)
-        self.assertEqual(len(edges), 3)
+        # 1 content + 2 broken + 1 auth-protected. The self-link row and the
+        # plain nav/aside rows are counted but not stored.
+        self.assertEqual(len(edges), 4)
+        self.assertEqual(sorted(e["reason"] for e in edges),
+                         ["auth", "content", "error", "error"])
 
     def test_javascript_links_are_never_edges(self):
         edges, _ = parse_inlinks(FIXTURES / "all_inlinks.csv")
@@ -101,6 +105,31 @@ class TestParseInlinks(unittest.TestCase):
         edges, counts = parse_inlinks(FIXTURES / "does_not_exist.csv")
         self.assertEqual(edges, [])
         self.assertEqual(counts, {})
+
+    def test_self_links_are_not_counted_as_inbound_links(self):
+        """
+        From the first real crawl (nrankai.com): the home page linked to itself
+        twice via in-page anchors, and both counted as content inlinks. A page
+        linking to itself has no inbound link from anywhere -- counting them
+        inflates the exact number the prompt's score depends on.
+        """
+        edges, counts = parse_inlinks(FIXTURES / "all_inlinks.csv")
+
+        self_edges = [e for e in edges if e["source_url"] == e["dest_url"]]
+        self.assertEqual(self_edges, [], "a self-link was stored as an edge")
+        self.assertEqual(counts.get("https://example.com/", {}).get("content", 0), 0)
+
+    def test_auth_protected_destinations_are_not_called_broken(self):
+        """
+        Also from the real crawl: app.nrankai.com returned 401 because it sits
+        behind BasicAuth. The page exists -- reporting it as a broken link
+        would put a false finding in an SEO report.
+        """
+        edges, _ = parse_inlinks(FIXTURES / "all_inlinks.csv")
+
+        app_edge = next(e for e in edges if e["dest_url"] == "https://app.example.com/")
+        self.assertEqual(app_edge["reason"], "auth")
+        self.assertEqual(app_edge["dest_status_code"], 401)
 
 
 if __name__ == "__main__":

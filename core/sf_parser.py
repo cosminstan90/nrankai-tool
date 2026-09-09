@@ -62,6 +62,14 @@ def parse_internal_html(path) -> List[dict]:
     return pages
 
 
+# 401/403 mean "this page exists but you may not see it", not "this link is
+# broken". Found on the first real crawl: app.nrankai.com is linked from the
+# footer and sits behind BasicAuth, and calling it a broken link would put a
+# false finding in an SEO report. Stored under its own reason so it stays
+# visible without being reported as breakage.
+_AUTH_STATUSES = {401, 403}
+
+
 def _edge_reason(link_position: str, dest_status: Optional[int]) -> Optional[str]:
     """
     Decide whether an edge is worth a database row. None means "count it, do
@@ -74,9 +82,12 @@ def _edge_reason(link_position: str, dest_status: Optional[int]) -> Optional[str
     footer links do NOT count as quality internal links"). They survive as
     aggregate counts instead.
 
-    Broken and redirecting destinations are kept whatever their position: a 404
-    linked only from the navigation is still a real bug, and it is a small set.
+    Broken, auth-protected and redirecting destinations are kept whatever their
+    position: a 404 linked only from the navigation is still a real bug, and
+    they are a small set.
     """
+    if dest_status in _AUTH_STATUSES:
+        return "auth"
     if dest_status is not None and dest_status >= 400:
         return "error"
     if dest_status is not None and 300 <= dest_status < 400:
@@ -114,6 +125,13 @@ def parse_inlinks(path) -> Tuple[List[dict], Dict[str, dict]]:
             source = (row.get("Source") or "").strip()
             dest = (row.get("Destination") or "").strip()
             if not source or not dest:
+                continue
+
+            # A page linking to itself (in-page anchors, "back to top") is not
+            # an inbound link from anywhere. Found on the first real crawl: the
+            # nrankai.com home page self-linked twice and both counted as
+            # content inlinks, inflating the very number the prompt scores on.
+            if source == dest:
                 continue
 
             position = (row.get("Link Position") or "").strip()

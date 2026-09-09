@@ -41,6 +41,23 @@ class TestFormatCrawlFactsBlock(unittest.TestCase):
         self.assertIn("navigation", block.lower())
         self.assertIn("See our pricing", block)
 
+    def test_home_page_with_no_content_inlinks_is_not_called_an_orphan(self):
+        """
+        Caught by the first real end-to-end run. The database already exempts
+        depth-0 pages from orphan status, but this block called the home page
+        an orphan anyway, purely because its content_inlinks was 0 -- which
+        would have produced exactly the false finding that exemption exists to
+        prevent. Nothing links to a home page from body content by design.
+        """
+        block = format_crawl_facts_block({
+            "url": "https://nrankai.com/",
+            "content_inlinks": 0, "nav_inlinks": 0, "crawl_depth": 0,
+            "outlinks_total": 4, "is_orphan": False,
+            "inbound_anchors": [], "broken_outlinks": [],
+        })
+        self.assertNotIn("orphan", block.lower())
+        self.assertIn("home page", block.lower())
+
     def test_orphan_page_is_stated_plainly(self):
         block = format_crawl_facts_block({
             "url": "https://example.com/orphan",

@@ -12,6 +12,11 @@ the same code works on freshly parsed rows or rows read back out of SQLite.
 from collections import Counter, defaultdict
 from typing import Dict, List
 
+# 401/403: the page exists, it is just protected. Reporting an auth-gated page
+# as a broken link would be a false finding -- seen on the first real crawl,
+# where the footer link to app.nrankai.com returned 401.
+AUTH_STATUSES = {401, 403}
+
 # prompts/internal_linking.yaml names these explicitly: "Generic anchors
 # ('click here', 'here', 'read more', 'learn more') are flagged as MAJOR
 # issues." Matched as whole normalised strings, never as substrings --
@@ -64,14 +69,15 @@ def broken_internal_links(edges: List[dict]) -> List[dict]:
     The source list is the part that makes this actionable -- SF's 4xx tab
     export reports only a count of inlinks, so the pages to fix come from the
     stored error edges. Redirects are excluded: a 301 is a finding, but not
-    this finding.
+    this finding. So are 401/403, which mean the page exists but is protected
+    -- reporting an auth-gated page as a broken link is a false finding.
     """
     sources = defaultdict(list)
     statuses: Dict[str, int] = {}
 
     for edge in edges:
         status = edge.get("dest_status_code")
-        if status is None or status < 400:
+        if status is None or status < 400 or status in AUTH_STATUSES:
             continue
         dest = edge["dest_url"]
         sources[dest].append(edge["source_url"])

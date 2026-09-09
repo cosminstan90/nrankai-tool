@@ -39,7 +39,19 @@ def format_crawl_facts_block(page_facts: Optional[dict]) -> str:
     content_in = page_facts.get("content_inlinks") or 0
     nav_in = page_facts.get("nav_inlinks") or 0
 
-    if content_in == 0:
+    depth = page_facts.get("crawl_depth")
+
+    if content_in == 0 and depth == 0:
+        # The home page. Nothing links to it from body content on most sites,
+        # by design -- calling that an orphan would put a false finding at the
+        # top of every report, which is why the stored is_orphan exempts depth
+        # 0 too. Caught by the first real end-to-end run, where this block
+        # called nrankai.com's home page an orphan.
+        lines.append(
+            f"inbound internal links: this is the home page, so body-content links to it "
+            f"are not expected; {nav_in} navigation/footer/sidebar links point here"
+        )
+    elif content_in == 0:
         lines.append(
             f"inbound internal links: ZERO body-content links point to this page "
             f"(it is an orphan in content terms); {nav_in} navigation/footer/sidebar links do"
@@ -56,7 +68,6 @@ def format_crawl_facts_block(page_facts: Optional[dict]) -> str:
     elif content_in > 0:
         lines.append("anchor text used to link here: every inbound content link has empty anchor text")
 
-    depth = page_facts.get("crawl_depth")
     if depth is not None:
         lines.append(f"crawl depth: {depth} click(s) from the home page")
 

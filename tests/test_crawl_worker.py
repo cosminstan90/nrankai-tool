@@ -64,10 +64,12 @@ class TestPersistCrawl(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(crawl.status, "completed")
         self.assertEqual(len(await self._pages()), 4)
-        # 1 content + 2 broken, out of 5 hyperlink rows in the fixture
-        self.assertEqual(len(links), 3)
+        # 1 content + 2 broken + 1 auth-protected. The self-link and the plain
+        # nav/aside rows are counted but never stored.
+        self.assertEqual(len(links), 4)
         self.assertEqual(crawl.content_edges, 1)
         self.assertGreater(crawl.nav_edges_discarded, 0)
+        self.assertNotIn("auth", [l.reason for l in links if l.dest_status_code == 404])
 
     async def test_content_inlink_counts_land_on_the_page_rows(self):
         """

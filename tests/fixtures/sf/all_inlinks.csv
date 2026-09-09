@@ -5,3 +5,5 @@
 "JavaScript","https://example.com/","https://example.com/app.js","2048","","","200","OK","Crawlable","true","","","Absolute","//head/script[1]","Header","HTML"
 "Hyperlink","https://example.com/pricing","https://example.com/gone","512","","click here","404","Not Found","Crawlable","true","","","Absolute","//body/main/a[2]","Content","HTML"
 "Hyperlink","https://example.com/about","https://example.com/missing","512","","Missing page","404","Not Found","Crawlable","true","","","Absolute","//body/nav/a[3]","Navigation","HTML"
+"Hyperlink","https://example.com/","https://example.com/","1024","","See how it works","200","OK","Crawlable","true","","","Absolute","//body/main/a[9]","Content","HTML"
+"Hyperlink","https://example.com/","https://app.example.com/","512","","App","401","Unauthorized","Crawlable","true","","","Absolute","//body/footer/a[1]","Footer","HTML"
