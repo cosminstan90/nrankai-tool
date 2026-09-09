@@ -1884,6 +1884,26 @@
         "title": "CannibalizationRequest",
         "type": "object"
       },
+      "CaptureRequest": {
+        "properties": {
+          "source_dir": {
+            "maxLength": 1000,
+            "title": "Source Dir",
+            "type": "string"
+          },
+          "website": {
+            "maxLength": 500,
+            "minLength": 3,
+            "title": "Website",
+            "type": "string"
+          }
+        },
+        "required": [
+          "website"
+        ],
+        "title": "CaptureRequest",
+        "type": "object"
+      },
       "CheckRequest": {
         "properties": {
           "include_psi": {
@@ -19626,6 +19646,187 @@
         "summary": "Reset Weights",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/snapshots/capture": {
+      "post": {
+        "description": "Snapshot a site's currently stored HTML.\n\nReads what the scraper already wrote, so this costs no requests against the\nclient's site. Take one before handing a site over and one after, and the\ndiff answers what changed in between.",
+        "operationId": "start_capture_api_snapshots_capture_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CaptureRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Capture",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/snapshots/diff": {
+      "get": {
+        "description": "What changed between two snapshot runs.\n\nChanged pages come back worst-hit first; unchanged ones are counted rather\nthan listed, because on a 545-page site listing them buries the findings.",
+        "operationId": "diff_runs_api_snapshots_diff_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "before",
+            "required": true,
+            "schema": {
+              "title": "Before",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": true,
+            "schema": {
+              "title": "After",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Diff Runs",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/snapshots/run/{run_id}/page": {
+      "get": {
+        "description": "One page's stored snapshot, for inspecting what was actually captured.",
+        "operationId": "get_page_snapshot_api_snapshots_run__run_id__page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Page Snapshot",
+        "tags": [
+          "snapshots"
+        ]
+      }
+    },
+    "/api/snapshots/site/{website}/runs": {
+      "get": {
+        "description": "Snapshot runs for a site, newest first -- the input to a diff.",
+        "operationId": "list_runs_api_snapshots_site__website__runs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "website",
+            "required": true,
+            "schema": {
+              "title": "Website",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Runs",
+        "tags": [
+          "snapshots"
         ]
       }
     },

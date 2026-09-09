@@ -68,6 +68,7 @@ from api.models.infra import (
     PerformanceSnapshot,
 )
 from api.models.crawl import SiteCrawl, CrawlPage, CrawlLink, CrawlRedirect
+from api.models.snapshot import SnapshotRun, PageSnapshot
 
 DEFAULT_TEMPLATES = [
     {
