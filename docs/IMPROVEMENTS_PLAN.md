@@ -323,9 +323,13 @@ cu test de regresie.
 serializare Java binară care nu poate fi auditată complet, iar `spider.config`
 al Screaming Frog stochează chei API în clar. Ține o copie în afara repo-ului.
 
-**Nelivrat, asumat:** lanțurile de redirect sunt exportate dar neparsate;
-muchiile de navigație nu se pot recupera ulterior, doar numărate; licența
-Screaming Frog devine dependență obligatorie pentru crawl.
+**Lanțurile de redirect** au fost adăugate ulterior (migrația `0016`,
+`CrawlRedirect`): doar redirect-uri interne, deduplicate după adresă. Raportul
+real avea 1.836 rânduri pentru 7 adrese distincte, toate externe — patru
+scripturi CDN produceau 1.833 din ele, o dată per pagină.
+
+**Nelivrat, asumat:** muchiile de navigație nu se pot recupera ulterior, doar
+numărate; licența Screaming Frog devine dependență obligatorie pentru crawl.
 
 ### Problema
 
