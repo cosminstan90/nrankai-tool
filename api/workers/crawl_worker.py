@@ -10,6 +10,7 @@ re-crawl a client's site on every run. Crawls are triggered explicitly per
 site, and audits read the newest completed one if there is one.
 """
 
+import asyncio
 import logging
 import tempfile
 import uuid
@@ -111,7 +112,12 @@ async def run_site_crawl(website: str) -> str:
 
     try:
         with tempfile.TemporaryDirectory(prefix=f"sfcrawl_{crawl_id[:8]}_") as tmp:
-            artifacts = run_crawl(website, output_dir=tmp)
+            # Off the event loop, deliberately. run_crawl uses subprocess.run,
+            # which blocks, and FastAPI runs async BackgroundTasks on the loop
+            # -- calling it directly froze the entire API for the length of the
+            # crawl (measured: 1 heartbeat tick in 600ms, and crawls run for
+            # 10+ minutes). Every request, /api/health included, would hang.
+            artifacts = await asyncio.to_thread(run_crawl, website, tmp)
             await persist_crawl(crawl_id, website, artifacts)
     except Exception as exc:
         logger.error("Crawl %s of %s failed: %s", crawl_id, website, exc)
