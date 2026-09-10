@@ -384,14 +384,25 @@ date** — 0 din 40 de pagini reale, deși există pe site-ul live. Sunt `None` 
 „necapturat", iar diff-ul sare peste orice comparație cu `None`, altfel ar
 raporta „title eliminat" pe fiecare pagină.
 
-**Consecință de raportat separat:** `core/technical_facts.py` citește același
-HTML body-only, deci ratează JSON-LD din `<head>` și îi spune modelului
-„JSON-LD: NONE detected" ca fapt de necontrazis. Verificat pe pagini live:
-schema e în ambele locuri. Nereparat — schimbă comportamentul auditelor
-TECHNICAL_SEO livrate.
+**Rezolvat (2026-09-10):** scraper-ul capturează acum `<head>` printr-un script
+separat, într-un sidecar `<stem>.head.json`. Captura de body rămâne
+byte-identică — a o lărgi ar fi schimbat textul pe care îl primesc toate cele
+~20 de tipuri de audit. Adăugat și `meta_robots` (migrația `0018`): trecerea pe
+noindex e cea mai gravă schimbare pe care o poate face un client și cea mai
+puțin vizibilă.
 
-**Rămâne:** captura separată a `<head>` (ar debloca title/meta și ar repara și
-punctul de mai sus).
+**Corecție la o afirmație anterioară din acest document:** raportasem că
+`core/technical_facts.py` ratează JSON-LD din `<head>`. **Era greșit.**
+Verificarea se uitase la HTML brut, unde blocul apare înainte de `</head>`;
+browserul îl mută în `<body>` la parsare, iar scraper-ul capturează DOM-ul
+randat. Verificat pe `ing.ro/persoane-fizice`: ambele blocuri sunt în body în
+DOM-ul live, ambele sunt în HTML-ul stocat, iar `technical_facts` raportează
+corect `['Organization', 'FAQPage']`. Nu era nimic de reparat.
+
+**Găsit la verificare:** hash-ul de conținut acoperea doar body-ul, iar
+`compare_runs` scurtcircuitează pe el — deci o schimbare doar de title sau
+noindex era complet invizibilă dacă textul rămânea neatins, exact cum arată o
+editare de metadate în CMS. Reparat, cu test.
 
 ### Problema
 
