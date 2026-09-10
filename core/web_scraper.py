@@ -152,6 +152,78 @@ def load_head_meta(html_path: str) -> Optional[dict]:
         return None
 
 
+def _chrome_arguments(proxy_host: Optional[str] = None,
+                      proxy_port: Optional[str] = None) -> List[str]:
+    """Chrome flags shared by both driver paths."""
+    args = ["--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537"]
+    if proxy_host and proxy_port:
+        args.append(f"--proxy-server={proxy_host}:{proxy_port}")
+    return args
+
+
+def _clear_stale_uc_binary() -> None:
+    """Remove the cached patched driver, which uc renames on start (WinError 183)."""
+    exe = os.path.join(os.environ.get("APPDATA", ""),
+                       "undetected_chromedriver", "undetected_chromedriver.exe")
+    if os.path.exists(exe):
+        try:
+            os.remove(exe)
+        except OSError:
+            pass
+
+
+def create_driver(proxy_host: Optional[str] = None,
+                  proxy_port: Optional[str] = None,
+                  page_load_timeout: int = 30):
+    """
+    Start Chrome, preferring undetected_chromedriver and falling back to plain
+    Selenium.
+
+    undetected_chromedriver is the first choice because being harder to detect
+    is the reason this project uses a patched driver at all. But its releases
+    lag Chrome badly -- 3.5.5 is the newest published and could not start the
+    Chrome 152 installed here ("session not created: cannot connect to chrome"),
+    which broke step 1 of every audit. Plain Selenium starts the same browser
+    without trouble, because Selenium Manager resolves a matching driver.
+
+    No version_main pin. The code used to hardcode 145 against a Chrome 152
+    install, which guarantees the failure the pin was meant to prevent.
+    """
+    uc_error = None
+    try:
+        _clear_stale_uc_binary()
+        options = uc.ChromeOptions()
+        for arg in _chrome_arguments(proxy_host, proxy_port):
+            options.add_argument(arg)
+        driver = uc.Chrome(options=options)
+        driver.set_page_load_timeout(page_load_timeout)
+        logger.info("Chrome started via undetected_chromedriver")
+        return driver
+    except Exception as exc:
+        uc_error = exc
+        logger.warning(
+            f"undetected_chromedriver could not start Chrome ({exc}); "
+            "falling back to plain Selenium"
+        )
+
+    try:
+        from selenium import webdriver
+        from selenium.webdriver.chrome.options import Options as ChromeOptions
+
+        options = ChromeOptions()
+        for arg in _chrome_arguments(proxy_host, proxy_port):
+            options.add_argument(arg)
+        driver = webdriver.Chrome(options=options)
+        driver.set_page_load_timeout(page_load_timeout)
+        logger.info("Chrome started via plain Selenium (undetected_chromedriver unavailable)")
+        return driver
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not start Chrome. undetected_chromedriver: {uc_error}. "
+            f"Plain Selenium: {exc}"
+        ) from exc
+
+
 def safe_filename_stem(url: str) -> str:
     """
     The filename (without extension) this scraper writes for a URL.
@@ -598,25 +670,10 @@ def scrape(
         logger.info("First run detected (no existing state). Will scrape all pages.")
         full_scrape = True
 
-    options = uc.ChromeOptions()
-
-    # Configure proxy if available
     if proxy_host and proxy_port:
-        options.add_argument(f'--proxy-server={proxy_host}:{proxy_port}')
         logger.info(f"Using proxy: {proxy_host}:{proxy_port}")
 
-    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537")
-
-    # Remove stale cached chromedriver to prevent WinError 183 on rename
-    _uc_exe = os.path.join(os.environ.get("APPDATA", ""), "undetected_chromedriver", "undetected_chromedriver.exe")
-    if os.path.exists(_uc_exe):
-        try:
-            os.remove(_uc_exe)
-        except OSError:
-            pass
-
-    driver = uc.Chrome(options=options, version_main=145)
-    driver.set_page_load_timeout(30)
+    driver = create_driver(proxy_host=proxy_host, proxy_port=proxy_port)
 
     # Fetch sitemap entries with metadata
     entries = fetch_sitemap_urls(sitemap, driver)
@@ -833,8 +890,7 @@ def scrape(
                 except Exception:
                     pass
                 try:
-                    driver = uc.Chrome(options=options, version_main=145)
-                    driver.set_page_load_timeout(30)
+                    driver = create_driver(proxy_host=proxy_host, proxy_port=proxy_port)
                     logger.info("Chrome restarted successfully")
                 except Exception as restart_err:
                     logger.error(f"Failed to restart Chrome: {restart_err}")
