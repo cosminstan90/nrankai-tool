@@ -11,6 +11,7 @@ Created: 2026-01-23
 Updated: 2026-02-10 - Added incremental/delta scraping support
 """
 
+import json
 import os
 import re
 import time
@@ -75,6 +76,80 @@ const getDeepHTML = (node) => {
 };
 return getDeepHTML(document.body);
 """
+
+
+# Head metadata is captured by a SEPARATE script, deliberately.
+#
+# DEEP_HTML_SCRIPT returns document.body only, so <title>, meta description and
+# rel=canonical never reach disk -- measured at 0 of 40 real stored pages,
+# though all three are present on the live pages. Widening DEEP_HTML_SCRIPT to
+# the whole document would change the text every one of the ~20 audit types
+# feeds to its LLM, so this collects the missing fields alongside instead,
+# leaving the body capture byte-identical.
+#
+# JSON-LD is NOT one of the missing fields, despite the raw HTTP response
+# putting it before </head>: browsers relocate those script tags into body
+# while parsing, and the scraper captures the RENDERED DOM. Verified on
+# ing.ro/persoane-fizice -- both blocks sit in body in the live DOM, both are
+# in the stored HTML, and core/technical_facts.py already reports them
+# correctly. It is collected here too only so a snapshot is self-contained.
+#
+# Matching is done in JS rather than with CSS attribute selectors so that
+# case variations like <META NAME="Description"> are still found.
+HEAD_META_SCRIPT = """
+const pick = (tag, attr, wanted) => {
+    for (const el of document.head ? document.head.querySelectorAll(tag) : []) {
+        const key = (el.getAttribute(attr) || '').trim().toLowerCase();
+        if (key === wanted) { return el; }
+    }
+    return null;
+};
+const contentOf = (el) => el ? ((el.getAttribute('content') || '').trim() || null) : null;
+
+const canonicalEl = pick('link', 'rel', 'canonical');
+const jsonld = [];
+if (document.head) {
+    for (const s of document.head.querySelectorAll('script')) {
+        const t = (s.getAttribute('type') || '').trim().toLowerCase();
+        if (t === 'application/ld+json') { jsonld.push(s.textContent || ''); }
+    }
+}
+
+return {
+    title: (document.title || '').trim() || null,
+    meta_description: contentOf(pick('meta', 'name', 'description')),
+    meta_robots: contentOf(pick('meta', 'name', 'robots')),
+    canonical: canonicalEl ? ((canonicalEl.getAttribute('href') || '').trim() || null) : null,
+    og_title: contentOf(pick('meta', 'property', 'og:title')),
+    jsonld: jsonld
+};
+"""
+
+HEAD_SIDECAR_SUFFIX = ".head.json"
+
+
+def head_sidecar_path(html_path: str) -> str:
+    """Where a page's head metadata lives, given its HTML file path."""
+    return os.path.splitext(html_path)[0] + HEAD_SIDECAR_SUFFIX
+
+
+def load_head_meta(html_path: str) -> Optional[dict]:
+    """
+    Read a page's captured head metadata, or None when it was never captured.
+
+    None means "not captured", never "the page has no title" -- pages scraped
+    before head capture existed simply have no sidecar, and callers must not
+    read that as an empty title.
+    """
+    path = head_sidecar_path(html_path)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning(f"Could not read head metadata at {path}: {exc}")
+        return None
 
 
 def safe_filename_stem(url: str) -> str:
@@ -672,6 +747,19 @@ def scrape(
             safe_name = safe_filename_stem(url)
 
             file_path = os.path.join(output_dir, f"{safe_name}.html")
+
+            # Head metadata, written unconditionally -- including when the body
+            # hash is unchanged and the HTML itself is not rewritten, so a page
+            # scraped before this existed picks up its sidecar on the next run.
+            # Never fatal: a page without head metadata degrades to "not
+            # captured", which every consumer already handles.
+            try:
+                head_meta = driver.execute_script(HEAD_META_SCRIPT)
+                if head_meta:
+                    with open(head_sidecar_path(file_path), "w", encoding="utf-8") as hf:
+                        json.dump(head_meta, hf, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.debug(f"Head metadata capture failed for {url}: {e}")
             
             # Compute content hash
             content_hash = compute_content_hash(rendered_html)

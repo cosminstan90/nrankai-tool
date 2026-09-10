@@ -54,9 +54,68 @@ class TestExtractPageFields(unittest.TestCase):
         again = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/credit")
         self.assertEqual(self.v1["content_hash"], again["content_hash"])
 
+    def test_content_hash_covers_head_metadata_too(self):
+        """
+        Caught end to end: compare_runs short-circuits on this hash, so a hash
+        that ignored head fields made a title rewrite or a switch to noindex
+        completely invisible whenever the body text was untouched -- which is
+        exactly how a CMS metadata edit looks.
+        """
+        base = {"title": "Persoane fizice | ING", "meta_description": None,
+                "canonical": None, "meta_robots": "index,follow", "jsonld": []}
+        v1 = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/x", head_meta=base)
+        retitled = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/x",
+                                       head_meta={**base, "title": "Produse ING"})
+        noindexed = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/x",
+                                        head_meta={**base, "meta_robots": "noindex,follow"})
+
+        self.assertNotEqual(v1["content_hash"], retitled["content_hash"])
+        self.assertNotEqual(v1["content_hash"], noindexed["content_hash"])
+
     def test_content_hash_changes_when_the_page_changes(self):
         v2 = extract_page_fields(_html("credit_v2.html"), "https://ing.ro/credit")
         self.assertNotEqual(self.v1["content_hash"], v2["content_hash"])
+
+    def test_head_metadata_fills_in_the_fields_the_body_cannot_provide(self):
+        """
+        The scraper now captures <head> separately (core/web_scraper.py's
+        HEAD_META_SCRIPT), because title, meta description and canonical live
+        there and appeared in 0 of 40 real stored pages otherwise.
+        """
+        head = {
+            "title": "Credit ipotecar | ING",
+            "meta_description": "Dobandă fixă pe toată durata.",
+            "canonical": "https://ing.ro/credit",
+            "meta_robots": "index,follow",
+            "jsonld": [],
+        }
+        fields = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/credit", head_meta=head)
+
+        self.assertEqual(fields["title"], "Credit ipotecar | ING")
+        self.assertEqual(fields["meta_description"], "Dobandă fixă pe toată durata.")
+        self.assertEqual(fields["canonical"], "https://ing.ro/credit")
+        self.assertEqual(fields["meta_robots"], "index,follow")
+
+    def test_head_jsonld_is_merged_without_duplicating_body_blocks(self):
+        """
+        Both sources are read, but a block present in both must be counted
+        once -- browsers relocate ld+json from head into body while parsing,
+        so the same schema legitimately shows up twice.
+        """
+        head = {"title": None, "meta_description": None, "canonical": None,
+                "meta_robots": None,
+                "jsonld": ['{"@context":"https://schema.org","@type":"FAQPage"}',
+                           '{"@context":"https://schema.org","@type":"Organization"}']}
+        fields = extract_page_fields(_html("credit_v2.html"), "https://ing.ro/credit", head_meta=head)
+
+        # credit_v2.html already carries FAQPage in its body
+        self.assertEqual(sorted(fields["schema_types"]), ["FAQPage", "Organization"])
+
+    def test_absent_head_metadata_still_reads_as_not_captured(self):
+        """Pages scraped before head capture existed have no sidecar."""
+        fields = extract_page_fields(_html("credit_v1.html"), "https://ing.ro/credit", head_meta=None)
+        self.assertIsNone(fields["title"])
+        self.assertIsNone(fields["meta_robots"])
 
     def test_fields_absent_from_body_only_html_are_none_not_empty_string(self):
         """

@@ -8,10 +8,11 @@ page, what did that break?" -- so the output is a list of findings, each with a
 severity, rather than a wall of markup.
 
 The one rule that shapes everything: None means "not captured", never "absent".
-The scraper stores document.body only, so title/meta/canonical are None on
-every page today. Treating None as "removed" or "added" would flag every page
-in the site at once and bury the real changes -- so any comparison involving
-None on either side is skipped.
+Head fields (title, meta description, canonical, robots) come from the sidecar
+the scraper writes, so they are None for any page scraped before that existed.
+Treating None as "removed" or "added" would flag every such page at once and
+bury the real changes -- so any comparison involving None on either side is
+skipped.
 """
 
 import logging
@@ -50,9 +51,15 @@ def diff_snapshots(before: dict, after: dict) -> List[dict]:
     # ── head metadata (present only once head capture exists) ────────────────
     for field, kind in (("title", "title_changed"),
                         ("meta_description", "meta_description_changed"),
-                        ("canonical", "canonical_changed")):
+                        ("canonical", "canonical_changed"),
+                        ("meta_robots", "meta_robots_changed")):
         if _changed(before.get(field), after.get(field)):
-            changes.append(_change(kind, "high", before[field], after[field]))
+            note = ""
+            if field == "meta_robots" and "noindex" in (after.get(field) or "").lower():
+                # The single most damaging change a client can make: the page
+                # keeps working and quietly leaves the index.
+                note = "the page is now set to NOINDEX"
+            changes.append(_change(kind, "high", before[field], after[field], note))
 
     # ── headings ─────────────────────────────────────────────────────────────
     if _changed(before.get("h1"), after.get("h1")):

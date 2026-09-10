@@ -21,7 +21,7 @@ from api.models._base import AsyncSessionLocal
 from api.models.database import PageSnapshot, SnapshotRun
 from core.page_diff import diff_snapshots, summarize
 from core.page_snapshot import extract_page_fields
-from core.web_scraper import safe_filename_stem
+from core.web_scraper import load_head_meta, safe_filename_stem
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +175,9 @@ async def _capture_snapshot_locked(website: str, source_dir: str) -> str:
 
             stem = os.path.splitext(filename)[0]
             url = _url_for_stem(stem, website)
-            fields = extract_page_fields(html, url)
+            # None for pages scraped before head capture existed; those keep
+            # title/meta/canonical as NULL, meaning "not captured".
+            fields = extract_page_fields(html, url, head_meta=load_head_meta(path))
 
             batch.append({
                 "id": str(uuid.uuid4()),
@@ -185,6 +187,7 @@ async def _capture_snapshot_locked(website: str, source_dir: str) -> str:
                 "title": fields["title"],
                 "meta_description": fields["meta_description"],
                 "canonical": fields["canonical"],
+                "meta_robots": fields["meta_robots"],
                 "h1": fields["h1"],
                 "h2": fields["h2"],
                 "h3": fields["h3"],

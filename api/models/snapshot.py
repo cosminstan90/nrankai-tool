@@ -54,10 +54,11 @@ class PageSnapshot(Base):
     """
     One page's SEO-relevant shape at one point in time.
 
-    NULL in title/meta_description/canonical means "not captured", never
-    "absent from the page" -- the scraper stores document.body only, so those
-    three are NULL for every page today. core/page_diff.py skips any comparison
-    where either side is NULL for exactly that reason.
+    NULL in title/meta_description/canonical/meta_robots means "not captured",
+    never "absent from the page". The scraper stores document.body, so these
+    arrive from the head sidecar it writes alongside; pages scraped before that
+    existed have no sidecar and keep NULL. core/page_diff.py skips any
+    comparison where either side is NULL for exactly that reason.
     """
     __tablename__ = "page_snapshots"
 
@@ -69,6 +70,7 @@ class PageSnapshot(Base):
     title = Column(Text, nullable=True)
     meta_description = Column(Text, nullable=True)
     canonical = Column(Text, nullable=True)
+    meta_robots = Column(Text, nullable=True)
     h1 = Column(JSON, nullable=True, default=list)
     h2 = Column(JSON, nullable=True, default=list)
     h3 = Column(JSON, nullable=True, default=list)
@@ -95,6 +97,7 @@ class PageSnapshot(Base):
             "title": self.title,
             "meta_description": self.meta_description,
             "canonical": self.canonical,
+            "meta_robots": self.meta_robots,
             "h1": self.h1 or [],
             "h2": self.h2 or [],
             "h3": self.h3 or [],

@@ -82,6 +82,25 @@ class TestDiffSnapshots(unittest.TestCase):
         after = {**_snap("credit_v1.html"), "title": "Credit ipotecar"}
         self.assertEqual(diff_snapshots(before, after), [])
 
+    def test_switching_a_page_to_noindex_is_flagged_explicitly(self):
+        """
+        The most damaging change a client can make and the least visible: the
+        page still loads and still looks right while quietly leaving the index.
+        """
+        before = {**_snap("credit_v1.html"), "meta_robots": "index,follow"}
+        after = {**_snap("credit_v1.html"), "meta_robots": "noindex,follow"}
+
+        change = next(c for c in diff_snapshots(before, after) if c["kind"] == "meta_robots_changed")
+        self.assertEqual(change["severity"], "high")
+        self.assertIn("NOINDEX", change["note"])
+
+    def test_a_harmless_robots_change_carries_no_noindex_note(self):
+        before = {**_snap("credit_v1.html"), "meta_robots": "index,follow"}
+        after = {**_snap("credit_v1.html"), "meta_robots": "index,nofollow"}
+
+        change = next(c for c in diff_snapshots(before, after) if c["kind"] == "meta_robots_changed")
+        self.assertNotIn("note", change)
+
     def test_a_real_title_rewrite_is_reported(self):
         before = {**_snap("credit_v1.html"), "title": "Credit ipotecar"}
         after = {**_snap("credit_v1.html"), "title": "Credite 2026"}
