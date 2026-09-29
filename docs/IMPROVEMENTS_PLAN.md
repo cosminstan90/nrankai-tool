@@ -432,6 +432,19 @@ Mic-spre-mediu. Cea mai mare parte din infrastructură există.
 
 ## 7. Accesibilitate deterministă (axe-core)
 
+**Executat (2026-09-29).** axe-core 4.13.0 vendorizat (`core/vendor/axe-core`,
+cu licența MPL-2.0), `core/axe_runner.py`, rezultatele ajung în prompt ca fapte
+după tiparul `technical_facts.py` — **fișierul de prompt nemodificat**.
+
+Rulează în scrape, cât pagina e deja deschisă (+1,7 s măsurat), doar pentru
+auditul de accesibilitate. Pentru site-uri deja scrapate (scrape-ul e sărit
+când există HTML) un pas de completare măsoară paginile lipsă, plafonat de
+`AXE_MAX_PAGES` (implicit 100) — reîncarcă fiecare pagină (~9 s).
+
+Separă încălcările WCAG de bunele practici axe: pe `ing.ro/persoane-fizice`,
+din 5 reguli încălcate doar `color-contrast` e WCAG (1.4.3). Paginile nemăsurate
+primesc „nemăsurat", niciodată „fără probleme".
+
 ### Problema
 
 `prompts/accessibility_audit.yaml` există, dar nu ai **niciun** motor
