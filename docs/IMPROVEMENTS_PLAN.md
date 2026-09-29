@@ -462,6 +462,25 @@ Mediu. Partea de infrastructură (browser headless) există.
 
 ## 8. Restul DataForSEO
 
+**Executat parțial (2026-09-29): poziții SERP.** `core/serp_client.py` e acum
+singurul client pentru `serp/google/organic`; un apel per query răspunde și la
+AI Overviews, și la pozițiile organice — care înainte erau plătite și aruncate.
+Stocate în `serp_rank_observations` (migrația `0019`), expuse în
+`GET /api/citations/trackers/{id}/rankings`. Se completează doar pentru
+trackere cu `google_aio` activat.
+
+**Găsit pe drum, reparat separat:** codul de locație pentru România era greșit
+în toate modulele care îl aveau — `2040` (care e **Austria**) în SerpIQ și
+ClusterIQ, `1037` (inexistent) în keyword research, iar verificarea AI
+Overviews folosea implicit SUA. Sursa unică verificată e acum
+`core/dataforseo_locations.py`.
+
+**Rămas din punctul 8:** `backlinks/` și `on_page/` nefolosite încă.
+
+**Neexplicat:** o rulare a înregistrat `ing.ro` ca absent pentru „ING Romania";
+două reîncercări (una identică) au dat corect #1. Probabil variație a SERP-ului
+live, nedemonstrat.
+
 ### Problema
 
 Legat de punctul 4, dar mai larg. Folosești un singur endpoint din tot
