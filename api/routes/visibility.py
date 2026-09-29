@@ -340,6 +340,35 @@ def _aio_text(serp) -> str:
     return text
 
 
+def _provider_point(breakdown: dict, provider: str, metric: str) -> Optional[float]:
+    """
+    One chart point for one provider in one scan, or None for "no data".
+
+    None when the provider was not part of that scan (enabled later -- the ing
+    tracker had five scans before google_aio was switched on) or when it
+    failed outright, e.g. DataForSEO refusing for lack of credit. Chart.js
+    draws None as a gap; the previous default of 0 drew a flat 0% line across
+    a period in which nothing was measured. A real 0 -- measured, nothing
+    found -- is still plotted as 0.
+    """
+    stats = breakdown.get(provider)
+    if not stats or stats.get("error"):
+        return None
+    if stats.get("queries", 0) == 0:
+        if "failed" in stats:
+            # Recorded since the fix: 0 queries with failures means nothing
+            # was measured; 0 queries and no failures (google_aio, no AI
+            # Overview anywhere) is a real, measured 0.
+            if stats["failed"] > 0:
+                return None
+        else:
+            # Scans from before "failed" existed: 0 answered queries means
+            # the provider never answered -- the real ing tracker's Claude and
+            # Perplexity rows, charted as 0% for months.
+            return None
+    return stats.get(metric, 0)
+
+
 async def _query_provider(
     provider: str, query: str, model: Optional[str] = None
 ) -> tuple[str, int, int, str]:
@@ -652,8 +681,15 @@ async def _run_visibility_scan(
             await db.commit()
 
             all_results = []
+            aio_billing_error: Optional[str] = None
             url_citation_counts: Dict[str, int] = {}
-            provider_stats = {p: {"citations": 0, "mentions": 0, "queries": 0, "responses": 0} for p in enabled_providers}
+            # "failed" counts attempts that produced nothing because the call
+            # itself failed. Without it, a provider that never answered at all
+            # -- Perplexity with an invalid key, Claude in the Feb-Mar scans --
+            # was indistinguishable from one that answered and never cited us,
+            # and both were charted as 0%.
+            provider_stats = {p: {"citations": 0, "mentions": 0, "queries": 0, "responses": 0, "failed": 0}
+                              for p in enabled_providers}
             competitor_results: Dict[str, Dict] = {}
 
             for query_idx, query in enumerate(tracking_queries):
@@ -662,6 +698,8 @@ async def _run_visibility_scan(
                 for provider in enabled_providers:
                     await asyncio.sleep(1)  # spread out same-provider requests
 
+                    provider_error = None
+                    aio_failed = False
                     if provider == "google_aio":
                         # One DataForSEO call answers both questions: the AI
                         # Overview feeds the citation pipeline below exactly as
@@ -669,12 +707,33 @@ async def _run_visibility_scan(
                         # become a rank observation (Etapa 8). They used to be
                         # fetched and thrown away.
                         response, in_tok, out_tok, model_name = "", 0, 0, "dataforseo-serp"
-                        if serp_client.dfs_configured():
-                            serp = await serp_client.fetch_serp(
-                                query, serp_location.location_code, serp_location.language_code)
+                        aio_failed = True     # until a SERP actually comes back
+                        if aio_billing_error:
+                            # Every further call would be refused for the same
+                            # reason; don't keep asking.
+                            provider_error = aio_billing_error
+                        elif serp_client.dfs_configured():
+                            serp = None
+                            try:
+                                serp = await serp_client.fetch_serp(
+                                    query, serp_location.location_code, serp_location.language_code)
+                            except serp_client.DataForSEOBillingError as exc:
+                                # Without this an exhausted balance read exactly
+                                # like "Google showed no AI Overview".
+                                aio_billing_error = str(exc)
+                                provider_error = aio_billing_error
+                                logger.error(
+                                    "Visibility scan %s: %s -- google_aio skipped for the rest of this scan",
+                                    scan_id, exc,
+                                )
                             response = _aio_text(serp)
                             if serp is not None:
+                                aio_failed = False
                                 await record_observation(tracker.id, scan_id, tracker.website, query, serp)
+                                if not response:
+                                    # A SERP came back and Google showed no AI
+                                    # Overview: a measurement, not an error.
+                                    provider_error = "No AI Overview shown"
                     else:
                         response, in_tok, out_tok, model_name = await _query_provider(provider, query)
                     if in_tok or out_tok:
@@ -694,8 +753,12 @@ async def _run_visibility_scan(
                         )
 
                     if not response:
+                        genuinely_failed = aio_failed if provider == "google_aio" else True
+                        if genuinely_failed:
+                            provider_stats[provider]["failed"] += 1
                         query_result["providers"][provider] = {
-                            "cited": False, "mentioned": False, "cited_urls": [], "error": "No response",
+                            "cited": False, "mentioned": False, "cited_urls": [],
+                            "error": provider_error or "No response",
                         }
                         continue
 
@@ -762,6 +825,11 @@ async def _run_visibility_scan(
                 else:
                     stats["citation_rate"] = 0
                     stats["mention_rate"] = 0
+
+            # Persisted with the scan, so the rankings endpoint and anyone
+            # reading scan history can tell "out of credit" from "no data".
+            if aio_billing_error and "google_aio" in provider_stats:
+                provider_stats["google_aio"]["error"] = aio_billing_error
 
             competitor_scores = {
                 website: {"name": data["name"], "mention_rate": round(data["mention_count"] / data["total"] * 100, 1)}
@@ -949,9 +1017,28 @@ async def get_tracker_rankings(tracker_id: str, db: AsyncSession = Depends(get_d
     queries.sort(key=lambda q: (q["latest"]["rank_group"] is None, q["latest"]["rank_group"] or 0))
 
     ranked = [q for q in queries if q["latest"]["rank_group"] is not None]
+
+    # Why rankings might be missing or stale. Without this, an account that ran
+    # out of DataForSEO credit looked exactly like one with nothing to report.
+    last_scan = (await db.execute(
+        select(CitationScan)
+        .where(CitationScan.tracker_id == tracker_id, CitationScan.status == "completed")
+        .order_by(desc(CitationScan.completed_at))
+        .limit(1)
+    )).scalar_one_or_none()
+    data_source_error = None
+    if last_scan and last_scan.provider_breakdown:
+        try:
+            data_source_error = (json.loads(last_scan.provider_breakdown)
+                                 .get("google_aio", {}).get("error"))
+        except (ValueError, AttributeError):
+            pass
+
     return {
         "tracker_id": tracker_id,
         "website": tracker.website,
+        "data_source_error": data_source_error,
+        "last_scan_at": last_scan.completed_at.isoformat() if last_scan and last_scan.completed_at else None,
         "google_aio_enabled": bool(json.loads(tracker.providers_config or "{}").get("google_aio")),
         "queries_observed": len(queries),
         "queries_ranked": len(ranked),
@@ -985,7 +1072,7 @@ async def get_tracker_trend(tracker_id: str, db: AsyncSession = Depends(get_db))
         overall_data.append(scan.citation_rate or 0)
         breakdown = json.loads(scan.provider_breakdown) if scan.provider_breakdown else {}
         for provider in enabled_providers:
-            provider_data[provider].append(breakdown.get(provider, {}).get("citation_rate", 0))
+            provider_data[provider].append(_provider_point(breakdown, provider, "citation_rate"))
 
     datasets = [{
         "label": "Overall Citation Rate", "data": overall_data,
@@ -1207,19 +1294,25 @@ async def get_geo_trend(project_id: str, db: AsyncSession = Depends(get_db)):
     scans = result.scalars().all()
 
     labels, overall_scores = [], []
-    provider_data: Dict[str, List[float]] = {}
-    for scan in scans:
-        if not scan.completed_at:
-            continue
+    completed = [scan for scan in scans if scan.completed_at]
+    breakdowns = []
+    for scan in completed:
+        try:
+            breakdowns.append(json.loads(scan.provider_breakdown) if scan.provider_breakdown else {})
+        except Exception as ex:
+            logger.warning("Failed to parse provider_breakdown for scan %s: %s", scan.id, ex)
+            breakdowns.append({})
+
+    # Every provider gets exactly one point per scan. Appending only for the
+    # providers present in each scan gave a provider enabled later a shorter
+    # list than `labels`, so its points were drawn against the wrong dates.
+    all_providers = sorted({p for b in breakdowns for p in b})
+    provider_data: Dict[str, List[Optional[float]]] = {p: [] for p in all_providers}
+    for scan, breakdown in zip(completed, breakdowns):
         labels.append(scan.completed_at.strftime("%Y-%m-%d %H:%M"))
         overall_scores.append(scan.visibility_score or 0)
-        if scan.provider_breakdown:
-            try:
-                breakdown = json.loads(scan.provider_breakdown)
-                for provider, stats in breakdown.items():
-                    provider_data.setdefault(provider, []).append(stats.get("mention_rate", 0))
-            except Exception as ex:
-                logger.warning("Failed to parse provider_breakdown for scan %s: %s", scan.id, ex)
+        for provider in all_providers:
+            provider_data[provider].append(_provider_point(breakdown, provider, "mention_rate"))
 
     datasets = [{
         "label": "Overall Visibility", "data": overall_scores,

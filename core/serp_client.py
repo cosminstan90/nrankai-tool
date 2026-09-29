@@ -39,6 +39,45 @@ SERP_URL = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced"
 
 _ORGANIC_TYPES = {"organic", "featured_snippet"}
 
+# From DataForSEO's own error list (/v3/appendix/errors, fetched 2026-09-29).
+# These stop every paid call until someone acts, so they are raised, not
+# treated as "nothing to report". 50001 ("Error While Checking the Balance")
+# is deliberately absent: it is a transient server-side failure, not a lack of
+# funds, and alarming on it would be crying wolf.
+BILLING_CODES = {
+    40200: "Payment Required",
+    40203: "cost limit exceeded (adjustable at https://app.dataforseo.com/api-settings)",
+    40210: "insufficient funds -- the account balance is too low",
+}
+
+
+class DataForSEOBillingError(RuntimeError):
+    """
+    DataForSEO refused the request for billing reasons.
+
+    Raised instead of returning None because the two look identical otherwise:
+    an exhausted balance and "Google showed no AI Overview" both came back as
+    an empty result, so running out of credit was indistinguishable from
+    genuine absence. The account had $0.89 left when this was added.
+    """
+
+    def __init__(self, code: int, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(f"DataForSEO {code}: {message}")
+
+
+def raise_for_billing(data: dict) -> None:
+    """Raise DataForSEOBillingError if the response, or any task in it, is a billing refusal."""
+    if not isinstance(data, dict):
+        return
+    candidates = [(data.get("status_code"), data.get("status_message"))]
+    candidates += [(t.get("status_code"), t.get("status_message"))
+                   for t in (data.get("tasks") or []) if isinstance(t, dict)]
+    for code, message in candidates:
+        if code in BILLING_CODES:
+            raise DataForSEOBillingError(code, message or BILLING_CODES[code])
+
 
 def dfs_configured() -> bool:
     return bool(os.getenv("DATAFORSEO_LOGIN") and os.getenv("DATAFORSEO_PASSWORD"))
@@ -179,6 +218,9 @@ async def fetch_raw(keyword: str, location_code: int, language_code: str,
     One HTTP call to the endpoint. Returns the raw response, or None when
     DataForSEO is not configured or the request itself fails.
 
+    Raises DataForSEOBillingError when DataForSEO refuses the request for
+    billing reasons -- see BILLING_CODES.
+
     Exposed separately so SerpIQ can keep its own richer item parsing while
     sharing the transport, credentials and error handling.
     """
@@ -204,10 +246,14 @@ async def fetch_raw(keyword: str, location_code: int, language_code: str,
                 headers={"Authorization": _dfs_auth(), "Content-Type": "application/json"},
                 json=[task],
             )
-        return resp.json()
+        data = resp.json()
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("SERP request failed for %r: %s", keyword, exc)
         return None
+
+    # Outside the try on purpose: a billing refusal must reach the caller.
+    raise_for_billing(data)
+    return data
 
 
 async def fetch_serp(keyword: str, location_code: int, language_code: str,
