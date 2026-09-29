@@ -188,7 +188,8 @@ def _safe_dir(url: str) -> str:
 async def run_scraping_step(
     audit_id: str,
     website: str,
-    sitemap_url: Optional[str]
+    sitemap_url: Optional[str],
+    measure_accessibility: bool = False,
 ) -> bool:
     """
     Run the web scraping step.
@@ -255,7 +256,8 @@ async def run_scraping_step(
                 output_dir=output_dir,
                 no_proxy=True,
                 delay_range=(1.0, 2.0),
-                progress_callback=scrape_progress_cb
+                progress_callback=scrape_progress_cb,
+                measure_accessibility=measure_accessibility,
             )
         )
         
@@ -286,6 +288,32 @@ async def run_scraping_step(
         await log_message(audit_id, f"Scraping failed: {str(e)}", "ERROR")
         traceback.print_exc()
         return False
+
+
+async def run_axe_backfill_step(audit_id: str, website: str, sitemap_url: str) -> None:
+    """
+    Accessibility audits only: measure pages that were scraped before axe was
+    asked for (Etapa 7). Scraping is skipped outright when HTML already
+    exists, so without this an accessibility audit on an existing site would
+    never be measured. Never fails the audit: unmeasured pages are reported to
+    the model as "not measured", which is honest, just less useful.
+    """
+    from core.axe_runner import backfill_axe
+
+    html_dir = os.path.join(_safe_dir(website), "input_html")
+    await log_message(audit_id, "Measuring accessibility with axe-core on pages not yet measured...")
+    try:
+        result = await asyncio.to_thread(backfill_axe, html_dir, sitemap_url)
+    except Exception as exc:
+        await log_message(audit_id, f"axe-core measurement failed, continuing without it: {exc}", "WARNING")
+        return
+
+    msg = (f"axe-core: measured {result['measured']} page(s), {result['failed']} failed, "
+           f"{result['candidates']} needed measuring")
+    if result["skipped_over_cap"]:
+        msg += (f"; {result['skipped_over_cap']} left unmeasured by the AXE_MAX_PAGES cap "
+                "and will be reported to the model as not measured")
+    await log_message(audit_id, msg)
 
 
 async def run_conversion_step(audit_id: str, website: str) -> bool:
@@ -765,11 +793,16 @@ async def start_audit_pipeline(
         await log_message(audit_id, f"Starting audit pipeline for {website}")
         await log_message(audit_id, f"Audit type: {audit_type}, Provider: {provider}")
         
+        is_accessibility_audit = (audit_type or "").upper() == "ACCESSIBILITY_AUDIT"
+
         # Step 1: Scraping
         if sitemap_url:
             try:
                 success = await asyncio.wait_for(
-                    run_scraping_step(audit_id, website, sitemap_url),
+                    run_scraping_step(
+                        audit_id, website, sitemap_url,
+                        measure_accessibility=is_accessibility_audit,
+                    ),
                     timeout=1800,
                 )
             except asyncio.TimeoutError:
@@ -786,6 +819,13 @@ async def start_audit_pipeline(
             await log_message(audit_id, "Skipping scrape step (no sitemap provided)")
             await update_audit_status(audit_id, progress_percent=25)
         
+        # Step 1b: axe-core for pages scraped before accessibility was requested
+        if sitemap_url and is_accessibility_audit:
+            try:
+                await asyncio.wait_for(run_axe_backfill_step(audit_id, website, sitemap_url), timeout=3600)
+            except asyncio.TimeoutError:
+                await log_message(audit_id, "axe-core measurement timed out; continuing with what was measured", "WARNING")
+
         # Step 2: Conversion (only needed when sitemap scraping was done)
         if sitemap_url:
             try:

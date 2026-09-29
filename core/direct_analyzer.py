@@ -1023,6 +1023,21 @@ class DirectAnalyzer:
 
                     page_text = format_crawl_facts_block(crawl_page_facts) + "\n\n" + page_text
 
+                # Accessibility (Etapa 7): axe-core results measured on the
+                # rendered page, stored next to its HTML. The prompt concedes
+                # it "cannot evaluate ... computed color contrast values"; axe
+                # can, and does. A page without results is labelled "not
+                # measured" -- never "no issues" -- so an unmeasured page cannot
+                # inherit a clean bill of health.
+                if self.question_type == "ACCESSIBILITY_AUDIT":
+                    from core.axe_runner import format_axe_facts_block, load_axe_results
+
+                    axe_summary = None
+                    if self.html_dir:
+                        html_path = os.path.join(self.html_dir, os.path.splitext(filename)[0] + ".html")
+                        axe_summary = load_axe_results(html_path)
+                    page_text = format_axe_facts_block(axe_summary) + "\n\n" + page_text
+
                 # Inject research context if available
                 if self.research_dir:
                     from perplexity_researcher import load_research_context
