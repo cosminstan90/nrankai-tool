@@ -1,0 +1,6 @@
+# Vendored third-party files are stored and checked out byte-for-byte.
+# core.autocrlf=true on this machine would otherwise rewrite axe.min.js to
+# CRLF on checkout -- changing the content of any multi-line string literal in
+# the minified engine, and the file's hash, away from the release that was
+# tested.
+core/vendor/** -text
