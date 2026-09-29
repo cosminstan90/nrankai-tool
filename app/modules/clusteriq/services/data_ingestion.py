@@ -319,7 +319,7 @@ class DataForSEOIngestionService:
         self,
         project_id: int,
         keywords: list[str],
-        location_code: int = 2040,   # 2040 = Romania
+        location_code: int = 2642,   # Romania -- 2040 (the old value) is Austria
     ) -> dict[str, Any]:
         """
         Fetch organic top-20 SERP URLs for each keyword and store them in

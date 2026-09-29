@@ -131,7 +131,7 @@ class SERPFetcher:
     async def fetch_serp(
         self,
         keyword:       str,
-        location_code: int = 2040,
+        location_code: int = 2642,   # Romania -- 2040 (the old value) is Austria
         language_code: str = "ro",
         depth:         int = 20,
     ) -> list[SERPItem]:

@@ -20,7 +20,7 @@ class KeywordSession(Base):
     name             = Column(String(200), nullable=False)
     seed_keywords    = Column(JSON,        nullable=False)       # list[str]
     location_key     = Column(String(10),  nullable=False, default="RO")  # e.g. "RO", "US"
-    location_code    = Column(Integer,     nullable=False, default=1037)
+    location_code    = Column(Integer,     nullable=False, default=2642)   # Romania; 1037 (the old value) does not exist
     language_code    = Column(String(10),  nullable=False, default="ro")
     language_name    = Column(String(60),  nullable=False, default="Romanian")
     pass2_limit      = Column(Integer,     nullable=False, default=50)

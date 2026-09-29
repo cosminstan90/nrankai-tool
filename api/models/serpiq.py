@@ -35,7 +35,7 @@ class SiqSnapshot(Base):
     input_type          = Column(String(10),   nullable=False)              # 'url' | 'keyword'
     input_value         = Column(String(2048), nullable=False)              # raw user input
     keyword             = Column(String(500),  nullable=False, index=True)  # analysed keyword (extracted if URL)
-    location_code       = Column(Integer,      default=2040)                # 2040 = Romania
+    location_code       = Column(Integer,      default=2642)                # 2642 = Romania (2040 is Austria)
     language_code       = Column(String(10),   default="ro")
     serp_results        = Column(JSON,         nullable=True)               # list of top-20 SERP items (raw)
     url_analysis        = Column(JSON,         nullable=True)               # on-page metrics if input_type='url'

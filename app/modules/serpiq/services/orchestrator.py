@@ -73,7 +73,7 @@ class SerpIQOrchestrator:
         self,
         input_type:    str,            # 'url' | 'keyword'
         input_value:   str,
-        location_code: int  = 2040,
+        location_code: int  = 2642,   # Romania -- 2040 (the old value) is Austria
         language_code: str  = "ro",
         generate_brief: bool = False,
         user_id:        Optional[int] = None,

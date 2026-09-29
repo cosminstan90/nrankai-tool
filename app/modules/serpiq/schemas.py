@@ -20,7 +20,7 @@ class SerpiqAnalyzeRequest(BaseModel):
         max_length=2048,
         description="URL or keyword to analyse.",
     )
-    location_code: int   = Field(2040, ge=1000, le=9999,  description="DataForSEO location code (default: 2040 = Romania).")
+    location_code: int   = Field(2642, ge=1000, le=9999,  description="DataForSEO location code (default: 2642 = Romania).")
     language_code: str   = Field("ro",  min_length=2, max_length=10, description="Language code (default: 'ro').")
     generate_brief: bool = Field(False, description="If True, also call Claude to generate a 150-word content brief.")
 

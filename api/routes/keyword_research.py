@@ -41,17 +41,16 @@ router = APIRouter(prefix="/api/keyword-research", tags=["keyword-research"])
 
 
 # ── Location / Language presets (DataForSEO location codes) ──────────────────
+# Derived from core.dataforseo_locations, which is checked against DataForSEO's
+# own reference lists. This dict used to hardcode "RO": 1037 -- a code that
+# exists on neither list, so Romanian keyword research could never succeed.
+from core.dataforseo_locations import LOCATIONS as _VERIFIED_LOCATIONS
+
 LOCATION_PRESETS: dict = {
-    "RO": {"location_code": 1037, "language_code": "ro", "language_name": "Romanian"},
-    "US": {"location_code": 2840, "language_code": "en", "language_name": "English (US)"},
-    "UK": {"location_code": 2826, "language_code": "en", "language_name": "English (UK)"},
-    "DE": {"location_code": 2276, "language_code": "de", "language_name": "German"},
-    "FR": {"location_code": 2250, "language_code": "fr", "language_name": "French"},
-    "IT": {"location_code": 2380, "language_code": "it", "language_name": "Italian"},
-    "ES": {"location_code": 2724, "language_code": "es", "language_name": "Spanish"},
-    "PL": {"location_code": 2616, "language_code": "pl", "language_name": "Polish"},
-    "NL": {"location_code": 2528, "language_code": "nl", "language_name": "Dutch"},
-    "BG": {"location_code": 2100, "language_code": "bg", "language_name": "Bulgarian"},
+    key: {"location_code": loc.location_code,
+          "language_code": loc.language_code,
+          "language_name": loc.language_name}
+    for key, loc in _VERIFIED_LOCATIONS.items()
 }
 
 LLM_DEFAULT_MODELS: dict = {
