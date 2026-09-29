@@ -342,7 +342,7 @@ async def sync_property(property_id: str, days: int = 90):
     # ── 2-4. Bulk replace rows using synchronous sqlite3 in a thread ──────────
     # Runs in a thread pool to avoid blocking the event loop.
     # Uses sqlite3 directly (not SQLAlchemy/aiosqlite) which is rock-solid
-    # for bulk writes and avoids any StaticPool connection conflicts.
+    # for bulk writes; it predates, and sidestepped, the old StaticPool engine.
     def _bulk_replace(db_path: str, pid: str, q_rows: list, p_rows: list) -> None:
         conn = sqlite3.connect(db_path, timeout=60, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")

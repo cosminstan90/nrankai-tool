@@ -276,9 +276,9 @@ async def _run_batch(
                 # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens
                 # its own AsyncSessionLocal(), and firing it concurrently while this loop's
                 # own `db` session is still open (the next iteration commits again via
-                # _save_fanout_result) can silently drop that commit -- both sessions share
-                # one physical SQLite connection (StaticPool). See the Etapa 3 fix + comment
-                # in api/routes/visibility.py for the reproduced bug.
+                # _save_fanout_result) silently dropped that commit while all sessions shared
+                # one SQLite connection (StaticPool, since removed -- see api/models/_base.py).
+                # Still awaited so the cost row is written in order.
                 await track_cost(
                     source="fanout_batch",
                     provider=result.provider,

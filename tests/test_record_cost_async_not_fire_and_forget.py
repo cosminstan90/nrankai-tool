@@ -6,8 +6,8 @@ and fixed independently in api/routes/visibility.py (Etapa 3),
 api/routes/content_briefs.py, api/routes/fanout.py, api/routes/schema_gen.py,
 api/routes/summary.py (Etapa 5.6's rescued fix). record_cost_async() opens
 its own AsyncSessionLocal(); firing it via create_task while the caller's own
-db session is still open races on api/models/_base.py's shared StaticPool
-SQLite connection.
+db session is still open raced on api/models/_base.py's then-shared
+StaticPool SQLite connection (since replaced by one connection per session).
 
 Here the same pattern additionally caused a cross-test hang: an abandoned
 create_task() left mid-flight when a test's event loop closes (every
@@ -74,8 +74,8 @@ class TestRecordCostAsyncNeverFireAndForget(unittest.TestCase):
         self.assertEqual(
             offenders, {},
             f"asyncio.create_task(record_cost_async(...)) found -- this exact "
-            f"fire-and-forget pattern races on the shared SQLite StaticPool "
-            f"connection (silently drops commits) and can wedge aiosqlite's "
+            f"fire-and-forget pattern raced on the old shared SQLite StaticPool "
+            f"connection (silently dropped commits) and can wedge aiosqlite's "
             f"worker thread across event loops (hangs). Await it directly "
             f"instead. Offending files:line: {offenders}",
         )

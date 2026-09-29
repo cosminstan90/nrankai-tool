@@ -52,11 +52,10 @@ async def record_observation(tracker_id: str, scan_id: Optional[str], website: s
     Store one observation in its own short-lived session, committed at once.
 
     Deliberately NOT added to the visibility scan's own session. That session
-    stays open for the whole scan, and api/models/_base.py uses StaticPool --
-    every session shares one SQLite connection -- so pending rows held across
-    a long scan while the server serves other requests can be silently
-    discarded. That exact failure lost all 545 rows of the first real
-    snapshot capture in Etapa 6.
+    stays open for the whole scan; pending rows in it would hold SQLite's
+    single write lock for minutes. (Under the old StaticPool engine they were
+    silently discarded instead -- that lost all 545 rows of the first real
+    snapshot capture in Etapa 6.)
 
     Never raises: a failed observation must not fail the scan it rides on.
     """

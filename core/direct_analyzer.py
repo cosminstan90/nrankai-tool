@@ -1167,8 +1167,8 @@ class DirectAnalyzer:
                 # asyncio.create_task: record_cost_async() opens its own
                 # AsyncSessionLocal(), and firing it concurrently while this
                 # function's own db session may still be open elsewhere in
-                # the same process races on the shared SQLite connection
-                # (StaticPool) -- see the Etapa 3 fix + comment in
+                # the same process raced on the then-shared SQLite connection
+                # (StaticPool, since removed) -- see the Etapa 3 fix + comment in
                 # api/routes/visibility.py for the reproduced silently-
                 # dropped-commit bug this exact pattern causes. Here it also
                 # caused a cross-test hang (task_4baec8cd): an abandoned

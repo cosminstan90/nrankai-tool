@@ -30,14 +30,14 @@ _BATCH_SIZE = 50
 
 # Only one capture at a time, process-wide.
 #
-# api/models/_base.py builds the engine with poolclass=StaticPool, so every
-# session in the process shares ONE physical SQLite connection. Two captures
-# running at once over that single connection deadlocked on a real 545-page
-# site: both stalled at exactly 445 rows, one run hung in "running" forever and
-# the other reported "completed, 545 pages" against 445 stored rows.
+# Added while api/models/_base.py used StaticPool, when every session shared
+# ONE physical SQLite connection: two captures at once deadlocked on a real
+# 545-page site -- both stalled at exactly 445 rows, one run hung in "running"
+# forever and the other reported "completed, 545 pages" against 445 rows.
 #
-# This lock makes the feature safe; it does not fix the underlying hazard,
-# which is app-wide and lives in the engine configuration.
+# The engine now gives each session its own connection. The lock stays: two
+# captures of the same site at once would only compete for SQLite's single
+# writer and a Chrome instance each, for no benefit.
 #
 # Created per event loop rather than once at import: a module-level
 # asyncio.Lock() binds to whichever loop first uses it and then raises
@@ -60,9 +60,9 @@ async def _flush(rows: list) -> None:
     """
     Write one batch in its own session and commit immediately.
 
-    Short sessions are the point: with StaticPool every session shares one
-    SQLite connection, so pending rows held across other database activity are
-    lost. Each batch is committed before the next page is even read.
+    Short sessions are the point: a batch holds SQLite's write lock only for
+    the moment it takes to insert, never across page reads. (Under the old
+    StaticPool engine long-held pending rows were silently lost outright.)
     """
     if not rows:
         return
@@ -153,9 +153,8 @@ async def _capture_snapshot_locked(website: str, source_dir: str) -> str:
         # Committed in batches, each in its own short-lived session, and never
         # holding pending rows across the whole capture.
         #
-        # api/models/_base.py builds the engine with poolclass=StaticPool, so
-        # every AsyncSessionLocal shares ONE physical SQLite connection. The
-        # first real capture held a single session open for 2m40s over 545
+        # When api/models/_base.py used StaticPool, every AsyncSessionLocal
+        # shared ONE physical SQLite connection. The first real capture held a single session open for 2m40s over 545
         # pages while the server kept serving requests on that same connection;
         # the interleaved transactions silently discarded every pending insert,
         # leaving a run row that read "completed, 545 pages" against an empty

@@ -740,9 +740,9 @@ async def _run_visibility_scan(
                         # Awaited, not fire-and-forget via asyncio.create_task: track_cost()
                         # opens its own AsyncSessionLocal(), and firing it concurrently while
                         # this function's own long-lived `db` session is mid-scan caused the
-                        # final "completed" commit below to silently not persist -- both
-                        # sessions share one physical SQLite connection (StaticPool), and
-                        # interleaving separate transactions on it raced. Reproduced live
+                        # final "completed" commit below to silently not persist -- all
+                        # sessions shared one physical SQLite connection (StaticPool, since
+                        # removed -- see api/models/_base.py). Reproduced live
                         # during Etapa 3 testing; the original citation_tracker.py /
                         # geo_monitor.py had the same fire-and-forget pattern, so this was a
                         # latent bug, not something introduced by the unification.

@@ -144,15 +144,15 @@ class TestCapturesAreSerialized(unittest.IsolatedAsyncioTestCase):
     """
     Captures must not overlap.
 
-    api/models/_base.py builds the engine with poolclass=StaticPool, so every
-    session in the process shares ONE physical SQLite connection. Two captures
-    running at once over it corrupted a real 545-page run: both stalled at
+    While api/models/_base.py used StaticPool, every session in the process
+    shared ONE physical SQLite connection. Two captures running at once over it
+    corrupted a real 545-page run: both stalled at
     exactly 445 rows, one hung in "running" forever and the other reported
     "completed, 545 pages" against 445 stored rows.
 
-    This asserts the lock actually serializes them. It does not assert anything
-    about the underlying hazard, which is app-wide and lives in the engine
-    configuration -- a test for that was tried first and was too timing
+    This asserts the lock actually serializes them. The underlying hazard was
+    fixed in the engine and is tested deterministically in
+    tests/test_db_session_isolation.py; a timing-based test for it was tried first and was too timing
     dependent to be worth keeping: it passed alone and failed inside the full
     suite, which is the kind of test that teaches people to ignore red.
     """

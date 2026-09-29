@@ -288,9 +288,9 @@ Generate a detailed content brief with specific, actionable recommendations."""
 
         # Awaited, not fire-and-forget via asyncio.create_task: track_cost() opens its
         # own AsyncSessionLocal(), and firing it concurrently while this function's own
-        # `db` session is still open (it commits below) can silently drop that commit --
-        # both sessions share one physical SQLite connection (StaticPool). See the
-        # Etapa 3 fix + comment in api/routes/visibility.py for the reproduced bug.
+        # `db` session was still open (it commits below) silently dropped that commit
+        # while all sessions shared one SQLite connection (StaticPool, since removed --
+        # see api/models/_base.py). Still awaited so the cost row is written in order.
         await track_cost(
             source="brief",
             provider=provider,
