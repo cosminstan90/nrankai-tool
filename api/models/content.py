@@ -106,9 +106,14 @@ class CitationTracker(Base):
     brand_keywords = Column(Text, nullable=True)  # JSON array — broader than url_patterns, matches a plain mention
     language = Column(String(50), nullable=True, default="English")
     competitors = Column(JSON, nullable=True, default=list)  # [{"name": str, "brand_keywords": [str], "website": str}]
+    # Market to check Google rankings in (a core.dataforseo_locations key, e.g.
+    # "RO"). NULL means derive it: country-code TLD first, then language. The
+    # override exists for sites on a generic TLD that compete in one market.
+    serp_location = Column(String(8), nullable=True)
 
     # Relationship to scans
     scans = relationship("CitationScan", back_populates="tracker", cascade="all, delete-orphan")
+    rank_observations = relationship("SerpRankObservation", back_populates="tracker", cascade="all, delete-orphan")
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -229,6 +234,75 @@ class CitationScan(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 
+
+
+class SerpRankObservation(Base):
+    """
+    Where a tracked site ranked on Google for one query, at one point in time.
+
+    Etapa 8 of docs/IMPROVEMENTS_PLAN.md. Recorded from the SERP the
+    google_aio provider already fetches during a visibility scan -- the AI
+    Overview check was paying for the organic results and discarding them.
+    Dated and additive: the question this answers is "we optimised, did the
+    ranking move?", which needs a series, not a latest value.
+
+    rank_group is the organic position ("we rank #3"). rank_absolute counts
+    every block on the page, so an AI Overview or a people-also-ask box above
+    the result pushes it down. On a real Romanian SERP the first organic
+    result was rank_group 1 but rank_absolute 2. Both are kept because the gap
+    between them is exactly what a GEO tool exists to show.
+
+    NULL rank_group means the site was not among the results_count organic
+    results returned -- "not in the top N", never position 0.
+    """
+    __tablename__ = "serp_rank_observations"
+
+    id = Column(String(36), primary_key=True)
+    tracker_id = Column(String(36), ForeignKey("citation_trackers.id", ondelete="CASCADE"),
+                        nullable=False, index=True)
+    scan_id = Column(String(36), ForeignKey("citation_scans.id", ondelete="SET NULL"),
+                     nullable=True, index=True)
+    query = Column(Text, nullable=False)
+    website = Column(String(255), nullable=False)
+
+    location_code = Column(Integer, nullable=False)
+    language_code = Column(String(10), nullable=False)
+    depth = Column(Integer, nullable=False)
+    results_count = Column(Integer, nullable=False)     # organic results actually returned
+
+    rank_group = Column(Integer, nullable=True)
+    rank_absolute = Column(Integer, nullable=True)
+    ranking_url = Column(Text, nullable=True)
+    is_featured_snippet = Column(Boolean, default=False)
+
+    aio_present = Column(Boolean, default=False)
+    aio_cites_site = Column(Boolean, default=False)
+    serp_features = Column(JSON, nullable=True, default=list)
+
+    observed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+
+    tracker = relationship("CitationTracker", back_populates="rank_observations")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "tracker_id": self.tracker_id,
+            "scan_id": self.scan_id,
+            "query": self.query,
+            "website": self.website,
+            "location_code": self.location_code,
+            "language_code": self.language_code,
+            "depth": self.depth,
+            "results_count": self.results_count,
+            "rank_group": self.rank_group,
+            "rank_absolute": self.rank_absolute,
+            "ranking_url": self.ranking_url,
+            "is_featured_snippet": bool(self.is_featured_snippet),
+            "aio_present": bool(self.aio_present),
+            "aio_cites_site": bool(self.aio_cites_site),
+            "serp_features": self.serp_features or [],
+            "observed_at": self.observed_at.isoformat() if self.observed_at else None,
+        }
 
 
 class CompetitorGapAnalysis(Base):

@@ -30,7 +30,7 @@ from api.models.analytics import (
     AdsCampaignRow, InsightRun, InsightCard, GoogleOAuthToken,
 )
 from api.models.content import (
-    ContentBrief, SchemaMarkup, CitationTracker, CitationScan,
+    ContentBrief, SchemaMarkup, CitationTracker, CitationScan, SerpRankObservation,
     DraftOptimization,
     CompetitorGapAnalysis, ContentGap, ActionCard, CrossReferenceJob,
     UrlGuide, LlmsTxtJob,

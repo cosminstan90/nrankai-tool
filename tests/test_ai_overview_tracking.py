@@ -49,7 +49,10 @@ class _FakeAsyncClient:
 
 
 def _mock_httpx(json_body):
-    return patch.object(aio_mod.httpx, "AsyncClient", lambda **kw: _FakeAsyncClient(_FakeResponse(json_body)))
+    # The HTTP call lives in core.serp_client since Etapa 8 -- ai_overview_client
+    # delegates to it -- so that is where the transport is faked.
+    import core.serp_client as serp_mod
+    return patch.object(serp_mod.httpx, "AsyncClient", lambda **kw: _FakeAsyncClient(_FakeResponse(json_body)))
 
 
 _NO_AIO_RESPONSE = {
@@ -80,6 +83,20 @@ _AIO_PRESENT_RESPONSE = {
         }]}],
     }]
 }
+
+
+def _serp_with(aio):
+    """
+    A SerpResult carrying the given AI Overview (or none).
+
+    _query_provider's google_aio branch goes through core.serp_client since
+    Etapa 8, so that is the seam to mock. Patching fetch_ai_overview, as these
+    tests originally did, no longer intercepts anything -- the unmocked call
+    then went out over the network with the fake credentials below.
+    """
+    from core.serp_client import SerpResult
+    return SerpResult(keyword="q", location_code=2642, language_code="ro",
+                      depth=20, ai_overview=aio)
 
 
 class TestFetchAiOverview(unittest.IsolatedAsyncioTestCase):
@@ -132,7 +149,7 @@ class TestQueryProviderGoogleAio(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out_tok, 0)
 
     async def test_no_overview_returns_empty_response(self):
-        with patch("core.ai_overview_client.fetch_ai_overview", AsyncMock(return_value=None)), \
+        with patch("core.serp_client.fetch_serp", AsyncMock(return_value=_serp_with(None))), \
              patch.dict("os.environ", {"DATAFORSEO_LOGIN": "x", "DATAFORSEO_PASSWORD": "y"}):
             text, in_tok, out_tok, model = await _query_provider("google_aio", "no overview here")
         self.assertEqual(text, "")
@@ -148,7 +165,7 @@ class TestQueryProviderGoogleAio(unittest.IsolatedAsyncioTestCase):
                  "title": "Example", "source": "Example"},
             ],
         }
-        with patch("core.ai_overview_client.fetch_ai_overview", AsyncMock(return_value=fake_aio)), \
+        with patch("core.serp_client.fetch_serp", AsyncMock(return_value=_serp_with(fake_aio))), \
              patch.dict("os.environ", {"DATAFORSEO_LOGIN": "x", "DATAFORSEO_PASSWORD": "y"}):
             text, in_tok, out_tok, model = await _query_provider("google_aio", "photosynthesis")
 
@@ -176,7 +193,7 @@ class TestQueryProviderGoogleAio(unittest.IsolatedAsyncioTestCase):
                  "title": "ING", "source": "ING"},
             ],
         }
-        with patch("core.ai_overview_client.fetch_ai_overview", AsyncMock(return_value=fake_aio)), \
+        with patch("core.serp_client.fetch_serp", AsyncMock(return_value=_serp_with(fake_aio))), \
              patch.dict("os.environ", {"DATAFORSEO_LOGIN": "x", "DATAFORSEO_PASSWORD": "y"}):
             text, _, _, _ = await _query_provider("google_aio", "some banking query")
 

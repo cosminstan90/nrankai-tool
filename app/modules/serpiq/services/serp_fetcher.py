@@ -144,30 +144,20 @@ class SERPFetcher:
 
         Returns an empty list on any non-recoverable error (logged at WARNING).
         """
-        import httpx
-
-        payload = [{
-            "keyword":       keyword,
-            "location_code": location_code,
-            "language_code": language_code,
-            "device":        "desktop",
-            "os":            "windows",
-            "depth":         depth,
-            "calculate_rectangles": False,
-        }]
-        headers = {
-            "Authorization": self._auth,
-            "Content-Type":  "application/json",
-            "User-Agent":    _USER_AGENT,
-        }
+        # Transport shared with core/serp_client.py, the single caller of this
+        # endpoint since Etapa 8 (the AI Overview check used to make its own,
+        # separate call). SerpIQ keeps its own payload -- notably no
+        # load_async_ai_overview -- and its own richer item parsing below.
+        from core.serp_client import fetch_raw
 
         t0 = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(_DFS_ENDPOINT, json=payload, headers=headers)
-            data = resp.json()
-        except Exception as exc:
-            logger.warning("[SERPFetcher] network error for %r: %s", keyword, exc)
+        data = await fetch_raw(
+            keyword, location_code, language_code,
+            depth=depth, device="desktop", load_ai_overview=False,
+            extra={"os": "windows", "calculate_rectangles": False},
+        )
+        if data is None:
+            logger.warning("[SERPFetcher] request failed for %r", keyword)
             return []
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)

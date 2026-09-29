@@ -4659,8 +4659,8 @@
             "type": "string"
           },
           "location_code": {
-            "default": 2040,
-            "description": "DataForSEO location code (default: 2040 = Romania).",
+            "default": 2642,
+            "description": "DataForSEO location code (default: 2642 = Romania).",
             "maximum": 9999.0,
             "minimum": 1000.0,
             "title": "Location Code",
@@ -8741,6 +8741,47 @@
           }
         },
         "summary": "Get Tracker",
+        "tags": [
+          "citations"
+        ]
+      }
+    },
+    "/api/citations/trackers/{tracker_id}/rankings": {
+      "get": {
+        "description": "Google positions per tracked query, over time (Etapa 8).\n\nRecorded from the SERP the google_aio provider fetches during a scan, so\nthis fills in only for trackers with google_aio enabled. `change` compares\nthe two most recent observations of a query and is positive when the site\nmoved UP. It is None whenever either side is unranked: \"not in the top 17\"\nto \"#9\" is a real gain, but a number would imply a precision the data does\nnot have.",
+        "operationId": "get_tracker_rankings_api_citations_trackers__tracker_id__rankings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tracker_id",
+            "required": true,
+            "schema": {
+              "title": "Tracker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tracker Rankings",
         "tags": [
           "citations"
         ]

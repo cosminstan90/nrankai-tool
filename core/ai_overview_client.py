@@ -9,42 +9,42 @@ ever given advice by prompts/ai_overview_optimization.yaml. AI Overviews
 don't show up by asking an LLM a question; they show up in Google's own
 search results, which is what this actually queries.
 
-Schema verified against one real, live DataForSEO call (2026-09-04, keyword
-"how does photosynthesis work", ~$0.003) rather than from memory of their
-docs -- see the ai_overview item's real shape below. `load_async_ai_overview`
-is passed so DataForSEO waits for the overview's content in the same
-response when possible; `asynchronous_ai_overview: true` on the returned item
-means Google rendered it asynchronously and DataForSEO did not have content
-for it in this call. There is no verified follow-up-call mechanism for that
-case in this codebase, so it degrades to "AI Overview is present but this
-tool has no content for it" rather than guessing at unverified endpoint
-mechanics -- a known, stated gap, not a bug.
+This used to make its own HTTP call. Since Etapa 8 it is a thin wrapper over
+core/serp_client.py, the single client for this endpoint -- the original
+version paid for the whole SERP and kept only the ai_overview block, while
+SerpIQ called the same endpoint separately.
+
+`asynchronous_ai_overview: true` on the returned item means Google rendered
+the overview asynchronously and DataForSEO had no content for it in this call.
+There is no verified follow-up mechanism for that case in this codebase, so it
+degrades to "present, no content" rather than guessing at unverified endpoint
+behaviour -- a known, stated gap.
+
+The default location is Romania (2642), from core/dataforseo_locations. It
+used to default to 2840 (United States), which would have checked Romanian
+queries for a .ro site against Google US.
 """
 
-import base64
 import logging
-import os
 from typing import Optional
 
-import httpx
+from core import serp_client
+from core.dataforseo_locations import get as get_location
 
 logger = logging.getLogger(__name__)
 
-_SERP_URL = "https://api.dataforseo.com/v3/serp/google/organic/live/advanced"
+_DEFAULT = get_location("RO")
 
 
 def dfs_configured() -> bool:
-    return bool(os.getenv("DATAFORSEO_LOGIN") and os.getenv("DATAFORSEO_PASSWORD"))
-
-
-def _dfs_auth() -> str:
-    login = os.getenv("DATAFORSEO_LOGIN", "")
-    pw = os.getenv("DATAFORSEO_PASSWORD", "")
-    return "Basic " + base64.b64encode(f"{login}:{pw}".encode()).decode()
+    return serp_client.dfs_configured()
 
 
 async def fetch_ai_overview(
-    keyword: str, location_code: int = 2840, language_code: str = "en", device: str = "desktop",
+    keyword: str,
+    location_code: int = _DEFAULT.location_code,
+    language_code: str = _DEFAULT.language_code,
+    device: str = "desktop",
 ) -> Optional[dict]:
     """
     Returns None for three genuinely different situations, all "nothing to
@@ -55,55 +55,7 @@ async def fetch_ai_overview(
     failure to fetch it.
 
     On success: {"asynchronous": bool, "markdown": str, "references": [{domain,
-    url, title, source}], "raw": <the original ai_overview item, for
-    reprocessing without a re-fetch>}. `references` is the deduplicated,
-    overview-wide citation list (DataForSEO's top-level `references` field on
-    the ai_overview item) rather than the per-paragraph ones nested under
-    `items[].references` -- the top-level list is what answers "which domains
-    are cited anywhere in this overview", which is what Etapa 4 asks for.
+    url, title, source}], "raw": <the original ai_overview item>}.
     """
-    if not dfs_configured():
-        return None
-
-    payload = [{
-        "keyword": keyword,
-        "location_code": location_code,
-        "language_code": language_code,
-        "device": device,
-        "load_async_ai_overview": True,
-    }]
-
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                _SERP_URL,
-                headers={"Authorization": _dfs_auth(), "Content-Type": "application/json"},
-                json=payload,
-            )
-        data = resp.json()
-    except httpx.HTTPError as exc:
-        logger.warning("AI Overview SERP request failed for %r: %s", keyword, exc)
-        return None
-
-    task = (data.get("tasks") or [{}])[0]
-    if task.get("status_code") != 20000:
-        logger.warning("AI Overview SERP task error for %r: %s", keyword, task.get("status_message"))
-        return None
-
-    result = (task.get("result") or [{}])[0]
-    items = result.get("items") or []
-    aio = next((it for it in items if it.get("type") == "ai_overview"), None)
-    if not aio:
-        return None
-
-    references = [
-        {"domain": r.get("domain"), "url": r.get("url"), "title": r.get("title"), "source": r.get("source")}
-        for r in (aio.get("references") or [])
-    ]
-
-    return {
-        "asynchronous": bool(aio.get("asynchronous_ai_overview")),
-        "markdown": aio.get("markdown") or "",
-        "references": references,
-        "raw": aio,
-    }
+    serp = await serp_client.fetch_serp(keyword, location_code, language_code, device=device)
+    return serp.ai_overview if serp else None

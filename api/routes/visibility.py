@@ -61,11 +61,14 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.limiter import limiter
-from api.models.database import AsyncSessionLocal, CitationScan, CitationTracker, get_db
+from api.models.database import AsyncSessionLocal, CitationScan, CitationTracker, SerpRankObservation, get_db
 from api.provider_registry import get_default_model
 from api.routes.costs import track_cost
 from api.utils.errors import raise_bad_request, raise_not_found
 from core.direct_analyzer import AsyncLLMClient
+from api.workers.rank_tracking import record_observation
+from core import serp_client
+from core.dataforseo_locations import resolve_serp_location
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,27 @@ def analyze_mentions(response_text: str, brand_keywords: List[str], website: str
     }
 
 
+def _aio_text(serp) -> str:
+    """
+    The AI Overview as text for the existing citation/mention pipeline.
+
+    Empty when there is no SERP or no overview -- by far the most common case,
+    and informative ("not showing"), not a failure. It collapses to the same
+    empty-response handling every other provider uses for "nothing to report".
+    The references are appended as plain URLs so extract_cited_urls, used
+    unchanged for every provider, finds them even when the overview's markdown
+    does not link them inline.
+    """
+    if serp is None or not serp.ai_overview:
+        return ""
+    aio = serp.ai_overview
+    text = aio["markdown"]
+    urls = [r["url"] for r in aio["references"] if r.get("url")]
+    if urls:
+        text += "\n\nCited sources:\n" + "\n".join(urls)
+    return text
+
+
 async def _query_provider(
     provider: str, query: str, model: Optional[str] = None
 ) -> tuple[str, int, int, str]:
@@ -396,24 +420,16 @@ async def _query_provider(
                 # only. Left untracked deliberately rather than forcing a
                 # fake token count through it; a real fix means extending
                 # costs.py's pricing model, out of scope here.
-                from core.ai_overview_client import dfs_configured, fetch_ai_overview
+                # Used by callers without a tracker. Scans go through
+                # _run_visibility_scan's own google_aio path, which also
+                # records the organic ranking from the same SERP (Etapa 8).
+                from core.dataforseo_locations import get as get_location
                 _model = model or "dataforseo-serp"
-                if not dfs_configured():
+                if not serp_client.dfs_configured():
                     return "", 0, 0, _model
-                aio = await fetch_ai_overview(query)
-                if not aio:
-                    # No AI Overview for this query at all -- the overwhelming
-                    # majority of queries, and genuinely informative (it means
-                    # "not currently showing"), not a fetch failure. Collapses
-                    # to the same empty-response handling every other provider
-                    # uses for "nothing to report", consistent with how this
-                    # pipeline already treats absence uniformly.
-                    return "", 0, 0, _model
-                text = aio["markdown"]
-                urls = [r["url"] for r in aio["references"] if r.get("url")]
-                if urls:
-                    text += "\n\nCited sources:\n" + "\n".join(urls)
-                return text, 0, 0, _model
+                loc = get_location("RO")
+                serp = await serp_client.fetch_serp(query, loc.location_code, loc.language_code)
+                return _aio_text(serp), 0, 0, _model
 
             else:
                 return "", 0, 0, provider
@@ -613,6 +629,12 @@ async def _run_visibility_scan(
                 providers_config = providers_override
             brand_keywords = json.loads(tracker.brand_keywords) if tracker.brand_keywords else []
             competitors = tracker.competitors or []
+            # Market for Google checks: override, else country-code TLD, else
+            # language. The TLD outranks the language because the one real
+            # tracker (ing.ro) kept language="English" -- the default -- while
+            # every tracking query is Romanian.
+            serp_location = resolve_serp_location(
+                tracker.website, tracker.language, getattr(tracker, "serp_location", None))
 
             enabled_providers = [p for p, enabled in providers_config.items() if enabled]
             if not enabled_providers:
@@ -640,7 +662,21 @@ async def _run_visibility_scan(
                 for provider in enabled_providers:
                     await asyncio.sleep(1)  # spread out same-provider requests
 
-                    response, in_tok, out_tok, model_name = await _query_provider(provider, query)
+                    if provider == "google_aio":
+                        # One DataForSEO call answers both questions: the AI
+                        # Overview feeds the citation pipeline below exactly as
+                        # before, and the organic results in the same response
+                        # become a rank observation (Etapa 8). They used to be
+                        # fetched and thrown away.
+                        response, in_tok, out_tok, model_name = "", 0, 0, "dataforseo-serp"
+                        if serp_client.dfs_configured():
+                            serp = await serp_client.fetch_serp(
+                                query, serp_location.location_code, serp_location.language_code)
+                            response = _aio_text(serp)
+                            if serp is not None:
+                                await record_observation(tracker.id, scan_id, tracker.website, query, serp)
+                    else:
+                        response, in_tok, out_tok, model_name = await _query_provider(provider, query)
                     if in_tok or out_tok:
                         # Awaited, not fire-and-forget via asyncio.create_task: track_cost()
                         # opens its own AsyncSessionLocal(), and firing it concurrently while
@@ -865,6 +901,62 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
     if not scan:
         raise_not_found("Scan")
     return {"success": True, "scan": scan.to_dict()}
+
+
+@router.get("/trackers/{tracker_id}/rankings")
+async def get_tracker_rankings(tracker_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Google positions per tracked query, over time (Etapa 8).
+
+    Recorded from the SERP the google_aio provider fetches during a scan, so
+    this fills in only for trackers with google_aio enabled. `change` compares
+    the two most recent observations of a query and is positive when the site
+    moved UP. It is None whenever either side is unranked: "not in the top 17"
+    to "#9" is a real gain, but a number would imply a precision the data does
+    not have.
+    """
+    tracker = (await db.execute(
+        select(CitationTracker).where(CitationTracker.id == tracker_id)
+    )).scalar_one_or_none()
+    if tracker is None:
+        raise_not_found("Tracker", tracker_id)
+
+    rows = (await db.execute(
+        select(SerpRankObservation)
+        .where(SerpRankObservation.tracker_id == tracker_id)
+        .order_by(SerpRankObservation.observed_at.asc())
+    )).scalars().all()
+
+    by_query: Dict[str, List[dict]] = {}
+    for row in rows:
+        by_query.setdefault(row.query, []).append(row.to_dict())
+
+    queries = []
+    for query, series in by_query.items():
+        latest = series[-1]
+        previous = series[-2] if len(series) > 1 else None
+        change = None
+        if previous and latest["rank_group"] is not None and previous["rank_group"] is not None:
+            change = previous["rank_group"] - latest["rank_group"]
+        queries.append({
+            "query": query,
+            "latest": latest,
+            "change": change,
+            "observations": series,
+        })
+
+    # Best-ranked queries first; unranked ones last rather than pretending to a position.
+    queries.sort(key=lambda q: (q["latest"]["rank_group"] is None, q["latest"]["rank_group"] or 0))
+
+    ranked = [q for q in queries if q["latest"]["rank_group"] is not None]
+    return {
+        "tracker_id": tracker_id,
+        "website": tracker.website,
+        "google_aio_enabled": bool(json.loads(tracker.providers_config or "{}").get("google_aio")),
+        "queries_observed": len(queries),
+        "queries_ranked": len(ranked),
+        "queries": queries,
+    }
 
 
 @router.get("/trackers/{tracker_id}/trend")
