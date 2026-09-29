@@ -39,12 +39,18 @@ def _build_user_prompt(page: dict, audit_domain: str) -> str:
     ssh            = page.get("score_seo_health") or 0
     st             = page.get("score_total") or 0
     vr             = page.get("verdict_reason") or ""
-    gsc_clicks     = page.get("gsc_clicks") or 0
+    # Unmeasured metrics are shown as such; a literal 0 here told the model a
+    # page had no clicks and no backlinks when nobody had fetched either.
+    def _m(key):
+        v = page.get(key)
+        return "not measured" if v is None else v
+
+    gsc_clicks     = _m("gsc_clicks")
     gsc_impr       = page.get("gsc_impressions") or 0
     gsc_pos        = page.get("gsc_position") or "N/A"
-    ahrefs_tr      = page.get("ahrefs_traffic") or 0
-    ahrefs_kw      = page.get("ahrefs_keywords") or 0
-    ahrefs_bl      = page.get("ahrefs_backlinks") or 0
+    ahrefs_tr      = _m("ahrefs_traffic")
+    ahrefs_kw      = _m("ahrefs_keywords")
+    ahrefs_bl      = _m("ahrefs_backlinks")
 
     return f"""Generate a content brief for this page that needs a [{verdict}] action.
 

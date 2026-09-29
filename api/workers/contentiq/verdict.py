@@ -14,20 +14,38 @@ def assign_verdict(page: dict) -> Tuple[str, str]:
     ssh = page.get("score_seo_health") or 0
     st  = page.get("score_total")      or 0
 
-    has_traffic = (page.get("gsc_clicks") or 0) + (page.get("ahrefs_traffic") or 0) > 50
-    has_links   = (page.get("ahrefs_backlinks") or 0) >= 3
+    # "No traffic" and "no backlinks" must be MEASURED to count against a
+    # page. With no GSC connection and no Ahrefs key these arrive as None, and
+    # collapsing that to 0 let the DELETE rule recommend deleting a page on the
+    # strength of data nobody had fetched -- with a reason asserting it.
+    gsc_clicks     = page.get("gsc_clicks")
+    ahrefs_traffic = page.get("ahrefs_traffic")
+    backlinks      = page.get("ahrefs_backlinks")
+    traffic_known  = gsc_clicks is not None or ahrefs_traffic is not None
+    links_known    = backlinks is not None
+
+    has_traffic = (gsc_clicks or 0) + (ahrefs_traffic or 0) > 50
+    has_links   = (backlinks or 0) >= 3
+    no_traffic  = traffic_known and not has_traffic
+    no_links    = links_known and not has_links
     wc          = page.get("word_count") or 0
 
     # Rule 1: DELETE
-    if st < 20 and not has_traffic and not has_links and wc < 150:
+    if st < 20 and no_traffic and no_links and wc < 150:
         return "DELETE", "Very low scores, no traffic, no backlinks, thin content."
 
+    # Rule 1b: would have been a DELETE candidate, but the evidence is missing.
+    # Say so, rather than letting it fall through to a generic "mixed signals".
+    if st < 20 and wc < 150 and not (traffic_known and links_known):
+        return "UPDATE", ("Low scores and thin content, but traffic or backlinks were not measured -- "
+                          "deletion cannot be justified without them. Review manually.")
+
     # Rule 2: CONSOLIDATE (low scores, no traffic)
-    if st < 35 and not has_traffic:
+    if st < 35 and no_traffic:
         return "CONSOLIDATE", "Low scores and no meaningful traffic. Merge with stronger related content."
 
     # Rule 3: CONSOLIDATE (poor SEO health, no authority)
-    if st < 40 and ssh < 30 and not has_links:
+    if st < 40 and ssh < 30 and no_links:
         return "CONSOLIDATE", "Poor SEO health, no authority signals. Consolidation candidate."
 
     # Rule 4: UPDATE (traffic but underperforming)

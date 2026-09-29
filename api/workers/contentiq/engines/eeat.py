@@ -6,8 +6,14 @@ from typing import Tuple
 def score_eeat(page: dict) -> Tuple[int, str]:
     """Score E-E-A-T signals. Returns (score, reason)."""
     word_count       = page.get("word_count") or 0
-    ahrefs_backlinks = page.get("ahrefs_backlinks") or 0
-    ahrefs_dr        = page.get("ahrefs_dr") or 0
+    # None = not measured (no Ahrefs key, or the fetch failed). Kept distinct
+    # from a measured 0: collapsing them with `or 0` capped every page at 40
+    # and wrote "0 backlinks, DR=0" into the reason as if measured.
+    raw_backlinks    = page.get("ahrefs_backlinks")
+    raw_dr           = page.get("ahrefs_dr")
+    authority_known  = raw_backlinks is not None or raw_dr is not None
+    ahrefs_backlinks = raw_backlinks or 0
+    ahrefs_dr        = raw_dr or 0
     last_modified    = page.get("last_modified")
 
     # Authority — backlinks (0–35)
@@ -48,9 +54,19 @@ def score_eeat(page: dict) -> Tuple[int, str]:
         except Exception:
             pass
 
-    score  = min(100, bl_score + dr_score + depth + fresh)
-    reason = (
-        f"{ahrefs_backlinks} backlinks, DR={ahrefs_dr}. "
-        f"Content depth: {word_count} words."
-    )
+    if authority_known:
+        score  = min(100, bl_score + dr_score + depth + fresh)
+        reason = (
+            f"{ahrefs_backlinks} backlinks, DR={ahrefs_dr}. "
+            f"Content depth: {word_count} words."
+        )
+    else:
+        # Authority is 60 of the 100 points. Without it, score what was
+        # measured (depth 25 + freshness 15) on the same 0-100 scale instead
+        # of treating the missing 60 as a measured zero.
+        score  = min(100, round((depth + fresh) * 100 / 40))
+        reason = (
+            "Authority not measured (no backlink data source); score from content "
+            f"depth and freshness only. Content depth: {word_count} words."
+        )
     return score, reason
