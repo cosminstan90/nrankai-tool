@@ -190,7 +190,6 @@ async def oauth_list_sites():
     return {"sites": sites}
 
 
-@router.post("/properties/{property_id}/sync")
 def upsert_gsc_history(db_path: str, pid: str, q_daily: list, p_daily: list) -> None:
     """
     Upsert per-day GSC rows into gsc_query_history / gsc_page_history.
@@ -264,6 +263,7 @@ def upsert_gsc_history(db_path: str, pid: str, q_daily: list, p_daily: list) -> 
         conn.close()
 
 
+@router.post("/properties/{property_id}/sync")
 async def sync_property(property_id: str, days: int = 90):
     """Pull queries + pages from the GSC API and replace existing rows."""
     creds = await _get_gsc_credentials()
