@@ -13,8 +13,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from api.models._base import AsyncSessionLocal
-from api.models.database import SerpRankObservation
-from core.serp_client import SerpResult
+from api.models.database import SerpRankObservation, SerpOrganicResult, SerpAioReference
+from core.serp_client import SerpResult, normalize_host
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +63,33 @@ async def record_observation(tracker_id: str, scan_id: Optional[str], website: s
     try:
         async with AsyncSessionLocal() as db:
             db.add(SerpRankObservation(**row))
+            # Force the parent row's INSERT before any child references it by
+            # id below -- these are plain FK columns, not an ORM relationship(),
+            # so nothing else guarantees insert order across the three tables.
+            await db.flush()
+
+            # The rest of this same, already-paid-for SERP -- competitors'
+            # positions and whoever the AI Overview cites instead of us.
+            # Pasul 8 of docs/superpowers/plans/2026-09-30-next-steps.md.
+            for result in serp.organic:
+                db.add(SerpOrganicResult(
+                    observation_id=row["id"],
+                    rank_group=result.rank_group,
+                    rank_absolute=result.rank_absolute,
+                    domain=normalize_host(result.domain),
+                    url=result.url,
+                    title=result.title,
+                ))
+            if serp.ai_overview:
+                for position, ref in enumerate(serp.ai_overview.get("references") or [], start=1):
+                    db.add(SerpAioReference(
+                        observation_id=row["id"],
+                        position=position,
+                        domain=normalize_host(ref.get("domain") or ref.get("url") or ""),
+                        url=ref.get("url"),
+                        title=ref.get("title"),
+                    ))
+
             await db.commit()
     except Exception as exc:
         logger.warning("Could not record rank observation for %r: %s", query, exc)

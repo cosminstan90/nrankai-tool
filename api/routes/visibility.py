@@ -61,7 +61,10 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.limiter import limiter
-from api.models.database import AsyncSessionLocal, CitationScan, CitationTracker, SerpRankObservation, get_db
+from api.models.database import (
+    AsyncSessionLocal, CitationScan, CitationTracker, SerpRankObservation,
+    SerpOrganicResult, SerpAioReference, get_db,
+)
 from api.provider_registry import get_default_model
 from api.routes.costs import track_cost
 from api.utils.errors import raise_bad_request, raise_not_found
@@ -1044,6 +1047,82 @@ async def get_tracker_rankings(tracker_id: str, db: AsyncSession = Depends(get_d
         "queries_ranked": len(ranked),
         "queries": queries,
     }
+
+
+@router.get("/trackers/{tracker_id}/competitors")
+async def get_tracker_competitors(tracker_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Per tracked query: which domains showed up in the top 10 organic results
+    over time, and which domains Google's AI Overview cited over time.
+
+    Pasul 8 of docs/superpowers/plans/2026-09-30-next-steps.md: this is the
+    rest of the same, already-paid-for SERP /rankings uses -- the tracked
+    site's own rank was kept, the competitors and AI Overview citations were
+    thrown away. Both answer "who is winning instead of us", which
+    /rankings alone can't.
+    """
+    tracker = (await db.execute(
+        select(CitationTracker).where(CitationTracker.id == tracker_id)
+    )).scalar_one_or_none()
+    if tracker is None:
+        raise_not_found("Tracker", tracker_id)
+
+    obs_rows = (await db.execute(
+        select(SerpRankObservation.id, SerpRankObservation.query, SerpRankObservation.observed_at)
+        .where(SerpRankObservation.tracker_id == tracker_id)
+    )).all()
+    if not obs_rows:
+        return {"tracker_id": tracker_id, "website": tracker.website, "queries": []}
+
+    obs_by_id = {r.id: r for r in obs_rows}
+    observation_ids = list(obs_by_id.keys())
+    own_domain = serp_client.normalize_host(tracker.website)
+
+    organic_rows = (await db.execute(
+        select(SerpOrganicResult).where(
+            SerpOrganicResult.observation_id.in_(observation_ids),
+            SerpOrganicResult.rank_group <= 10,
+        )
+    )).scalars().all()
+    aio_rows = (await db.execute(
+        select(SerpAioReference).where(SerpAioReference.observation_id.in_(observation_ids))
+    )).scalars().all()
+
+    by_query: Dict[str, dict] = {
+        r.query: {"top10_domains": {}, "aio_cited_domains": {}} for r in obs_rows
+    }
+
+    for row in organic_rows:
+        obs = obs_by_id.get(row.observation_id)
+        if not obs or row.domain == own_domain:
+            continue
+        entry = by_query[obs.query]["top10_domains"].setdefault(
+            row.domain, {"domain": row.domain, "appearances": 0, "best_rank": row.rank_group, "last_seen": None})
+        entry["appearances"] += 1
+        entry["best_rank"] = min(entry["best_rank"], row.rank_group)
+        if not entry["last_seen"] or obs.observed_at > entry["last_seen"]:
+            entry["last_seen"] = obs.observed_at
+
+    for row in aio_rows:
+        obs = obs_by_id.get(row.observation_id)
+        if not obs or not row.domain or row.domain == own_domain:
+            continue
+        entry = by_query[obs.query]["aio_cited_domains"].setdefault(
+            row.domain, {"domain": row.domain, "appearances": 0, "last_seen": None})
+        entry["appearances"] += 1
+        if not entry["last_seen"] or obs.observed_at > entry["last_seen"]:
+            entry["last_seen"] = obs.observed_at
+
+    queries = []
+    for query, data in sorted(by_query.items()):
+        top10 = sorted(data["top10_domains"].values(), key=lambda d: (-d["appearances"], d["best_rank"]))
+        aio = sorted(data["aio_cited_domains"].values(), key=lambda d: -d["appearances"])
+        for d in top10 + aio:
+            if d["last_seen"]:
+                d["last_seen"] = d["last_seen"].isoformat()
+        queries.append({"query": query, "top10_domains": top10, "aio_cited_domains": aio})
+
+    return {"tracker_id": tracker_id, "website": tracker.website, "queries": queries}
 
 
 @router.get("/trackers/{tracker_id}/trend")

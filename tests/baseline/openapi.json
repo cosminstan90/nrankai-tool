@@ -8726,6 +8726,47 @@
         ]
       }
     },
+    "/api/citations/trackers/{tracker_id}/competitors": {
+      "get": {
+        "description": "Per tracked query: which domains showed up in the top 10 organic results\nover time, and which domains Google's AI Overview cited over time.\n\nPasul 8 of docs/superpowers/plans/2026-09-30-next-steps.md: this is the\nrest of the same, already-paid-for SERP /rankings uses -- the tracked\nsite's own rank was kept, the competitors and AI Overview citations were\nthrown away. Both answer \"who is winning instead of us\", which\n/rankings alone can't.",
+        "operationId": "get_tracker_competitors_api_citations_trackers__tracker_id__competitors_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tracker_id",
+            "required": true,
+            "schema": {
+              "title": "Tracker Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Tracker Competitors",
+        "tags": [
+          "citations"
+        ]
+      }
+    },
     "/api/citations/trackers/{tracker_id}/rankings": {
       "get": {
         "description": "Google positions per tracked query, over time (Etapa 8).\n\nRecorded from the SERP the google_aio provider fetches during a scan, so\nthis fills in only for trackers with google_aio enabled. `change` compares\nthe two most recent observations of a query and is positive when the site\nmoved UP. It is None whenever either side is unranked: \"not in the top 17\"\nto \"#9\" is a real gain, but a number would imply a precision the data does\nnot have.",

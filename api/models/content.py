@@ -305,6 +305,63 @@ class SerpRankObservation(Base):
         }
 
 
+class SerpOrganicResult(Base):
+    """
+    One organic result from a tracked SERP, competitors included.
+
+    Pasul 8 of docs/superpowers/plans/2026-09-30-next-steps.md.
+    SerpRankObservation kept only the tracked site's own rank and threw away
+    the rest of the same, already-paid-for SERP -- the exact pattern the plan
+    criticised at AI Overviews before it was fixed there. This is free: the
+    data is already in the SerpResult that produced the observation.
+
+    ON DELETE CASCADE on the observation, not the tracker directly -- deleting
+    an observation (or the tracker that owns it) takes every result row with it.
+    """
+    __tablename__ = "serp_organic_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    observation_id = Column(String(36), ForeignKey("serp_rank_observations.id", ondelete="CASCADE"),
+                            nullable=False, index=True)
+    rank_group = Column(Integer, nullable=False)
+    rank_absolute = Column(Integer, nullable=False)
+    domain = Column(String(500), nullable=False, index=True)
+    url = Column(Text, nullable=True)
+    title = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            "rank_group": self.rank_group, "rank_absolute": self.rank_absolute,
+            "domain": self.domain, "url": self.url, "title": self.title,
+        }
+
+
+class SerpAioReference(Base):
+    """
+    One domain cited by Google's AI Overview on a tracked SERP, competitors included.
+
+    Same rationale as SerpOrganicResult: SerpRankObservation.aio_cites_site
+    already collapsed the full references list to one boolean about our own
+    site. The references themselves answer "who IS Google citing instead of
+    us", which is the more useful question.
+    """
+    __tablename__ = "serp_aio_references"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    observation_id = Column(String(36), ForeignKey("serp_rank_observations.id", ondelete="CASCADE"),
+                            nullable=False, index=True)
+    position = Column(Integer, nullable=False)   # order of appearance in the overview
+    domain = Column(String(500), nullable=True, index=True)
+    url = Column(Text, nullable=True)
+    title = Column(Text, nullable=True)
+
+    def to_dict(self):
+        return {
+            "position": self.position, "domain": self.domain,
+            "url": self.url, "title": self.title,
+        }
+
+
 class CompetitorGapAnalysis(Base):
     """Per-criterion competitor gap analysis results."""
     __tablename__ = "competitor_gap_analyses"

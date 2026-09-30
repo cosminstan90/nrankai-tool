@@ -31,6 +31,7 @@ from api.models.analytics import (
 )
 from api.models.content import (
     ContentBrief, SchemaMarkup, CitationTracker, CitationScan, SerpRankObservation,
+    SerpOrganicResult, SerpAioReference,
     DraftOptimization,
     CompetitorGapAnalysis, ContentGap, ActionCard, CrossReferenceJob,
     UrlGuide, LlmsTxtJob,
