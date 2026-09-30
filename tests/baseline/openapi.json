@@ -16170,6 +16170,148 @@
         ]
       }
     },
+    "/api/gsc/properties/{property_id}/opportunities/striking-distance": {
+      "get": {
+        "description": "Page+query pairs at position 4-15 with real impressions. Requires Google\nOAuth connected: needs a live GSC dimensions=[page,query] fetch (same\npattern as api/routes/gsc/optimizer.py's cannibalization detector) since\nno table in this project accumulates that combined dimension over time.",
+        "operationId": "get_striking_distance_opportunities_api_gsc_properties__property_id__opportunities_striking_distance_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "maximum": 90,
+              "minimum": 7,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Comma-separated brand terms to exclude",
+            "in": "query",
+            "name": "brand_terms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated brand terms to exclude",
+              "title": "Brand Terms"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Striking Distance Opportunities",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
+    "/api/gsc/properties/{property_id}/opportunities/weak-ctr": {
+      "get": {
+        "description": "Pages whose CTR is below what THIS property's own data shows for pages\nat that position -- built from gsc_page_history (Pasul 2), so it needs\nreal accumulated history. A fresh install, or one where GSC OAuth has\nbeen disconnected since before this history existed, reports\ninsufficient_data rather than an empty \"no opportunities found\" list --\nthose are different claims.",
+        "operationId": "get_weak_ctr_opportunities_api_gsc_properties__property_id__opportunities_weak_ctr_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 28,
+              "maximum": 90,
+              "minimum": 7,
+              "title": "Days",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Comma-separated brand terms to exclude",
+            "in": "query",
+            "name": "brand_terms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated brand terms to exclude",
+              "title": "Brand Terms"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Weak Ctr Opportunities",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
     "/api/gsc/properties/{property_id}/page-optimize": {
       "post": {
         "description": "Create an LLM optimization job for a specific page URL.\n\nFetches the page content, retrieves GSC queries for that page (if OAuth\nis connected), augments the SEO/GEO audit prompts with the known keywords,\nthen calls the LLM. Poll GET /api/guide/{guide_id} for results.",
