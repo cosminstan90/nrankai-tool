@@ -468,7 +468,10 @@ class ActionCard(Base):
     __tablename__ = "action_cards"
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    audit_id = Column(String(36), ForeignKey("audits.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Nullable since Pasul 18 (docs/superpowers/plans/2026-09-30-next-steps.md):
+    # pasii 12-17's recommendations aren't tied to a specific audit run, just
+    # a URL and a source engine -- see `source` below.
+    audit_id = Column(String(36), ForeignKey("audits.id", ondelete="CASCADE"), nullable=True, index=True)
     result_id = Column(Integer, ForeignKey("audit_results.id", ondelete="CASCADE"), nullable=True, index=True)
     page_url = Column(String(500), nullable=True)
     page_title = Column(String(500), nullable=True)
@@ -481,12 +484,26 @@ class ActionCard(Base):
     completed_actions = Column(Integer, default=0)
     provider = Column(String(20), nullable=True)
     model = Column(String(100), nullable=True)
+    # Which recommendation engine produced this card -- 'audit' (the
+    # historical/default per-audit flow) or one of pasii 12-17's engines:
+    # 'js_visibility', 'gsc_opportunity', 'internal_link', 'decay',
+    # 'citation_gap', 'fanout_gap'. Pasul 18.
+    source = Column(String(30), nullable=False, default="audit", server_default="audit")
+    # Set exactly once, when the user marks this action applied -- distinct
+    # from updated_at, which also changes on e.g. a priority edit. Pasul 18.
+    applied_at = Column(DateTime, nullable=True)
+    # JSON snapshot of the relevant metric(s) at creation time, so the
+    # before/after report doesn't need to re-derive "before" from history
+    # tables that may have since rolled off retention. Pasul 18.
+    metric_baseline = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    
-    # action_cards.audit_id is NOT NULL -- same reason as AuditSummary above.
+
+    # audit_id is nullable (Pasul 18) -- a card with no audit_id has no row
+    # in this relationship's collection, so the cascade below only ever
+    # touches cards that DO belong to a deleted audit.
     audit = relationship("Audit", backref=backref("action_cards", cascade="all, delete-orphan", passive_deletes=True))
-    
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -503,6 +520,9 @@ class ActionCard(Base):
             "completed_actions": self.completed_actions,
             "provider": self.provider,
             "model": self.model,
+            "source": self.source,
+            "applied_at": self.applied_at.isoformat() if self.applied_at else None,
+            "metric_baseline": json.loads(self.metric_baseline) if self.metric_baseline else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None
         }

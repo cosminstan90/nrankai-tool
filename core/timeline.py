@@ -76,3 +76,26 @@ def build_timeline(change_events: List[dict], gsc_daily_rows: List[dict]) -> Lis
             **windows,
         })
     return timeline
+
+
+def build_applied_action_markers(applied_actions: List[dict], gsc_daily_rows: List[dict]) -> List[dict]:
+    """
+    Pasul 18: the same before/after GSC window as build_timeline, but for
+    action_cards marked applied (api/routes/action_cards.py's PATCH
+    .../apply) instead of a detected page-content change -- a distinct kind
+    of marker the UI places alongside changes_timeline, not merged into it,
+    since "the user applied recommendation X" and "the page's own content
+    changed" are different events worth telling apart on the same axis.
+
+    applied_actions: [{"date": date, "source": str, "description": str}, ...].
+    """
+    markers = []
+    for action in applied_actions:
+        windows = build_change_windows(action["date"], gsc_daily_rows)
+        markers.append({
+            "date": action["date"].isoformat(),
+            "source": action["source"],
+            "description": action["description"],
+            **windows,
+        })
+    return markers

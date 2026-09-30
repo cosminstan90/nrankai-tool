@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from api.models._base import AsyncSessionLocal
 from api.models.database import (
-    CitationScan, CitationTracker, GscProperty, GscPageHistory,
+    ActionCard, CitationScan, CitationTracker, GscProperty, GscPageHistory,
     PageSnapshot, SerpRankObservation, SnapshotRun,
 )
 
@@ -31,6 +31,7 @@ class TestTimelineEndpoint(unittest.TestCase):
         self.property_id = str(uuid.uuid4())
         self.tracker_id = str(uuid.uuid4())
         self.scan_id = str(uuid.uuid4())
+        self.action_card_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
 
         async def seed():
@@ -76,6 +77,13 @@ class TestTimelineEndpoint(unittest.TestCase):
                     id=self.scan_id, tracker_id=self.tracker_id, status="completed",
                     completed_at=now, top_cited_urls=json.dumps([{"url": URL, "count": 4}]),
                 ))
+
+                db.add(ActionCard(
+                    id=self.action_card_id, audit_id=None, page_url=URL, source="decay",
+                    status="completed", applied_at=now - timedelta(days=5),
+                    actions_json=json.dumps([{"id": 1, "text": "Refreshed the outdated stats", "completed": True}]),
+                    total_actions=1, completed_actions=1,
+                ))
                 await db.commit()
 
         asyncio.run(seed())
@@ -88,7 +96,8 @@ class TestTimelineEndpoint(unittest.TestCase):
         async def clean():
             async with AsyncSessionLocal() as db:
                 for model, id_ in ((SnapshotRun, self.run1_id), (SnapshotRun, self.run2_id),
-                                   (GscProperty, self.property_id), (CitationTracker, self.tracker_id)):
+                                   (GscProperty, self.property_id), (CitationTracker, self.tracker_id),
+                                   (ActionCard, self.action_card_id)):
                     row = await db.get(model, id_)
                     if row:
                         await db.delete(row)
@@ -123,12 +132,20 @@ class TestTimelineEndpoint(unittest.TestCase):
         body = self.client.get("/api/timeline", params={"url": URL}).json()
         self.assertEqual(body["ai_citations"]["citations"][0]["count"], 4)
 
+    def test_an_applied_action_card_appears_as_its_own_marker(self):
+        body = self.client.get("/api/timeline", params={"url": URL}).json()
+        self.assertEqual(len(body["applied_actions"]), 1)
+        marker = body["applied_actions"][0]
+        self.assertEqual(marker["source"], "decay")
+        self.assertEqual(marker["description"], "Refreshed the outdated stats")
+
     def test_a_url_with_no_data_anywhere_reports_every_source_unavailable(self):
         body = self.client.get("/api/timeline", params={"url": "https://never-seen.example/x"}).json()
         self.assertFalse(body["gsc"]["available"])
         self.assertFalse(body["serp"]["available"])
         self.assertFalse(body["ai_citations"]["available"])
         self.assertEqual(body["changes"], [])
+        self.assertEqual(body["applied_actions"], [])
 
     def test_missing_url_param_is_a_400_not_a_500(self):
         resp = self.client.get("/api/timeline", params={"url": ""})

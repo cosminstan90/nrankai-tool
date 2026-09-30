@@ -7,7 +7,7 @@ Each card contains 3-5 specific actions with exact text to implement.
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from typing import List, Optional
@@ -20,11 +20,13 @@ from sqlalchemy import select, func, and_, or_
 from pydantic import BaseModel, Field
 
 from api.models.database import (
-    get_db, AsyncSessionLocal, ActionCard, Audit, AuditResult, ContentBrief, SchemaMarkup
+    get_db, AsyncSessionLocal, ActionCard, Audit, AuditResult, ContentBrief, SchemaMarkup,
+    GscPageHistory, GscProperty
 )
 
 # Import LLM helper (same as other routes)
 from api.routes.summary import call_llm_for_summary, clean_json_response
+from core.action_learning import build_learning_report, MIN_DAYS_BEFORE_REPORT
 
 router = APIRouter(prefix="/api/action-cards", tags=["action-cards"])
 
@@ -108,6 +110,50 @@ class ToggleActionRequest(BaseModel):
 class UpdateCardStatusRequest(BaseModel):
     """Request to update card status."""
     status: str  # pending, in_progress, completed
+
+
+# Pasul 18 (docs/superpowers/plans/2026-09-30-next-steps.md): which
+# recommendation engines can save an action card here. 'audit' is the
+# historical/default per-audit flow (api/routes/action_cards.py's own
+# /generate); the rest are pasii 12-17.
+RECOMMENDATION_SOURCES = {
+    "audit", "js_visibility", "gsc_opportunity", "internal_link",
+    "decay", "citation_gap", "fanout_gap",
+}
+
+# Metrics the learning report can automatically re-measure from stored GSC
+# history (core/action_learning.py). Anything else is a valid metric to
+# record as a baseline, but the report has no automatic way to re-measure it
+# yet, so it honestly reports "not_yet_remeasured" rather than a number.
+_GSC_AUTO_REMEASURED_METRICS = {
+    "gsc_clicks": True,      # higher_is_better
+    "gsc_position": False,   # lower position number is better
+}
+
+
+class MetricBaseline(BaseModel):
+    """What the relevant metric looked like when the action was recorded."""
+    metric: str
+    value: Optional[float] = None
+    higher_is_better: bool = True
+
+
+class SaveRecommendationRequest(BaseModel):
+    """
+    Pasul 18: saves one of pasii 12-17's recommendations as an action card.
+    Generic across sources rather than one schema per engine -- each engine
+    already has its own, different recommendation shape; this only needs
+    the parts common to "track this and tell me later if it worked":
+    where, what to do, and what the metric looked like at the time.
+    """
+    source: str
+    page_url: str
+    page_title: Optional[str] = None
+    priority: str = "medium"
+    description: str
+    metric_baseline: Optional[MetricBaseline] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
 
 
 class ActionCardResponse(BaseModel):
@@ -620,6 +666,150 @@ async def list_action_cards(
     }
 
 
+# ==================== Pasul 18 -- bucla de invatare ====================
+
+@router.post("/from-recommendation")
+async def save_recommendation(
+    request: SaveRecommendationRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Saves one of pasii 12-17's recommendations as an action card, with no
+    audit_id (Pasul 18). Idempotent per (source, page_url): a second save for
+    the same page while the first is still pending updates that card's
+    description/baseline instead of creating a duplicate -- a recommendation
+    endpoint can be called repeatedly (e.g. the user re-runs the analysis)
+    without piling up copies of the same suggestion.
+    """
+    if request.source not in RECOMMENDATION_SOURCES:
+        raise_bad_request(f"Unknown source '{request.source}' -- must be one of {sorted(RECOMMENDATION_SOURCES)}")
+
+    existing = (await db.execute(
+        select(ActionCard).where(
+            ActionCard.source == request.source,
+            ActionCard.page_url == request.page_url,
+            ActionCard.status == "pending",
+            ActionCard.applied_at.is_(None),
+        )
+    )).scalar_one_or_none()
+
+    baseline_json = request.metric_baseline.model_dump_json() if request.metric_baseline else None
+    actions = [{"id": 1, "text": request.description, "completed": False}]
+
+    if existing:
+        existing.page_title = request.page_title or existing.page_title
+        existing.priority = request.priority
+        existing.actions_json = json.dumps(actions, ensure_ascii=False)
+        existing.metric_baseline = baseline_json
+        existing.updated_at = datetime.now(timezone.utc)
+        card = existing
+    else:
+        card = ActionCard(
+            audit_id=None,
+            page_url=request.page_url,
+            page_title=request.page_title,
+            priority=request.priority,
+            status="pending",
+            source=request.source,
+            actions_json=json.dumps(actions, ensure_ascii=False),
+            total_actions=1,
+            completed_actions=0,
+            metric_baseline=baseline_json,
+            provider=request.provider,
+            model=request.model,
+        )
+        db.add(card)
+
+    await db.commit()
+    await db.refresh(card)
+    return card.to_dict()
+
+
+@router.patch("/{card_id}/apply")
+async def mark_action_applied(
+    card_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Marks an action as applied -- distinct from status/updated_at, which
+    also change on an ordinary edit. Idempotent: applying an already-applied
+    card just returns it unchanged rather than erroring, since "mark this
+    applied" is naturally something a user might click twice.
+    """
+    card = (await db.execute(select(ActionCard).where(ActionCard.id == card_id))).scalar_one_or_none()
+    if not card:
+        raise_not_found("Action card")
+
+    if card.applied_at is None:
+        card.applied_at = datetime.now(timezone.utc)
+        card.status = "completed"
+        await db.commit()
+        await db.refresh(card)
+
+    return card.to_dict()
+
+
+async def _current_gsc_value(db: AsyncSession, page_url: str, metric: str) -> Optional[float]:
+    """
+    Average clicks or position over the trailing MIN_DAYS_BEFORE_REPORT days
+    of stored gsc_page_history for this exact page URL. None (not an error)
+    when the page has no GSC history at all -- unconnected/never-synced
+    properties are the documented, known state this session, not a bug.
+    """
+    if metric not in _GSC_AUTO_REMEASURED_METRICS:
+        return None
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=MIN_DAYS_BEFORE_REPORT)).date().isoformat()
+    rows = (await db.execute(
+        select(GscPageHistory).where(
+            GscPageHistory.page == page_url,
+            GscPageHistory.period_start >= cutoff,
+        )
+    )).scalars().all()
+    if not rows:
+        return None
+    if metric == "gsc_clicks":
+        return sum(r.clicks for r in rows) / len(rows)
+    positions = [r.position for r in rows if r.position is not None]
+    return sum(positions) / len(positions) if positions else None
+
+
+@router.get("/learning-report")
+async def get_learning_report(db: AsyncSession = Depends(get_db)):
+    """
+    Pasul 18: per source, whether applied actions correlate with the metric
+    moving the expected direction afterwards. "After", never "because of" --
+    ranking-algorithm changes and seasonality are not controlled for. Sources
+    with fewer than core.action_learning.MIN_SAMPLE_FOR_CONCLUSIONS eligible
+    (applied 28+ days ago) actions report insufficient_data instead of a
+    percentage that would look more confident than 1-4 data points deserve.
+    """
+    cards = (await db.execute(
+        select(ActionCard).where(ActionCard.applied_at.is_not(None))
+    )).scalars().all()
+
+    applied_actions = []
+    for card in cards:
+        baseline = json.loads(card.metric_baseline) if card.metric_baseline else None
+        metric = baseline.get("metric") if baseline else None
+        baseline_value = baseline.get("value") if baseline else None
+        higher_is_better = baseline.get("higher_is_better", True) if baseline else True
+        current_value = await _current_gsc_value(db, card.page_url, metric) if (metric and card.page_url) else None
+        # SQLite gives back a naive datetime regardless of what was stored;
+        # applied_at is always written as UTC (datetime.now(timezone.utc)),
+        # so re-attach the tzinfo rather than comparing naive vs aware below.
+        applied_at = card.applied_at
+        if applied_at is not None and applied_at.tzinfo is None:
+            applied_at = applied_at.replace(tzinfo=timezone.utc)
+        applied_actions.append({
+            "source": card.source, "page_url": card.page_url, "applied_at": applied_at,
+            "metric": metric, "baseline_value": baseline_value,
+            "current_value": current_value, "higher_is_better": higher_is_better,
+        })
+
+    report = build_learning_report(applied_actions, datetime.now(timezone.utc))
+    return {"as_of": datetime.now(timezone.utc).isoformat(), "sources": report}
+
+
 @router.get("/{card_id}")
 async def get_action_card(
     card_id: str,
@@ -714,6 +904,7 @@ async def update_card_status(
     await db.refresh(card)
     
     return card.to_dict()
+
 
 
 @router.get("/export/{audit_id}")

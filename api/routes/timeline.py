@@ -27,11 +27,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models.database import (
-    get_db, PageSnapshot, GscPageHistory, SerpRankObservation, CitationScan,
+    get_db, PageSnapshot, GscPageHistory, SerpRankObservation, CitationScan, ActionCard,
 )
 from api.utils.errors import raise_bad_request
 from core.page_diff import diff_snapshots
-from core.timeline import build_timeline
+from core.timeline import build_applied_action_markers, build_timeline
 from core.url_normalize import normalize_url
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,21 @@ async def _matching_ai_citations(db: AsyncSession, target: str) -> List[dict]:
     return out
 
 
+async def _matching_applied_actions(db: AsyncSession, target: str) -> List[dict]:
+    """Pasul 18: action_cards marked applied for this URL, oldest first."""
+    rows = (await db.execute(
+        select(ActionCard).where(ActionCard.applied_at.isnot(None))
+    )).scalars().all()
+    matched = [r for r in rows if r.page_url and normalize_url(r.page_url) == target]
+    matched.sort(key=lambda r: r.applied_at)
+    out = []
+    for r in matched:
+        actions = json.loads(r.actions_json) if r.actions_json else []
+        description = actions[0]["text"] if actions and actions[0].get("text") else (r.page_title or r.source)
+        out.append({"date": r.applied_at.date(), "source": r.source, "description": description})
+    return out
+
+
 @router.get("")
 async def get_timeline(url: str = Query(..., min_length=1), db: AsyncSession = Depends(get_db)):
     """Everything known about one URL, on one timeline."""
@@ -98,6 +113,7 @@ async def get_timeline(url: str = Query(..., min_length=1), db: AsyncSession = D
     gsc_rows = await _matching_gsc_rows(db, target)
     serp_observations = await _matching_serp_observations(db, target)
     ai_citations = await _matching_ai_citations(db, target)
+    applied_actions = await _matching_applied_actions(db, target)
 
     change_events = []
     for before, after in zip(snapshots, snapshots[1:]):
@@ -109,6 +125,7 @@ async def get_timeline(url: str = Query(..., min_length=1), db: AsyncSession = D
         change_events.append({"date": after.captured_at.date(), "changes": changes})
 
     changes_timeline = build_timeline(change_events, gsc_rows)
+    action_markers = build_applied_action_markers(applied_actions, gsc_rows)
 
     return {
         "url": target,
@@ -116,4 +133,5 @@ async def get_timeline(url: str = Query(..., min_length=1), db: AsyncSession = D
         "serp": {"available": bool(serp_observations), "observations": serp_observations},
         "ai_citations": {"available": bool(ai_citations), "citations": ai_citations},
         "changes": changes_timeline,
+        "applied_actions": action_markers,
     }

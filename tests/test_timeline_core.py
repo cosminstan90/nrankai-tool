@@ -8,7 +8,9 @@ against constructed rows rather than by seeding four real tables.
 import unittest
 from datetime import date, timedelta
 
-from core.timeline import build_change_windows, build_timeline, gsc_window_stats
+from core.timeline import (
+    build_applied_action_markers, build_change_windows, build_timeline, gsc_window_stats,
+)
 
 
 def _daily_row(d: date, clicks=10, impressions=100, position=5.0):
@@ -105,6 +107,33 @@ class TestBuildTimeline(unittest.TestCase):
         self.assertEqual(timeline[1]["date"], d2.isoformat())
         self.assertFalse(timeline[0]["insufficient_data"])
         self.assertFalse(timeline[1]["insufficient_data"])
+
+
+class TestBuildAppliedActionMarkers(unittest.TestCase):
+    """Pasul 18: applied action_cards shown as their own kind of marker."""
+
+    def test_a_marker_carries_source_and_description_alongside_its_gsc_window(self):
+        actions = [{"date": date(2026, 3, 1), "source": "decay", "description": "Refreshed the guide"}]
+        markers = build_applied_action_markers(actions, [])
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(markers[0]["source"], "decay")
+        self.assertEqual(markers[0]["description"], "Refreshed the guide")
+        self.assertTrue(markers[0]["insufficient_data"])   # no GSC rows at all
+
+    def test_multiple_actions_each_get_their_own_windows(self):
+        d1, d2 = date(2026, 1, 1), date(2026, 3, 1)
+        rows = _days(d1 - timedelta(days=28), 28) + _days(d1, 28) + _days(d2 - timedelta(days=28), 28) + _days(d2, 28)
+        actions = [
+            {"date": d1, "source": "internal_link", "description": "Linked from /related"},
+            {"date": d2, "source": "gsc_opportunity", "description": "Added FAQ schema"},
+        ]
+        markers = build_applied_action_markers(actions, rows)
+        self.assertEqual(len(markers), 2)
+        self.assertFalse(markers[0]["insufficient_data"])
+        self.assertFalse(markers[1]["insufficient_data"])
+
+    def test_no_applied_actions_is_an_empty_list_not_an_error(self):
+        self.assertEqual(build_applied_action_markers([], []), [])
 
 
 if __name__ == "__main__":

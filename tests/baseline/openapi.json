@@ -3594,6 +3594,36 @@
         "title": "MetaVariant",
         "type": "object"
       },
+      "MetricBaseline": {
+        "description": "What the relevant metric looked like when the action was recorded.",
+        "properties": {
+          "higher_is_better": {
+            "default": true,
+            "title": "Higher Is Better",
+            "type": "boolean"
+          },
+          "metric": {
+            "title": "Metric",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "metric"
+        ],
+        "title": "MetricBaseline",
+        "type": "object"
+      },
       "MultiEngineRequest": {
         "properties": {
           "models": {
@@ -4341,6 +4371,78 @@
           "name"
         ],
         "title": "SaveFromAuditRequest",
+        "type": "object"
+      },
+      "SaveRecommendationRequest": {
+        "description": "Pasul 18: saves one of pasii 12-17's recommendations as an action card.\nGeneric across sources rather than one schema per engine -- each engine\nalready has its own, different recommendation shape; this only needs\nthe parts common to \"track this and tell me later if it worked\":\nwhere, what to do, and what the metric looked like at the time.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "metric_baseline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricBaseline"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "page_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Title"
+          },
+          "page_url": {
+            "title": "Page Url",
+            "type": "string"
+          },
+          "priority": {
+            "default": "medium",
+            "title": "Priority",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "page_url",
+          "description"
+        ],
+        "title": "SaveRecommendationRequest",
         "type": "object"
       },
       "ScanRequest": {
@@ -5930,6 +6032,46 @@
         ]
       }
     },
+    "/api/action-cards/from-recommendation": {
+      "post": {
+        "description": "Saves one of pasii 12-17's recommendations as an action card, with no\naudit_id (Pasul 18). Idempotent per (source, page_url): a second save for\nthe same page while the first is still pending updates that card's\ndescription/baseline instead of creating a duplicate -- a recommendation\nendpoint can be called repeatedly (e.g. the user re-runs the analysis)\nwithout piling up copies of the same suggestion.",
+        "operationId": "save_recommendation_api_action_cards_from_recommendation_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRecommendationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Recommendation",
+        "tags": [
+          "action-cards"
+        ]
+      }
+    },
     "/api/action-cards/generate": {
       "post": {
         "description": "Generate action cards for an audit.\n\nIf result_ids not specified, auto-selects worst-performing pages.\nRuns generation in background task.",
@@ -5965,6 +6107,26 @@
           }
         },
         "summary": "Generate Action Cards",
+        "tags": [
+          "action-cards"
+        ]
+      }
+    },
+    "/api/action-cards/learning-report": {
+      "get": {
+        "description": "Pasul 18: per source, whether applied actions correlate with the metric\nmoving the expected direction afterwards. \"After\", never \"because of\" --\nranking-algorithm changes and seasonality are not controlled for. Sources\nwith fewer than core.action_learning.MIN_SAMPLE_FOR_CONCLUSIONS eligible\n(applied 28+ days ago) actions report insufficient_data instead of a\npercentage that would look more confident than 1-4 data points deserve.",
+        "operationId": "get_learning_report_api_action_cards_learning_report_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Learning Report",
         "tags": [
           "action-cards"
         ]
@@ -6115,6 +6277,47 @@
           }
         },
         "summary": "Toggle Action",
+        "tags": [
+          "action-cards"
+        ]
+      }
+    },
+    "/api/action-cards/{card_id}/apply": {
+      "patch": {
+        "description": "Marks an action as applied -- distinct from status/updated_at, which\nalso change on an ordinary edit. Idempotent: applying an already-applied\ncard just returns it unchanged rather than erroring, since \"mark this\napplied\" is naturally something a user might click twice.",
+        "operationId": "mark_action_applied_api_action_cards__card_id__apply_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "card_id",
+            "required": true,
+            "schema": {
+              "title": "Card Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark Action Applied",
         "tags": [
           "action-cards"
         ]
