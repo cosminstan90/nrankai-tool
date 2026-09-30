@@ -15,7 +15,7 @@ router = APIRouter()
 @router.get("/gsc", response_class=HTMLResponse)
 async def gsc_list_page(request: Request):
     """GSC properties list page."""
-    return templates.TemplateResponse("gsc.html", {"request": request})
+    return templates.TemplateResponse(request, "gsc.html", {"request": request})
 
 
 @router.get("/gsc/{property_id}/page-optimize", response_class=HTMLResponse)
@@ -62,7 +62,7 @@ async def gsc_page_optimize_view(
             "guide_json": gj,
         })
 
-    return templates.TemplateResponse("gsc_page_optimize.html", {
+    return templates.TemplateResponse(request, "gsc_page_optimize.html", {
         "request":     request,
         "property":    prop,
         "page_url":    decoded_url,
@@ -82,7 +82,7 @@ async def gsc_detail_page(
     prop = await db.get(GscProp, property_id)
     if not prop:
         raise_not_found("GSC property")
-    return templates.TemplateResponse("gsc_detail.html", {
+    return templates.TemplateResponse(request, "gsc_detail.html", {
         "request":  request,
         "property": prop,
     })
@@ -91,7 +91,7 @@ async def gsc_detail_page(
 @router.get("/ga4", response_class=HTMLResponse)
 async def ga4_list_page(request: Request):
     """GA4 properties list page."""
-    return templates.TemplateResponse("ga4.html", {"request": request})
+    return templates.TemplateResponse(request, "ga4.html", {"request": request})
 
 
 @router.get("/ga4/{property_id}", response_class=HTMLResponse)
@@ -105,7 +105,7 @@ async def ga4_detail_page(
     prop = await db.get(Ga4Prop, property_id)
     if not prop:
         raise_not_found("GA4 property")
-    return templates.TemplateResponse("ga4_detail.html", {
+    return templates.TemplateResponse(request, "ga4_detail.html", {
         "request":  request,
         "property": prop,
     })
@@ -114,7 +114,7 @@ async def ga4_detail_page(
 @router.get("/ads", response_class=HTMLResponse)
 async def ads_list_page(request: Request):
     """Google Ads accounts list page."""
-    return templates.TemplateResponse("ads.html", {"request": request})
+    return templates.TemplateResponse(request, "ads.html", {"request": request})
 
 
 @router.get("/ads/{account_id}", response_class=HTMLResponse)
@@ -128,7 +128,7 @@ async def ads_detail_page(
     acc = await db.get(AdsAcc, account_id)
     if not acc:
         raise_not_found("Ads account")
-    return templates.TemplateResponse("ads_detail.html", {
+    return templates.TemplateResponse(request, "ads_detail.html", {
         "request": request,
         "account": acc,
     })

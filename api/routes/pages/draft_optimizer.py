@@ -29,7 +29,7 @@ async def draft_optimizer_page(request: Request, db: AsyncSession = Depends(get_
         "mistral":    bool(os.getenv("MISTRAL_API_KEY")),
     }
 
-    return templates.TemplateResponse("draft_optimizer.html", {
+    return templates.TemplateResponse(request, "draft_optimizer.html", {
         "request":  request,
         "drafts":   [d.to_dict() for d in drafts],
         "providers": providers,

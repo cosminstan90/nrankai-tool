@@ -18,7 +18,7 @@ router = APIRouter()
 @router.get("/insights", response_class=HTMLResponse)
 async def insights_list_page(request: Request):
     """AI Insights runs list page."""
-    return templates.TemplateResponse("insights.html", {"request": request})
+    return templates.TemplateResponse(request, "insights.html", {"request": request})
 
 
 @router.get("/insights/{run_id}", response_class=HTMLResponse)
@@ -32,7 +32,7 @@ async def insights_detail_page(
     run = await db.get(InsightRun, run_id)
     if not run:
         raise_not_found("Insights run")
-    return templates.TemplateResponse("insights.html", {
+    return templates.TemplateResponse(request, "insights.html", {
         "request": request,
         "run":     run,
     })
@@ -45,7 +45,7 @@ async def fanout_page(request: Request):
         "openai":    bool(os.getenv("OPENAI_API_KEY")),
         "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
     }
-    return templates.TemplateResponse("fanout.html", {
+    return templates.TemplateResponse(request, "fanout.html", {
         "request":   request,
         "providers": providers,
     })
@@ -62,7 +62,7 @@ async def geo_monitor_page(request: Request):
     from api.provider_registry import get_available_providers
     from core.ai_overview_client import dfs_configured
     available = get_available_providers()
-    return templates.TemplateResponse("geo_monitor.html", {
+    return templates.TemplateResponse(request, "geo_monitor.html", {
         "request": request,
         "providers": providers,
         "gemini_available": available.get("google", False),
@@ -82,7 +82,7 @@ async def benchmarks_page(
     )
     audits = result.scalars().all()
 
-    return templates.TemplateResponse("benchmarks.html", {
+    return templates.TemplateResponse(request, "benchmarks.html", {
         "request": request,
         "audits": [a.to_dict() for a in audits]
     })
@@ -114,7 +114,7 @@ async def schedules_page(request: Request):
             "models": ["mistral-large-latest", "mistral-small-latest"]
         })
 
-    return templates.TemplateResponse("schedules.html", {
+    return templates.TemplateResponse(request, "schedules.html", {
         "request": request,
         "audit_types": audit_types,
         "providers": providers

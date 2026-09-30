@@ -80,13 +80,13 @@ async def audit_detail(
                 print(f"Failed to parse JSON for {a_type} in {audit_id}:\n{traceback.format_exc()}")
                 single_results_dict[a_type] = {"error": "Invalid JSON"}
 
-        return templates.TemplateResponse("single_audit_detail.html", {
+        return templates.TemplateResponse(request, "single_audit_detail.html", {
             "request": request,
             "audit": audit,
             "single_results_dict": single_results_dict
         })
 
-    return templates.TemplateResponse("audit_detail.html", {
+    return templates.TemplateResponse(request, "audit_detail.html", {
         "request": request,
         "audit": audit,
         "results_summary": results_summary
@@ -167,7 +167,7 @@ async def audit_results_page(
         _qs_parts.append(f"url_search={_quote(url_search)}")
     filter_qs = ("&".join(_qs_parts) + "&") if _qs_parts else ""
 
-    return templates.TemplateResponse("results.html", {
+    return templates.TemplateResponse(request, "results.html", {
         "request": request,
         "audit": audit,
         "results": results,
@@ -243,7 +243,7 @@ async def audit_report_page(
     )
     summary = summary_result.scalar_one_or_none()
 
-    return templates.TemplateResponse("report.html", {
+    return templates.TemplateResponse(request, "report.html", {
         "request": request,
         "audit": audit,
         "results": results,
@@ -349,7 +349,7 @@ async def page_view(
                 for row in reversed(hist_rows)   # oldest first for chart
             ]
 
-    return templates.TemplateResponse("page_view.html", {
+    return templates.TemplateResponse(request, "page_view.html", {
         "request": request,
         "page_url": decoded_url,
         "website": audit_results[0]["website"] if audit_results else "",
@@ -554,7 +554,7 @@ async def site_health(
                 for row in worst_rows
             ]
 
-    return templates.TemplateResponse("site_health.html", {
+    return templates.TemplateResponse(request, "site_health.html", {
         "request": request,
         "website": website,
         "audit_summaries": audit_summaries,
@@ -582,7 +582,7 @@ async def compare_page(
     )
     audits = result.scalars().all()
 
-    return templates.TemplateResponse("compare.html", {
+    return templates.TemplateResponse(request, "compare.html", {
         "request": request,
         "audits": [a.to_dict() for a in audits]
     })

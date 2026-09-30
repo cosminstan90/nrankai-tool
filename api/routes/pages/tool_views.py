@@ -30,7 +30,7 @@ async def schema_generator_page(request: Request, db: AsyncSession = Depends(get
         "mistral":    bool(os.getenv("MISTRAL_API_KEY")),
         "perplexity": bool(os.getenv("PERPLEXITY_API_KEY")),
     }
-    return templates.TemplateResponse("schema_gen.html", {"request": request, "audits": audits, "providers": providers})
+    return templates.TemplateResponse(request, "schema_gen.html", {"request": request, "audits": audits, "providers": providers})
 
 
 @router.get("/keyword-research", response_class=HTMLResponse)
@@ -44,7 +44,7 @@ async def keyword_research_list_page(request: Request):
         "mistral":    bool(os.getenv("MISTRAL_API_KEY")),
         "perplexity": bool(os.getenv("PERPLEXITY_API_KEY")),
     }
-    return templates.TemplateResponse("keyword_research.html", {
+    return templates.TemplateResponse(request, "keyword_research.html", {
         "request":           request,
         "locations":         LOCATION_PRESETS,
         "providers":         providers,
@@ -82,7 +82,7 @@ async def keyword_research_detail_page(
         for r in kw_rows
     ])
 
-    return templates.TemplateResponse("keyword_research_detail.html", {
+    return templates.TemplateResponse(request, "keyword_research_detail.html", {
         "request":       request,
         "session":       session,
         "keywords_json": keywords_json,
@@ -120,7 +120,7 @@ async def standalone_optimize_page(
             "guide_json": None,
         })
 
-    return templates.TemplateResponse("optimize_standalone.html", {
+    return templates.TemplateResponse(request, "optimize_standalone.html", {
         "request":     request,
         "past_guides": past_guides,
     })
@@ -129,7 +129,7 @@ async def standalone_optimize_page(
 @router.get("/llms-txt", response_class=HTMLResponse)
 async def llms_txt_page(request: Request):
     """llms.txt generator page."""
-    return templates.TemplateResponse("llms_txt.html", {"request": request})
+    return templates.TemplateResponse(request, "llms_txt.html", {"request": request})
 
 
 @router.get("/citations", response_class=HTMLResponse)
@@ -137,7 +137,7 @@ async def citation_tracker_page(request: Request):
     from api.provider_registry import get_available_providers
     from core.ai_overview_client import dfs_configured
     available = get_available_providers()
-    return templates.TemplateResponse("citation_tracker.html", {
+    return templates.TemplateResponse(request, "citation_tracker.html", {
         "request": request,
         "gemini_available": available.get("google", False),
         "google_aio_available": dfs_configured(),
@@ -160,7 +160,7 @@ async def guide_page(
     gsc_props = (await db.execute(select(GscProp).order_by(GscProp.name))).scalars().all()
     gsc_properties = [{"id": p.id, "name": p.name, "site_url": p.site_url} for p in gsc_props]
 
-    return templates.TemplateResponse("guide.html", {
+    return templates.TemplateResponse(request, "guide.html", {
         "request": request,
         "page_url": decoded_url,
         "gsc_properties": gsc_properties,

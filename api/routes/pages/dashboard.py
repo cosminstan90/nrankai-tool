@@ -118,7 +118,7 @@ async def dashboard(
         for row in attention_rows
     ]
 
-    return templates.TemplateResponse("index.html", {
+    return templates.TemplateResponse(request, "index.html", {
         "request": request,
         "audits": audits,
         "single_audits": single_audits,
@@ -156,7 +156,7 @@ async def new_audit_form(request: Request):
     # Check Perplexity availability
     perplexity_available = bool(os.getenv("PERPLEXITY_API_KEY"))
 
-    return templates.TemplateResponse("new_audit.html", {
+    return templates.TemplateResponse(request, "new_audit.html", {
         "request": request,
         "audit_types": audit_types,
         "providers": providers,
@@ -183,7 +183,7 @@ async def audit_row_partial(
     if not audit:
         return HTMLResponse("")
 
-    return templates.TemplateResponse("partials/audit_row.html", {
+    return templates.TemplateResponse(request, "partials/audit_row.html", {
         "request": request,
         "audit": audit
     })
@@ -215,7 +215,7 @@ async def stats_partial(request: Request, db: AsyncSession = Depends(get_db)):
     )
     average_score = avg_result.scalar()
 
-    return templates.TemplateResponse("partials/stats.html", {
+    return templates.TemplateResponse(request, "partials/stats.html", {
         "request": request,
         "stats": {
             "total_audits": total_audits,

@@ -12,7 +12,7 @@ router = APIRouter()
 @router.get("/meta-generator", response_class=HTMLResponse)
 async def meta_generator_page(request: Request):
     providers_ui = get_providers_for_ui()
-    return templates.TemplateResponse("meta_generator.html", {
+    return templates.TemplateResponse(request, "meta_generator.html", {
         "request": request,
         "providers_ui": providers_ui,
     })

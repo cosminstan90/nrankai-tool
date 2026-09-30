@@ -44,7 +44,7 @@ async def settings_page(request: Request, db: AsyncSession = Depends(get_db)):
         "total": round(sum(db_weights.get(a, d) for a, d in _DEFAULTS.items()), 4),
     }
 
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request, "settings.html", {
         "request": request,
         "weights_json": _json.dumps(weights_payload),
     })
@@ -61,7 +61,7 @@ async def branding_page(request: Request, db: AsyncSession = Depends(get_db)):
     )
     brandings = result.scalars().all()
 
-    return templates.TemplateResponse("branding.html", {
+    return templates.TemplateResponse(request, "branding.html", {
         "request": request,
         "brandings": brandings
     })
@@ -76,7 +76,7 @@ async def briefs_page(request: Request, db: AsyncSession = Depends(get_db)):
     )
     audits = result.scalars().all()
 
-    return templates.TemplateResponse("briefs.html", {
+    return templates.TemplateResponse(request, "briefs.html", {
         "request":      request,
         "audits":       audits,
         "providers_ui": get_providers_for_ui(),
@@ -85,37 +85,37 @@ async def briefs_page(request: Request, db: AsyncSession = Depends(get_db)):
 
 @router.get("/portfolio", response_class=HTMLResponse)
 async def portfolio_page(request: Request):
-    return templates.TemplateResponse("portfolio.html", {"request": request})
+    return templates.TemplateResponse(request, "portfolio.html", {"request": request})
 
 
 @router.get("/costs", response_class=HTMLResponse)
 async def costs_page(request: Request):
-    return templates.TemplateResponse("costs.html", {"request": request})
+    return templates.TemplateResponse(request, "costs.html", {"request": request})
 
 
 @router.get("/gap-analysis", response_class=HTMLResponse)
 async def gap_analysis_page(request: Request):
-    return templates.TemplateResponse("gap_analysis.html", {"request": request})
+    return templates.TemplateResponse(request, "gap_analysis.html", {"request": request})
 
 
 @router.get("/content-gaps", response_class=HTMLResponse)
 async def content_gaps_page(request: Request):
-    return templates.TemplateResponse("content_gaps.html", {"request": request})
+    return templates.TemplateResponse(request, "content_gaps.html", {"request": request})
 
 
 @router.get("/action-cards", response_class=HTMLResponse)
 async def action_cards_page(request: Request):
-    return templates.TemplateResponse("action_cards.html", {"request": request})
+    return templates.TemplateResponse(request, "action_cards.html", {"request": request})
 
 
 @router.get("/templates", response_class=HTMLResponse)
 async def audit_templates_page(request: Request):
-    return templates.TemplateResponse("templates.html", {"request": request})
+    return templates.TemplateResponse(request, "templates.html", {"request": request})
 
 
 @router.get("/tracking", response_class=HTMLResponse)
 async def tracking_page(request: Request):
-    return templates.TemplateResponse("tracking.html", {"request": request})
+    return templates.TemplateResponse(request, "tracking.html", {"request": request})
 
 
 @router.get("/cross-reference", response_class=HTMLResponse)
@@ -173,6 +173,7 @@ async def cross_reference_page(
     }
 
     return templates.TemplateResponse(
+        request,
         "cross_reference.html",
         {
             "request": request,

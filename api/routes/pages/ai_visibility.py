@@ -13,6 +13,6 @@ router = APIRouter()
 @router.get("/ai-visibility", response_class=HTMLResponse)
 async def ai_visibility_page(request: Request, db: AsyncSession = Depends(get_db)):
     """AI Visibility Dashboard — combines GeoMonitor + CitationTracker data."""
-    return templates.TemplateResponse("ai_visibility.html", {
+    return templates.TemplateResponse(request, "ai_visibility.html", {
         "request": request,
     })

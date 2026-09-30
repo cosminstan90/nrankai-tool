@@ -112,7 +112,7 @@ async def clusteriq_overview_page(
         },
     }
 
-    return templates.TemplateResponse("clusteriq/overview.html", {
+    return templates.TemplateResponse(request, "clusteriq/overview.html", {
         "request":      request,
         "project":      project,
         "overview":     overview,
@@ -129,7 +129,7 @@ async def clusteriq_clusters_page(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project_or_404(project_id, db)
-    return templates.TemplateResponse("clusteriq/clusters.html", {
+    return templates.TemplateResponse(request, "clusteriq/clusters.html", {
         "request":            request,
         "project":            project,
         "verdict_filter_init": verdict_filter,
@@ -290,7 +290,7 @@ async def clusteriq_cluster_detail_page(
         "avg_position":     cluster.avg_position,
     }
 
-    return templates.TemplateResponse("clusteriq/cluster_detail.html", {
+    return templates.TemplateResponse(request, "clusteriq/cluster_detail.html", {
         "request":    request,
         "project":    project,
         "cluster":    cluster_dict,
@@ -341,7 +341,7 @@ async def clusteriq_duplicates_page(
             "dev_brief":        d.dev_brief,
         })
 
-    return templates.TemplateResponse("clusteriq/duplicates.html", {
+    return templates.TemplateResponse(request, "clusteriq/duplicates.html", {
         "request":    request,
         "project":    project,
         "duplicates": duplicates,
@@ -392,7 +392,7 @@ async def clusteriq_decisions_page(
             "notes":            decision.notes,
         })
 
-    return templates.TemplateResponse("clusteriq/decisions.html", {
+    return templates.TemplateResponse(request, "clusteriq/decisions.html", {
         "request":    request,
         "project":    project,
         "decisions":  decisions,
@@ -556,7 +556,7 @@ async def clusteriq_url_detail_page(
         "keyword_count":     int(gsc_agg.kw_count or 0),
     }
 
-    return templates.TemplateResponse("clusteriq/url_detail.html", {
+    return templates.TemplateResponse(request, "clusteriq/url_detail.html", {
         "request":      request,
         "project":      project,
         "url_data":     url_data,
@@ -594,7 +594,7 @@ async def clusteriq_competitor_gap_page(
         from app.modules.clusteriq.services.competitor_analysis import CompetitorClusterAnalyzer
         gap_report = await CompetitorClusterAnalyzer().generate_gap_report(project_id, domain)
 
-    return templates.TemplateResponse("clusteriq/competitor_gap.html", {
+    return templates.TemplateResponse(request, "clusteriq/competitor_gap.html", {
         "request":           request,
         "project":           project,
         "competitor_domain": domain,

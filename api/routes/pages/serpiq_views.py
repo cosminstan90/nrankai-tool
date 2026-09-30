@@ -11,4 +11,4 @@ router = APIRouter()
 @router.get("/serpiq", response_class=HTMLResponse)
 async def serpiq_page(request: Request):
     """SerpIQ — SERP Snapshot & Instant Analysis tool."""
-    return templates.TemplateResponse("serpiq/index.html", {"request": request})
+    return templates.TemplateResponse(request, "serpiq/index.html", {"request": request})
