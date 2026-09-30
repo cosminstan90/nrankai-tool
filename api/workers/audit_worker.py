@@ -786,9 +786,12 @@ async def start_audit_pipeline(
 ):
     """
     Main entry point for running the audit pipeline.
-    
+
     This is called as a background task from the API.
     """
+    from api.workers.worker_run import record_worker_run
+
+    _pipeline_started_at = datetime.now(timezone.utc)
     try:
         await log_message(audit_id, f"Starting audit pipeline for {website}")
         await log_message(audit_id, f"Audit type: {audit_type}, Provider: {provider}")
@@ -945,3 +948,18 @@ async def start_audit_pipeline(
                 })
             except Exception:
                 pass
+
+    finally:
+        # Every early `return` above (a deliberate step failure) skips the
+        # except block, so the pipeline's final status is read back from the
+        # audit row itself rather than tracked through each return point.
+        try:
+            async with AsyncSessionLocal() as _run_db:
+                _audit = await _run_db.get(Audit, audit_id)
+                _final_status = _audit.status if _audit else "unknown"
+        except Exception:
+            _final_status = "unknown"
+        await record_worker_run(
+            "audit", _pipeline_started_at, _final_status == "completed",
+            f"audit_id={audit_id} website={website} status={_final_status}",
+        )

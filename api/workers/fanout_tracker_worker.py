@@ -84,6 +84,10 @@ async def run_tracking(config_id: str) -> None:
     Creates a FanoutTrackingRun row, runs fan-out analysis for every
     (prompt × engine) combination, stores details, then updates aggregate stats.
     """
+    from api.workers.worker_run import record_worker_run
+
+    started_at = datetime.now(timezone.utc)
+
     async with AsyncSessionLocal() as db:
         config = await db.get(FanoutTrackingConfig, config_id)
         if not config:
@@ -212,6 +216,10 @@ async def run_tracking(config_id: str) -> None:
                 "Tracking run complete: config=%s date=%s mention_rate=%.2f%%",
                 config_id, today, mention_rate * 100,
             )
+            await record_worker_run(
+                "fanout_tracker", started_at, True,
+                f"config={config_id} mention_rate={mention_rate * 100:.1f}%",
+            )
 
         except Exception as exc:
             error_msg = str(exc)
@@ -234,6 +242,7 @@ async def run_tracking(config_id: str) -> None:
                 logger.warning("Config %s marked as dead letter after %d retries", config_id, run.retry_count)
 
             await db.commit()
+            await record_worker_run("fanout_tracker", started_at, False, f"config={config_id}: {error_msg}")
 
 
 # ── Scheduler entry point ─────────────────────────────────────────────────────

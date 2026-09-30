@@ -484,3 +484,43 @@ class PerformanceSnapshot(Base):
             } if self.source == "psi" else None,
         }
 
+
+class WorkerRun(Base):
+    """
+    One row per completed run of a background worker.
+
+    Pasul 7 of docs/superpowers/plans/2026-09-30-next-steps.md: almost every
+    real failure so far (Claude failing every scan for months, Perplexity's
+    key rejected, GSC OAuth silently disconnected, the sync route broken for
+    weeks) failed *silently* -- nothing recorded that a worker had stopped
+    doing its job. GET /api/status reads the latest row per `worker` to
+    answer "when did this last succeed", surviving a server restart (unlike
+    an in-memory dict such as gsc_archive_worker.LAST_RUN_STATUS).
+
+    Written via api.workers.worker_run.record_worker_run(), in its own short
+    session -- never inside the worker's own long-lived session, and never
+    holding a write open across the worker's actual (slow) work.
+    """
+    __tablename__ = "worker_runs"
+
+    id          = Column(Integer, primary_key=True, autoincrement=True)
+    worker      = Column(String(50), nullable=False)
+    started_at  = Column(DateTime, nullable=False)
+    finished_at = Column(DateTime, nullable=False)
+    ok          = Column(Boolean, nullable=False)
+    detail      = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_worker_runs_worker_finished_at", "worker", "finished_at"),
+    )
+
+    def to_dict(self):
+        return {
+            "worker": self.worker,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "finished_at": self.finished_at.isoformat() if self.finished_at else None,
+            "ok": self.ok,
+            "detail": self.detail,
+        }
+

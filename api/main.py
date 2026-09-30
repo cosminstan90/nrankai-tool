@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ for _k, _v in dotenv_values(_env_path).items():
 
 # Import database and models
 from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
-from api.routes import pages_router, audits_router, results_router, health_router, compare_router, dashboard_charts_router, audit_rerun_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router, meta_generator_router, query_suggestions_router, ai_visibility_router, draft_optimizer_router, clusteriq_router, serpiq_router, performance_router, crawl_router, snapshots_router
+from api.routes import pages_router, audits_router, results_router, health_router, status_router, compare_router, dashboard_charts_router, audit_rerun_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router, meta_generator_router, query_suggestions_router, ai_visibility_router, draft_optimizer_router, clusteriq_router, serpiq_router, performance_router, crawl_router, snapshots_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
 from sqlalchemy import select, func, desc, case
@@ -149,12 +149,16 @@ async def lifespan(app: FastAPI):
     from api.routes.schedules import check_and_run_schedules
     from api.workers.fanout_tracker_worker import check_and_run_due_trackings
     from api.routes.visibility import check_and_run_citation_scans
+    from api.workers.worker_run import record_worker_run
     _tracking_tick = 0  # count scheduler ticks to run tracking every 15 min
     _bm_tick = 0        # geo benchmark recalc every 1440 ticks (~24 h)
+    _heartbeat_tick = 0    # worker_runs heartbeat every 60 ticks (~1 h) -- a
+    _heartbeat_errors = 0  # per-tick WorkerRun row would be 1440/day for no benefit
+    _heartbeat_started_at = datetime.now(timezone.utc)
 
     async def scheduler_loop():
         """Background scheduler that checks schedules every minute."""
-        nonlocal _tracking_tick, _bm_tick
+        nonlocal _tracking_tick, _bm_tick, _heartbeat_tick, _heartbeat_errors, _heartbeat_started_at
         while True:
             try:
                 # Hard timeout: if check_and_run_schedules hangs (DB lock, network
@@ -162,8 +166,10 @@ async def lifespan(app: FastAPI):
                 await asyncio.wait_for(check_and_run_schedules(), timeout=45)
             except asyncio.TimeoutError:
                 print("[WARNING] Scheduler: check_and_run_schedules timed out after 45 s -- skipping tick")
+                _heartbeat_errors += 1
             except Exception as e:
                 print(f"[ERROR] Scheduler error: {e}")
+                _heartbeat_errors += 1
 
             # Citation/visibility trackers with schedule_cron set (every tick --
             # cron matching is minute-precision, so this can't run less often
@@ -198,6 +204,17 @@ async def lifespan(app: FastAPI):
                     print("[OK] Geo benchmarks recalculated")
                 except Exception as e:
                     print(f"[ERROR] Benchmark recalc error: {e}")
+
+            # Heartbeat: once an hour, not once a minute -- a WorkerRun row
+            # per tick would be 1440/day for no benefit over one/hour.
+            _heartbeat_tick += 1
+            if _heartbeat_tick >= 60:
+                ok = _heartbeat_errors == 0
+                detail = "no errors in the last hour" if ok else f"{_heartbeat_errors} tick(s) errored in the last hour"
+                await record_worker_run("scheduler", _heartbeat_started_at, ok, detail)
+                _heartbeat_tick = 0
+                _heartbeat_errors = 0
+                _heartbeat_started_at = datetime.now(timezone.utc)
 
             await asyncio.sleep(60)  # Check every minute
     
@@ -247,6 +264,14 @@ async def lifespan(app: FastAPI):
     else:
         print("[INFO] GSC archive worker disabled (GSC_ARCHIVE_ENABLED=0)")
 
+    # Start status worker (checks provider keys, OAuth, backups, disk, workers daily)
+    from api.workers.status_worker import status_worker_loop
+    status_worker_task = asyncio.create_task(status_worker_loop())
+    if os.getenv("STATUS_WORKER_ENABLED", "1") != "0":
+        print("[OK] Status worker started -- see /status (set STATUS_WORKER_ENABLED=0 to disable)")
+    else:
+        print("[INFO] Status worker disabled (STATUS_WORKER_ENABLED=0)")
+
     yield
 
     # Shutdown lead worker
@@ -262,7 +287,14 @@ async def lifespan(app: FastAPI):
         await gsc_archive_task
     except asyncio.CancelledError:
         pass
-    
+
+    # Shutdown status worker
+    status_worker_task.cancel()
+    try:
+        await status_worker_task
+    except asyncio.CancelledError:
+        pass
+
     # Shutdown
     print("Shutting down...")
     if scheduler_task:
@@ -384,6 +416,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 app.include_router(audits_router)
 app.include_router(results_router)
 app.include_router(health_router)
+app.include_router(status_router)
 app.include_router(compare_router)
 app.include_router(dashboard_charts_router)
 app.include_router(audit_rerun_router)

@@ -1764,26 +1764,6 @@
         "title": "Body_upload_csv_api_gsc_properties__property_id__upload_post",
         "type": "object"
       },
-      "Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post": {
-        "properties": {
-          "p_daily": {
-            "items": {},
-            "title": "P Daily",
-            "type": "array"
-          },
-          "q_daily": {
-            "items": {},
-            "title": "Q Daily",
-            "type": "array"
-          }
-        },
-        "required": [
-          "q_daily",
-          "p_daily"
-        ],
-        "title": "Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post",
-        "type": "object"
-      },
       "BotAccessRequest": {
         "properties": {
           "project_id": {
@@ -15632,7 +15612,7 @@
     },
     "/api/gsc/oauth/status": {
       "get": {
-        "description": "Return whether a Google account is connected.",
+        "description": "Return whether a Google account is connected, plus the archive worker's last run.",
         "operationId": "oauth_status_api_gsc_oauth_status_get",
         "responses": {
           "200": {
@@ -16444,38 +16424,29 @@
     },
     "/api/gsc/properties/{property_id}/sync": {
       "post": {
-        "description": "Upsert per-day GSC rows into gsc_query_history / gsc_page_history.\n\nModule-level (not nested in sync_property) specifically so it is directly\ntestable without mocking google-api-python-client: q_daily/p_daily only\nneed to look like Search Console API rows ({\"keys\": [key, date], \"clicks\":\n..., ...}), not come from a real API call.\n\nKeyed on the same (property_id, key, period_start, period_end, source)\nunique constraint the migration defines, so re-syncing a day updates that\nrow's numbers instead of accumulating duplicates forever.",
-        "operationId": "upsert_gsc_history_api_gsc_properties__property_id__sync_post",
+        "description": "Pull queries + pages from the GSC API and replace existing rows.",
+        "operationId": "sync_property_api_gsc_properties__property_id__sync_post",
         "parameters": [
           {
-            "in": "query",
-            "name": "db_path",
+            "in": "path",
+            "name": "property_id",
             "required": true,
             "schema": {
-              "title": "Db Path",
+              "title": "Property Id",
               "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "pid",
-            "required": true,
+            "name": "days",
+            "required": false,
             "schema": {
-              "title": "Pid",
-              "type": "string"
+              "default": 90,
+              "title": "Days",
+              "type": "integer"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "$ref": "#/components/schemas/Body_upsert_gsc_history_api_gsc_properties__property_id__sync_post"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
@@ -16496,7 +16467,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Upsert Gsc History",
+        "summary": "Sync Property",
         "tags": [
           "gsc"
         ]
@@ -19871,6 +19842,26 @@
         ]
       }
     },
+    "/api/status": {
+      "get": {
+        "description": "Everything the health panel needs, as one JSON document.",
+        "operationId": "get_status_api_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Status",
+        "tags": [
+          "status"
+        ]
+      }
+    },
     "/api/templates": {
       "get": {
         "description": "Get all audit templates.\n\nReturns templates sorted by: is_default first, then by use_count desc.",
@@ -22087,6 +22078,24 @@
           }
         },
         "summary": "Site Health Csv"
+      }
+    },
+    "/status": {
+      "get": {
+        "operationId": "status_page_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status Page"
       }
     },
     "/templates": {

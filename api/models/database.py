@@ -65,7 +65,7 @@ from api.models.serpiq import SiqSnapshot, SiqSerpItem
 from api.models.infra import (
     BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan,
     CostRecord, ClientBilling, BrandingConfig, TrackingProject, TrackingSnapshot,
-    PerformanceSnapshot,
+    PerformanceSnapshot, WorkerRun,
 )
 from api.models.crawl import SiteCrawl, CrawlPage, CrawlLink, CrawlRedirect
 from api.models.snapshot import SnapshotRun, PageSnapshot

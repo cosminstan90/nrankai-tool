@@ -15,11 +15,13 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
 import httpx
 from bs4 import BeautifulSoup
 
 from api.utils.url_validator import validate_external_url
+from api.workers.worker_run import record_worker_run
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +243,15 @@ async def lead_audit_worker_loop():
                 pass  # No pending jobs — normal
             elif r.status_code == 200:
                 job = r.json()
+                job_started_at = datetime.now(timezone.utc)
                 result = await _process_job(job)
                 await _post_result(job["job_id"], result)
+                ok = result.get("status") == "completed"
+                detail = (f"job_id={job['job_id']} website={job.get('website')}"
+                         if ok else
+                         f"job_id={job['job_id']} website={job.get('website')}: "
+                         f"{result.get('error', {}).get('message', 'unknown error')}")
+                await record_worker_run("lead_audit", job_started_at, ok, detail)
             else:
                 logger.warning("Unexpected response from /next: %s", r.status_code)
 

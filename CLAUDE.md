@@ -168,8 +168,13 @@ app.include_router(my_feature_router)
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | GSC + GA4 OAuth |
 | `NRANKAI_WORKER_KEY` | Activează lead audit worker (nrankai.com integration) |
 | `NRANKAI_CLOUD_URL` | URL cloud nrankai (default: nrankai.com) |
-| `N8N_WEBHOOK_URL` | Auto-înregistrare webhook n8n la startup |
+| `N8N_WEBHOOK_URL` | Auto-înregistrare webhook n8n la startup (fanout events) **și** alertă la schimbare de stare din panoul `/status` |
 | `ALLOWED_ORIGINS` | CORS origins (default: app.nrankai.com) |
+| `GSC_ARCHIVE_ENABLED` | `0` dezactivează worker-ul zilnic de arhivare istoric GSC (implicit pornit) |
+| `STATUS_WORKER_ENABLED` | `0` dezactivează worker-ul zilnic de verificare `/status` (implicit pornit) |
+| `DATAFORSEO_BALANCE_WARN_USD` | Prag de avertizare sold DataForSEO în `/status` (implicit 5) |
+| `GEO_TOOL_BACKUP_ROOT` | Director de backup pentru `analyzer.db` (implicit `D:\Projects\_geo_tool_backups`) |
+| `GEO_TOOL_BACKUP_OFFSITE` | Copie suplimentară a backup-ului zilnic în afara mașinii (opțional) |
 
 ---
 

@@ -135,12 +135,15 @@ async def capture_snapshot(website: str, source_dir: str) -> str:
 
 
 async def _capture_snapshot_locked(website: str, source_dir: str) -> str:
+    from api.workers.worker_run import record_worker_run
+
     run_id = str(uuid.uuid4())
+    started_at = datetime.now(timezone.utc)
 
     async with AsyncSessionLocal() as db:
         db.add(SnapshotRun(
             id=run_id, website=website, status="running",
-            source_dir=source_dir, started_at=datetime.now(timezone.utc),
+            source_dir=source_dir, started_at=started_at,
         ))
         await db.commit()
 
@@ -212,11 +215,13 @@ async def _capture_snapshot_locked(website: str, source_dir: str) -> str:
         await _set_status(run_id, "completed", pages_captured=captured)
 
         logger.info("Snapshot %s captured %d pages of %s", run_id, captured, website)
+        await record_worker_run("snapshot", started_at, True, f"{captured} pages captured ({website})")
         return run_id
 
     except Exception as exc:
         logger.error("Snapshot %s of %s failed: %s", run_id, website, exc)
         await _set_status(run_id, "failed", error=str(exc))
+        await record_worker_run("snapshot", started_at, False, f"{website}: {exc}")
         raise
 
 

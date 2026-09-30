@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="statusApp()" x-init="init()" class="space-y-6">
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">🩺 System Status</h1>
+            <p class="text-gray-600 mt-1">Is anything quietly broken?</p>
+        </div>
+        <button @click="loadData()" class="px-4 py-2 rounded-lg font-medium border shadow-sm bg-white text-gray-700 hover:bg-gray-50">
+            ↻ Refresh
+        </button>
+    </div>
+
+    <div x-show="loading" class="text-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p class="text-gray-600 mt-4">Checking...</p>
+    </div>
+
+    <div x-show="error" x-text="error" class="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4"></div>
+
+    <div x-show="!loading && data" style="display: none;" class="space-y-6">
+
+        <!-- Overall banner -->
+        <div class="rounded-lg p-4 border" :class="bannerClass(data && data.overall)">
+            <div class="flex items-center justify-between">
+                <div class="font-semibold text-lg">
+                    <span x-text="badge(data && data.overall)"></span>
+                    Overall: <span x-text="(data && data.overall || '').toUpperCase()"></span>
+                </div>
+                <div class="text-sm opacity-75" x-text="'Checked ' + (data ? relTime(data.checked_at) : '')"></div>
+            </div>
+        </div>
+
+        <!-- Providers -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">LLM Providers</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <template x-for="(check, name) in (data && data.checks.providers) || {}" :key="name">
+                    <div class="border rounded-lg p-3" :class="cardClass(check.status)">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium capitalize" x-text="name"></span>
+                            <span x-text="badge(check.status)"></span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1" x-text="check.detail"></div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- DataForSEO + GSC OAuth -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">DataForSEO Balance</h2>
+                <div class="border rounded-lg p-3" :class="cardClass(data && data.checks.dataforseo.status)">
+                    <div class="flex items-center justify-between">
+                        <span x-text="badge(data && data.checks.dataforseo.status)"></span>
+                        <span class="text-sm" x-text="data && data.checks.dataforseo.detail"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Google Search Console OAuth</h2>
+                <div class="border rounded-lg p-3" :class="cardClass(data && data.checks.gsc_oauth.status)">
+                    <div class="flex items-center justify-between">
+                        <span x-text="badge(data && data.checks.gsc_oauth.status)"></span>
+                        <span class="text-sm" x-text="data && data.checks.gsc_oauth.detail"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workers -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-4">Background Workers</h2>
+            <div class="space-y-2" x-show="data && Object.keys(data.checks.workers).length">
+                <template x-for="(check, name) in (data && data.checks.workers) || {}" :key="name">
+                    <div class="flex items-center justify-between border rounded-lg p-3" :class="cardClass(check.status)">
+                        <div>
+                            <span class="font-medium capitalize" x-text="name.replace('_', ' ')"></span>
+                            <span class="text-xs text-gray-500 ml-2" x-text="check.detail"></span>
+                        </div>
+                        <div class="text-right">
+                            <span x-text="badge(check.status)"></span>
+                            <div class="text-xs text-gray-500" x-text="check.finished_at ? relTime(check.finished_at) : 'never ran'"></div>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <p x-show="!(data && Object.keys(data.checks.workers).length)" class="text-gray-500 text-sm">No worker runs recorded yet.</p>
+        </div>
+
+        <!-- Backup + disk -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Database Backup</h2>
+                <div class="border rounded-lg p-3" :class="cardClass(data && data.checks.backup.status)">
+                    <div class="flex items-center justify-between">
+                        <span x-text="badge(data && data.checks.backup.status)"></span>
+                        <span class="text-sm" x-text="data && data.checks.backup.ran_at ? relTime(data.checks.backup.ran_at) : (data && data.checks.backup.detail)"></span>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-900 mb-4">Disk Space</h2>
+                <div class="space-y-2">
+                    <template x-for="(check, name) in (data && data.checks.disk) || {}" :key="name">
+                        <div class="flex items-center justify-between border rounded-lg p-3" :class="cardClass(check.status)">
+                            <span class="font-medium" x-text="name.replace('_', ' ')"></span>
+                            <span x-text="check.free_gb ? check.free_gb + ' GB free' : check.detail"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function statusApp() {
+    return {
+        loading: true,
+        error: null,
+        data: null,
+
+        async init() {
+            await this.loadData();
+        },
+
+        async loadData() {
+            this.loading = true;
+            this.error = null;
+            try {
+                const res = await fetch('/api/status');
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.data = await res.json();
+            } catch (e) {
+                this.error = 'Failed to load status: ' + e.message;
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        badge(status) {
+            return {ok: '✅', warn: '⚠️', fail: '❌', unknown: '❔'}[status] || '❔';
+        },
+
+        cardClass(status) {
+            return {
+                ok: 'border-green-200 bg-green-50',
+                warn: 'border-yellow-200 bg-yellow-50',
+                fail: 'border-red-200 bg-red-50',
+                unknown: 'border-gray-200 bg-gray-50',
+            }[status] || 'border-gray-200 bg-gray-50';
+        },
+
+        bannerClass(status) {
+            return {
+                ok: 'border-green-300 bg-green-100 text-green-900',
+                warn: 'border-yellow-300 bg-yellow-100 text-yellow-900',
+                fail: 'border-red-300 bg-red-100 text-red-900',
+            }[status] || 'border-gray-300 bg-gray-100 text-gray-900';
+        },
+
+        relTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return diffMin + 'm ago';
+            const diffH = Math.round(diffMin / 60);
+            if (diffH < 24) return diffH + 'h ago';
+            return Math.round(diffH / 24) + 'd ago';
+        },
+    };
+}
+</script>
+{% endblock %}

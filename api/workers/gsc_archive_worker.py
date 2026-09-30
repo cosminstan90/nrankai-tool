@@ -92,6 +92,26 @@ async def _archive_property(creds, property_id: str, site_url: str,
 
 async def run_archive_once() -> None:
     """One archive pass over every api-synced GscProperty. Never raises."""
+    from api.workers.worker_run import record_worker_run
+
+    started_at = datetime.now(timezone.utc)
+    result = await _run_archive_once_impl()
+    LAST_RUN_STATUS.update(result)
+
+    failed_props = [pid for pid, p in result["properties"].items() if not p.get("ok", True)]
+    ok = result["error"] is None and not failed_props
+    if result["error"]:
+        detail = result["error"]
+    elif failed_props:
+        detail = f"failed properties: {failed_props}"
+    else:
+        total_rows = sum(p.get("rows_written", 0) for p in result["properties"].values())
+        detail = f"{len(result['properties'])} properties, {total_rows} rows written"
+    await record_worker_run("gsc_archive", started_at, ok, detail)
+
+
+async def _run_archive_once_impl() -> dict:
+    """The actual archive pass. Returns a status dict; never mutates LAST_RUN_STATUS itself."""
     async with AsyncSessionLocal() as db:
         properties = (await db.execute(
             select(GscProperty).where(GscProperty.sync_type == "api")
@@ -101,22 +121,19 @@ async def run_archive_once() -> None:
     result = {"ran_at": datetime.now(timezone.utc).isoformat(), "properties": {}, "error": None}
 
     if not props:
-        LAST_RUN_STATUS.update(result)
-        return
+        return result
 
     try:
         creds = await _get_gsc_credentials()
     except Exception as exc:
         logger.warning("GSC archive: could not load credentials: %s", exc)
         result["error"] = f"credentials: {exc}"
-        LAST_RUN_STATUS.update(result)
-        return
+        return result
 
     if not creds:
         logger.info("GSC archive: no Google account connected, skipping this run")
         result["error"] = "not connected"
-        LAST_RUN_STATUS.update(result)
-        return
+        return result
 
     today = datetime.now(timezone.utc).date()
     fetch_until = today - timedelta(days=FRESHNESS_DELAY_DAYS)
@@ -126,7 +143,7 @@ async def run_archive_once() -> None:
         result["properties"][property_id] = await _archive_property(
             creds, property_id, site_url, synced_through, window_start, fetch_until)
 
-    LAST_RUN_STATUS.update(result)
+    return result
 
 
 async def gsc_archive_worker_loop():
