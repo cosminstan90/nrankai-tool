@@ -239,12 +239,27 @@ async def lifespan(app: FastAPI):
     else:
         print("[INFO] Lead audit worker disabled (set NRANKAI_WORKER_KEY to enable)")
 
+    # Start GSC history archive worker (backfills the trailing 16 months daily)
+    from api.workers.gsc_archive_worker import gsc_archive_worker_loop
+    gsc_archive_task = asyncio.create_task(gsc_archive_worker_loop())
+    if os.getenv("GSC_ARCHIVE_ENABLED", "1") != "0":
+        print("[OK] GSC archive worker started (set GSC_ARCHIVE_ENABLED=0 to disable)")
+    else:
+        print("[INFO] GSC archive worker disabled (GSC_ARCHIVE_ENABLED=0)")
+
     yield
 
     # Shutdown lead worker
     lead_worker_task.cancel()
     try:
         await lead_worker_task
+    except asyncio.CancelledError:
+        pass
+
+    # Shutdown GSC archive worker
+    gsc_archive_task.cancel()
+    try:
+        await gsc_archive_task
     except asyncio.CancelledError:
         pass
     

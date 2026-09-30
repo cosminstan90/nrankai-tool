@@ -71,6 +71,11 @@ class GscProperty(Base):
     total_pages      = Column(Integer,     nullable=False, default=0)
     last_synced_at   = Column(DateTime,    nullable=True)   # last OAuth API sync
     sync_type        = Column(String(10),  nullable=False, default="csv", server_default="csv")  # csv|api
+    # Fetch-coverage cursor for the daily archive worker (api/workers/gsc_archive_worker.py):
+    # the last day (YYYY-MM-DD) successfully archived into gsc_page_history/
+    # gsc_query_history. NULL means "never archived". See migration 0020 for
+    # why this can't be inferred from what's already stored.
+    history_synced_through = Column(String(10), nullable=True)
     created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
     updated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

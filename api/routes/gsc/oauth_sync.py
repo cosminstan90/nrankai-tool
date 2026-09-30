@@ -39,6 +39,7 @@ from ._shared import (
     _CLIENT_CONFIG,
     _GSC_SCOPES,
     _GOOGLE_REDIRECT_URI,
+    fetch_daily_gsc_rows,
 )
 
 router = APIRouter(prefix="/api/gsc", tags=["gsc"])
@@ -47,11 +48,13 @@ router = APIRouter(prefix="/api/gsc", tags=["gsc"])
 
 @router.get("/oauth/status")
 async def oauth_status():
-    """Return whether a Google account is connected."""
+    """Return whether a Google account is connected, plus the archive worker's last run."""
+    from api.workers.gsc_archive_worker import LAST_RUN_STATUS
+
     token = await _load_token()
     if token:
-        return {"connected": True, "email": token.email}
-    return {"connected": False, "email": None}
+        return {"connected": True, "email": token.email, "archive_worker": LAST_RUN_STATUS}
+    return {"connected": False, "email": None, "archive_worker": LAST_RUN_STATUS}
 
 
 # In-memory store mapping OAuth state → PKCE code_verifier.
@@ -301,42 +304,17 @@ async def sync_property(property_id: str, days: int = 90):
     # ── Daily-granularity fetch, for gsc_page_history / gsc_query_history ──
     # dimensions=[dimension, "date"] returns one row per (key, day) instead of
     # one aggregated row per key -- this is what makes real trend data
-    # possible. rowLimit is per page, so this paginates via startRow rather
-    # than trusting a single 25000-row response: a busy property easily
-    # exceeds that for query+date or page+date combinations, and silently
-    # dropping the tail here would be the exact kind of data loss this
-    # feature exists to stop.
-    _DAILY_ROW_LIMIT = 25000
-    _DAILY_MAX_PAGES = 20  # 500k rows/property/sync -- generous safety cap, not a real limit
-
-    def _fetch_daily(dimension: str):
-        svc = build("searchconsole", "v1", credentials=creds)
-        rows, start_row, truncated = [], 0, False
-        for _ in range(_DAILY_MAX_PAGES):
-            body = {
-                "startDate":  start_str,
-                "endDate":    end_str,
-                "dimensions": [dimension, "date"],
-                "rowLimit":   _DAILY_ROW_LIMIT,
-                "startRow":   start_row,
-            }
-            resp = svc.searchanalytics().query(siteUrl=site_url, body=body).execute()
-            page = resp.get("rows", [])
-            rows.extend(page)
-            if len(page) < _DAILY_ROW_LIMIT:
-                break
-            start_row += _DAILY_ROW_LIMIT
-        else:
-            truncated = True
-        return rows, truncated
-
+    # possible. Pagination lives in fetch_daily_gsc_rows (._shared), shared
+    # with api/workers/gsc_archive_worker.py's 16-month backfill.
     (query_rows, page_rows,
      (query_daily_rows, query_daily_truncated),
      (page_daily_rows, page_daily_truncated)) = await asyncio.gather(
         asyncio.get_event_loop().run_in_executor(None, _fetch, "query"),
         asyncio.get_event_loop().run_in_executor(None, _fetch, "page"),
-        asyncio.get_event_loop().run_in_executor(None, _fetch_daily, "query"),
-        asyncio.get_event_loop().run_in_executor(None, _fetch_daily, "page"),
+        asyncio.get_event_loop().run_in_executor(
+            None, fetch_daily_gsc_rows, creds, site_url, "query", start_str, end_str),
+        asyncio.get_event_loop().run_in_executor(
+            None, fetch_daily_gsc_rows, creds, site_url, "page", start_str, end_str),
     )
 
     # ── 2-4. Bulk replace rows using synchronous sqlite3 in a thread ──────────

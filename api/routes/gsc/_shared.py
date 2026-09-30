@@ -51,6 +51,52 @@ def _oauth_available() -> bool:
     return bool(_GOOGLE_CLIENT_ID and _GOOGLE_CLIENT_SECRET)
 
 
+# rowLimit is per page, so a property that exceeds one page for a (dimension,
+# date) query is paginated via startRow rather than trusting a single
+# response -- silently dropping the tail would be exactly the kind of data
+# loss this history exists to stop.
+_DAILY_ROW_LIMIT = 25000
+_DAILY_MAX_PAGES = 20  # 500k rows per call -- generous safety cap, not a real limit
+
+
+def fetch_daily_gsc_rows(creds, site_url: str, dimension: str,
+                         start_str: str, end_str: str) -> tuple:
+    """
+    One (dimension, date)-granularity Search Analytics query, paginated.
+
+    Synchronous -- callers run it via run_in_executor. Shared by
+    api/routes/gsc/oauth_sync.py's sync_property (interactive, on-demand) and
+    api/workers/gsc_archive_worker.py (scheduled, 16-month backfill), so the
+    pagination-safety behaviour lives in exactly one place.
+
+    Returns (rows, truncated). truncated=True means _DAILY_MAX_PAGES was hit
+    without exhausting the result for this range -- the caller decided that
+    cap is an acceptable safety limit, not a real one, and should still use
+    what it got.
+    """
+    from googleapiclient.discovery import build
+
+    svc = build("searchconsole", "v1", credentials=creds)
+    rows, start_row, truncated = [], 0, False
+    for _ in range(_DAILY_MAX_PAGES):
+        body = {
+            "startDate":  start_str,
+            "endDate":    end_str,
+            "dimensions": [dimension, "date"],
+            "rowLimit":   _DAILY_ROW_LIMIT,
+            "startRow":   start_row,
+        }
+        resp = svc.searchanalytics().query(siteUrl=site_url, body=body).execute()
+        page = resp.get("rows", [])
+        rows.extend(page)
+        if len(page) < _DAILY_ROW_LIMIT:
+            break
+        start_row += _DAILY_ROW_LIMIT
+    else:
+        truncated = True
+    return rows, truncated
+
+
 async def _load_token() -> Optional[GoogleOAuthToken]:
     """Load the stored OAuth token (if any) from DB."""
     async with AsyncSessionLocal() as db:

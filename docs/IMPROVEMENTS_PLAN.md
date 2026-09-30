@@ -66,8 +66,18 @@ toate presupunând un singur rând per pagină/query. A transforma tabelele alea
 două tabele noi, `gsc_page_history`/`gsc_query_history` (migrația `0012`),
 acumulează separat; `GscPageRow`/`GscQueryRow` rămân neschimbate.
 Detalii complete în mesajul de commit `feat(gsc): add time-series history…`.
-Rămas neatins din planul original: pasul 5 (worker de arhivare lunară) —
-nu era necesar pentru pornire, poate veni separat.
+
+**Pasul 5 (worker de arhivare) executat (2026-09-30).**
+`api/workers/gsc_archive_worker.py`, rulează zilnic din `lifespan()`, backfill
+16 luni pentru fiecare proprietate `sync_type == "api"`. Cursor explicit
+`GscProperty.history_synced_through` (migrația `0020`) — GSC nu întoarce
+niciun rând pentru o zi cu zero impresii, deci „ce zile lipsesc" nu se putea
+deduce din ce e deja stocat. Dezactivabil cu `GSC_ARCHIVE_ENABLED=0`. Stare
+ultimei rulări expusă în `GET /api/gsc/oauth/status` → `archive_worker`.
+Găsit pe drum: `POST /api/gsc/properties/{id}/sync` era stricat din 2026-09-04
+(decoratorul rutei lipit de funcția greșită, `upsert_gsc_history` în loc de
+`sync_property`) — reparat separat, vezi commit `fix(gsc): wire the sync
+route…`.
 
 ### Problema
 
