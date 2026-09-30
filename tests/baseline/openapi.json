@@ -17194,6 +17194,77 @@
         ]
       }
     },
+    "/api/internal-links/suggestions": {
+      "get": {
+        "description": "Internal link suggestions for one Screaming Frog crawl: targets\n(orphaned or under-linked indexable pages), each with topically-close\ncandidate sources that don't already link to it, and a real-GSC-query\nanchor when `property_id` is given and connected. Pages with no\ncaptured text anywhere (no page_snapshots row, no stored scraped HTML)\ncan't be matched -- excluded, never scored as unrelated.",
+        "operationId": "get_internal_link_suggestions_api_internal_links_suggestions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "crawl_id",
+            "required": true,
+            "schema": {
+              "title": "Crawl Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A connected GSC property, for real-query anchors",
+            "in": "query",
+            "name": "property_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A connected GSC property, for real-query anchors",
+              "title": "Property Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_pages_to_embed",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Max Pages To Embed",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Internal Link Suggestions",
+        "tags": [
+          "internal-links"
+        ]
+      }
+    },
     "/api/js-visibility/pages": {
       "get": {
         "description": "Every measured page for a site, worst (lowest text_visibility_ratio)\nfirst. Pages never measured (no sidecar yet -- run an audit first, or\nwait for the backfill step on a GEO_AUDIT/AI_OVERVIEW_OPTIMIZATION run)\nare not included here at all; there is no \"unmeasured\" placeholder row,\nsince a ranked list has nothing meaningful to rank an unmeasured page by.",

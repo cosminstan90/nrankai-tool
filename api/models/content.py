@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func
+    Column, String, Integer, Float, Text, DateTime, ForeignKey, JSON, Boolean, func,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship, backref
 
@@ -1494,3 +1495,32 @@ class DraftOptimization(Base):
             "created_at":      self.created_at.isoformat() if self.created_at else None,
             "completed_at":    self.completed_at.isoformat() if self.completed_at else None,
         }
+
+
+class TextEmbedding(Base):
+    """
+    Cached embedding vector for one exact piece of text.
+
+    Shared infrastructure for Pasul 14 (internal link suggestions:
+    page-to-page topical similarity) and Pasul 17 (Fan-Out sub-query
+    coverage: query-to-passage similarity) of
+    docs/superpowers/plans/2026-09-30-next-steps.md -- built once here, per
+    the plan's explicit instruction not to duplicate it.
+
+    Keyed on (content_hash, model) rather than on a URL or query id: the
+    same passage of text embedded from two different call sites (a page's
+    body text for Pasul 14, a chunked passage for Pasul 17) must not be
+    paid for twice, and a page whose text hasn't changed keeps its cached
+    vector across re-crawls.
+    """
+    __tablename__ = "text_embeddings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content_hash = Column(String(64), nullable=False, index=True)   # sha256 hex of the exact text embedded
+    model = Column(String(100), nullable=False)
+    vector = Column(JSON, nullable=False)   # list[float]
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("content_hash", "model", name="uq_text_embeddings_hash_model"),
+    )
