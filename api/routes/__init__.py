@@ -52,6 +52,7 @@ from .snapshots import router as snapshots_router
 from .timeline import router as timeline_router
 from .js_visibility import router as js_visibility_router
 from .internal_links import router as internal_links_router
+from .citation_comparison import router as citation_comparison_router
 from app.modules.clusteriq.router import router as clusteriq_router
 from app.modules.serpiq.router import router as serpiq_router
 
