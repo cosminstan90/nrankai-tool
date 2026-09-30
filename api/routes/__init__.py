@@ -49,6 +49,7 @@ from .ai_visibility import router as ai_visibility_router
 from .draft_optimizer import router as draft_optimizer_router
 from .crawl import router as crawl_router
 from .snapshots import router as snapshots_router
+from .timeline import router as timeline_router
 from app.modules.clusteriq.router import router as clusteriq_router
 from app.modules.serpiq.router import router as serpiq_router
 

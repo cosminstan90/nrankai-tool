@@ -20231,6 +20231,48 @@
         ]
       }
     },
+    "/api/timeline": {
+      "get": {
+        "description": "Everything known about one URL, on one timeline.",
+        "operationId": "get_timeline_api_timeline_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "url",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Url",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Timeline",
+        "tags": [
+          "timeline"
+        ]
+      }
+    },
     "/api/tracking": {
       "get": {
         "description": "List all tracking projects.",
