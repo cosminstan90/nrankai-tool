@@ -13636,6 +13636,59 @@
         ]
       }
     },
+    "/api/fanout/sessions/{session_id}/coverage-gaps": {
+      "get": {
+        "description": "Which of this session's own generated sub-queries have no good answer\nanywhere on the target site. Requires the session to have a target_url\nand that site to have stored, scraped HTML (core/web_scraper.py) --\nwithout either, reports why rather than a confident-looking empty result.",
+        "operationId": "get_coverage_gaps_api_fanout_sessions__session_id__coverage_gaps_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_pages_to_embed",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Max Pages To Embed",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Coverage Gaps",
+        "tags": [
+          "fanout"
+        ]
+      }
+    },
     "/api/fanout/sessions/{session_id}/cross-reference": {
       "get": {
         "description": "Full cross-reference analysis for a fan-out session.\n\nCombines three analyses:\n  - citations_overlap   : overlap between fan-out sources and Citation Tracker\n  - content_gaps        : fan-out queries the target likely lacks content for\n  - retrieval_coverage  : how much of the retrieval surface the target covers\n                          (includes GEO Monitor query overlap if available)\n\nReturns null for any section whose prerequisites aren't met (e.g. no\nCitation Tracker configured for the target domain).",

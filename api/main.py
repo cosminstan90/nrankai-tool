@@ -46,7 +46,7 @@ for _k, _v in dotenv_values(_env_path).items():
 
 # Import database and models
 from api.models.database import init_db, get_db, Audit, AuditLog, AuditResult, AuditSummary, BenchmarkProject, ScheduledAudit, GeoMonitorProject, GeoMonitorScan, ContentBrief, CrossReferenceJob, AuditWeightConfig, ResultNote, UrlGuide, CostRecord, AsyncSessionLocal
-from api.routes import pages_router, audits_router, results_router, health_router, status_router, compare_router, dashboard_charts_router, audit_rerun_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router, meta_generator_router, query_suggestions_router, ai_visibility_router, draft_optimizer_router, clusteriq_router, serpiq_router, performance_router, crawl_router, snapshots_router, timeline_router, js_visibility_router, internal_links_router, citation_comparison_router
+from api.routes import pages_router, audits_router, results_router, health_router, status_router, compare_router, dashboard_charts_router, audit_rerun_router, summary_router, benchmarks_router, schedules_router, geo_monitor_router, content_briefs_router, pdf_reports_router, schema_gen_router, citation_tracker_router, portfolio_router, costs_router, gap_analysis_router, content_gaps_router, action_cards_router, templates_manager_router, tracking_router, cross_reference_router, settings_router, notes_router, keyword_research_router, gsc_router, ga4_router, ads_router, insights_router, llms_txt_router, guide_router, fanout_router, projects_router, entity_router, gsc_fanout_router, mention_seeding_router, bot_access_router, cocitation_router, answer_calibration_router, multilingual_router, content_iq_router, meta_generator_router, query_suggestions_router, ai_visibility_router, draft_optimizer_router, clusteriq_router, serpiq_router, performance_router, crawl_router, snapshots_router, timeline_router, js_visibility_router, internal_links_router, citation_comparison_router, fanout_coverage_router
 from api.middleware.auth import BasicAuthMiddleware
 from api.provider_registry import get_providers_for_ui, get_tier_presets
 from sqlalchemy import select, func, desc, case
@@ -466,6 +466,7 @@ app.include_router(timeline_router)
 app.include_router(js_visibility_router)
 app.include_router(internal_links_router)
 app.include_router(citation_comparison_router)
+app.include_router(fanout_coverage_router)
 app.include_router(clusteriq_router)
 app.include_router(serpiq_router)
 app.include_router(pages_router)
