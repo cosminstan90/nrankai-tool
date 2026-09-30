@@ -39,13 +39,28 @@ Din cele 9 lipsuri de mai jos, patru sunt **date pe care nu le ai**, două sunt
    with d: s.backup(d)
    ```
    Backup-urile se pun **în afara repo-ului** (`D:\Projects\_geo_tool_backups\`).
-   `api/data/` e în `.gitignore`.
+   `api/data/` e în `.gitignore`. **O migrație care schimbă schema pe care
+   `AsyncSessionLocal`/`sync_engine` o citește trebuie aplicată și pe
+   `analyzer.db` real** (nu doar testată pe o copie) — altfel modelul ORM cere
+   o coloană pe care fișierul real n-o are încă, și orice query pe tabela
+   respectivă pică cu 500 (văzut live la migrația `0020`).
+
+   **Fiecare sesiune are propria conexiune SQLite** (`api/models/_base.py`,
+   de la `StaticPool` la `NullPool`). SQLite are un singur scriitor: **fă
+   commit înainte de orice apel lent** (LLM, HTTP, crawl, `run_in_executor`) —
+   o scriere neconfirmată ținută deschisă peste un apel lent blochează alți
+   scriitori și, după `BUSY_TIMEOUT_S` (30s), pică cu "database is locked". O
+   sesiune care ține o scriere deschisă peste un apel lent peste 5s e logată
+   automat ca warning (vezi `_check_write_txn_duration` în `_base.py`) —
+   verifică `uvicorn.log` după orice flux nou care scrie și cheamă extern.
 
 4. **Testele sunt izolate** (`tests/conftest.py` → `GEO_TOOL_DB_PATH` pe un DB
    temporar). Nu scrie teste care presupun date reale în `analyzer.db`.
 
-5. **Migrații:** ultima e `0011`. Următoarea e `0012_*`. Generează cu Alembic,
-   nu scrie manual SQL în cod de aplicație.
+5. **Migrații:** vezi `migrations/versions/` pentru ultima (numărul crește,
+   nu-l ține minte aici). Generează cu Alembic, nu scrie manual SQL în cod de
+   aplicație. Testează up/down/up pe o copie făcută cu `.backup()` înainte de
+   a aplica pe `analyzer.db` real (vezi regula 3).
 
 6. **Apeluri externe** — mereu în `try/except` cu logging, conform `CLAUDE.md`.
    Dacă apelul costă bani, înregistrează costul (vezi `api/routes/costs.py` și
@@ -498,7 +513,11 @@ ClusterIQ, `1037` (inexistent) în keyword research, iar verificarea AI
 Overviews folosea implicit SUA. Sursa unică verificată e acum
 `core/dataforseo_locations.py`.
 
-**Rămas din punctul 8:** `backlinks/` și `on_page/` nefolosite încă.
+**`backlinks/` și `on_page/`: decis explicit, nu.** `backlinks/` cere abonament
+lunar separat, respins de utilizator. `on_page/` ar dubla ce există deja gratis
+sau deja plătit altfel: Lighthouse (Core Web Vitals, punctul 2) și parsing de
+conținut (axe-core, punctul 7, plus Screaming Frog pentru graful de linkuri,
+punctul 5).
 
 **Neexplicat:** o rulare a înregistrat `ing.ro` ca absent pentru „ING Romania";
 două reîncercări (una identică) au dat corect #1. Probabil variație a SERP-ului
@@ -549,19 +568,26 @@ publică trebuie exceptată explicit, ca `/api/health` și `/static/`. Vezi
 
 ## Ordinea recomandată
 
-| # | Task | Valoare | Efort | De ce în ordinea asta |
-|---|------|---------|-------|------------------------|
-| 1 | Istoric GSC | Mare | Mediu | Singurul unde amânarea pierde date definitiv |
-| 2 | Performanță (CWV) | Mare | Mic | Categorie întreagă lipsă, API-uri gratuite |
-| 3 | Indexare (URL Inspection) | Mare | Mic | Auth-ul există, e gratis și nefolosit |
-| 4 | AI Overviews + SERP | Mare | Mic-mediu | Contradicția centrală a unui tool GEO |
-| 5 | Schimbări de conținut | Medie | Mic-mediu | Infrastructura există deja pe jumătate |
-| 6 | Accesibilitate axe-core | Medie | Mediu | Repară o judecată neverificabilă cu pondere 0.08 |
-| 7 | Crawler cu linkuri | Mare | Mare | Cel mai mare efort; îmbunătățește auditele existente |
-| 8 | Livrare client | Mică | Mediu | Doar dacă iese din uz personal |
+| # | Task | Valoare | Efort | Stare | De ce în ordinea asta |
+|---|------|---------|-------|-------|------------------------|
+| 1 | Istoric GSC | Mare | Mediu | **Executat** (2026-09-04 + worker de arhivare 2026-09-30) | Singurul unde amânarea pierde date definitiv |
+| 2 | Performanță (CWV) | Mare | Mic | **Executat** (2026-09-04) | Categorie întreagă lipsă, API-uri gratuite |
+| 3 | Indexare (URL Inspection) | Mare | Mic | **Executat** (2026-09-04) | Auth-ul există, e gratis și nefolosit |
+| 4 | AI Overviews + SERP | Mare | Mic-mediu | **Executat** (2026-09-04 + poziții SERP 2026-09-29) | Contradicția centrală a unui tool GEO |
+| 5 | Schimbări de conținut | Medie | Mic-mediu | **Executat** (2026-09-09) | Infrastructura există deja pe jumătate |
+| 6 | Accesibilitate axe-core | Medie | Mediu | **Executat** (2026-09-29) | Repară o judecată neverificabilă cu pondere 0.08 |
+| 7 | Crawler cu linkuri | Mare | Mare | **Executat, rescopat** (2026-09-09, condus de Screaming Frog) | Cel mai mare efort; îmbunătățește auditele existente |
+| 8 | Livrare client | Mică | Mediu | Neînceput | Doar dacă iese din uz personal |
 
-Punctele 1-4 sunt toate **surse de date noi** și se pot face independent.
-Punctul 7 e singurul care cere planificare separată.
+Punctele 1-4 sunt toate **surse de date noi** și au fost făcute independent.
+Punctul 7 a fost singurul care a cerut planificare separată.
+
+Fiabilitatea infrastructurii (StaticPool → conexiune per sesiune, workeri de
+arhivare, backup, panou de sănătate) și pașii orientați spre rezultate
+SEO/GEO (conținut invizibil fără JS, oportunități din GSC, linkuri interne,
+decay, comparație cu paginile citate, sub-query-uri Fan-Out neacoperite,
+bucla de învățare) sunt tratate separat, în
+`docs/superpowers/plans/2026-09-30-next-steps.md`.
 
 ---
 
