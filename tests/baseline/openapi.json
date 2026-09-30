@@ -17052,6 +17052,48 @@
         ]
       }
     },
+    "/api/js-visibility/pages": {
+      "get": {
+        "description": "Every measured page for a site, worst (lowest text_visibility_ratio)\nfirst. Pages never measured (no sidecar yet -- run an audit first, or\nwait for the backfill step on a GEO_AUDIT/AI_OVERVIEW_OPTIMIZATION run)\nare not included here at all; there is no \"unmeasured\" placeholder row,\nsince a ranked list has nothing meaningful to rank an unmeasured page by.",
+        "operationId": "list_pages_api_js_visibility_pages_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "website",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Website",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Pages",
+        "tags": [
+          "js-visibility"
+        ]
+      }
+    },
     "/api/keyword-research/import": {
       "post": {
         "description": "Create a keyword session from pasted CSV/TSV data and run LLM analysis.",

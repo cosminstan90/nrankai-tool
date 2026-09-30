@@ -316,6 +316,34 @@ async def run_axe_backfill_step(audit_id: str, website: str, sitemap_url: str) -
     await log_message(audit_id, msg)
 
 
+async def run_js_visibility_backfill_step(audit_id: str, website: str, sitemap_url: str) -> None:
+    """
+    GEO_AUDIT / AI_OVERVIEW_OPTIMIZATION only: measure how much of each page's
+    content is invisible to AI crawlers (Pasul 12 of
+    docs/superpowers/plans/2026-09-30-next-steps.md). Needs no browser --
+    the page was already rendered by Selenium during scraping (or on a
+    previous audit of the same site); this only fetches the raw side. Never
+    fails the audit: unmeasured pages are reported to the model as "not
+    measured", which is honest, just less useful.
+    """
+    from core.js_visibility import backfill_js_visibility
+
+    html_dir = os.path.join(_safe_dir(website), "input_html")
+    await log_message(audit_id, "Measuring AI-crawler content visibility on pages not yet measured...")
+    try:
+        result = await backfill_js_visibility(html_dir, sitemap_url)
+    except Exception as exc:
+        await log_message(audit_id, f"JS-visibility measurement failed, continuing without it: {exc}", "WARNING")
+        return
+
+    msg = (f"JS-visibility: measured {result['measured']} page(s), {result['failed']} failed, "
+          f"{result['candidates']} needed measuring")
+    if result["skipped_over_cap"]:
+        msg += (f"; {result['skipped_over_cap']} left unmeasured by the JS_VISIBILITY_MAX_PAGES cap "
+               "and will be reported to the model as not measured")
+    await log_message(audit_id, msg)
+
+
 async def run_conversion_step(audit_id: str, website: str) -> bool:
     """
     Run the HTML to text conversion step.
@@ -797,6 +825,7 @@ async def start_audit_pipeline(
         await log_message(audit_id, f"Audit type: {audit_type}, Provider: {provider}")
         
         is_accessibility_audit = (audit_type or "").upper() == "ACCESSIBILITY_AUDIT"
+        is_geo_visibility_audit = (audit_type or "").upper() in ("GEO_AUDIT", "AI_OVERVIEW_OPTIMIZATION")
 
         # Step 1: Scraping
         if sitemap_url:
@@ -828,6 +857,13 @@ async def start_audit_pipeline(
                 await asyncio.wait_for(run_axe_backfill_step(audit_id, website, sitemap_url), timeout=3600)
             except asyncio.TimeoutError:
                 await log_message(audit_id, "axe-core measurement timed out; continuing with what was measured", "WARNING")
+
+        # Step 1c: AI-crawler JS-visibility for GEO/AI Overview audits
+        if sitemap_url and is_geo_visibility_audit:
+            try:
+                await asyncio.wait_for(run_js_visibility_backfill_step(audit_id, website, sitemap_url), timeout=1800)
+            except asyncio.TimeoutError:
+                await log_message(audit_id, "JS-visibility measurement timed out; continuing with what was measured", "WARNING")
 
         # Step 2: Conversion (only needed when sitemap scraping was done)
         if sitemap_url:

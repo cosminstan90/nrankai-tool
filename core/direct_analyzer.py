@@ -1038,6 +1038,23 @@ class DirectAnalyzer:
                         axe_summary = load_axe_results(html_path)
                     page_text = format_axe_facts_block(axe_summary) + "\n\n" + page_text
 
+                # JS-rendering visibility (Pasul 12 of
+                # docs/superpowers/plans/2026-09-30-next-steps.md): GPTBot,
+                # ClaudeBot and PerplexityBot fetch raw HTML and never execute
+                # JavaScript (see core/js_visibility.py's module docstring for
+                # the cited source) -- these two audit types are specifically
+                # about what AI systems can retrieve and cite, so a page whose
+                # content only exists after client-side rendering is exactly
+                # what they need to know about.
+                if self.question_type in ("GEO_AUDIT", "AI_OVERVIEW_OPTIMIZATION"):
+                    from core.js_visibility import format_js_visibility_facts_block, load_js_visibility_facts
+
+                    js_visibility_facts = None
+                    if self.html_dir:
+                        html_path = os.path.join(self.html_dir, os.path.splitext(filename)[0] + ".html")
+                        js_visibility_facts = load_js_visibility_facts(html_path)
+                    page_text = format_js_visibility_facts_block(js_visibility_facts) + "\n\n" + page_text
+
                 # Inject research context if available
                 if self.research_dir:
                     from perplexity_researcher import load_research_context
