@@ -4,12 +4,16 @@ Database engine, session, and Base for ORM models.
 Imported by domain model files to avoid circular imports.
 """
 
+import logging
 import os
+import time
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
+
+logger = logging.getLogger(__name__)
 
 # Database file location
 DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
@@ -71,6 +75,49 @@ def _enable_wal(dbapi_connection, connection_record):
 
 event.listen(engine.sync_engine, "connect", _enable_wal)
 event.listen(sync_engine, "connect", _enable_wal)
+
+# Warn when a session holds SQLite's write lock too long.
+#
+# Since NullPool (see above), a writer that finds the database locked waits
+# up to BUSY_TIMEOUT_S instead of losing data -- but a session that commits
+# an LLM call or a crawl step *before* its own write is a bug, not a fixed
+# hazard, and used to fail silently. This surfaces it as a log line instead
+# of waiting for someone to notice "database is locked" in production.
+#
+# conn.info is a per-Connection-checkout dict: with NullPool each session
+# gets its own DBAPI connection, so different sessions never share it. A
+# single long-lived session that commits several times (some worker loops
+# do) gets timed per write burst -- the entry is cleared on every commit or
+# rollback, whether or not it crossed the threshold.
+WRITE_TXN_WARN_S = 5.0
+_WRITE_STMT_KEYWORDS = ("INSERT", "UPDATE", "DELETE")
+
+
+def _mark_first_write(conn, cursor, statement, parameters, context, executemany):
+    if "_write_txn_started_at" in conn.info:
+        return
+    if statement.lstrip()[:6].upper() in _WRITE_STMT_KEYWORDS:
+        conn.info["_write_txn_started_at"] = time.monotonic()
+        conn.info["_write_txn_statement"] = statement.strip()[:120]
+
+
+def _check_write_txn_duration(conn):
+    started_at = conn.info.pop("_write_txn_started_at", None)
+    statement = conn.info.pop("_write_txn_statement", None)
+    if started_at is None:
+        return
+    duration = time.monotonic() - started_at
+    if duration > WRITE_TXN_WARN_S:
+        logger.warning(
+            "Write transaction held open for %.1fs (threshold %.1fs) -- "
+            "commit before slow work (LLM calls, HTTP, crawling). Statement: %s",
+            duration, WRITE_TXN_WARN_S, statement,
+        )
+
+
+event.listen(engine.sync_engine, "before_cursor_execute", _mark_first_write)
+event.listen(engine.sync_engine, "commit", _check_write_txn_duration)
+event.listen(engine.sync_engine, "rollback", _check_write_txn_duration)
 
 # Session factory
 AsyncSessionLocal = sessionmaker(
