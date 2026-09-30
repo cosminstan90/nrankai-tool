@@ -15902,6 +15902,65 @@
         ]
       }
     },
+    "/api/gsc/properties/{property_id}/decay": {
+      "get": {
+        "description": "Content decay per page. A page with fewer than 12 weeks of accumulated\ngsc_page_history reports insufficient_history rather than a\nconfident-looking \"no decay\" -- those are different claims.",
+        "operationId": "get_content_decay_api_gsc_properties__property_id__decay_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "property_id",
+            "required": true,
+            "schema": {
+              "title": "Property Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Limit to one page URL; omit for every page with enough history",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Limit to one page URL; omit for every page with enough history",
+              "title": "Page"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Content Decay",
+        "tags": [
+          "gsc"
+        ]
+      }
+    },
     "/api/gsc/properties/{property_id}/guides": {
       "get": {
         "description": "Return all completed page-optimize guides for this GSC property.",

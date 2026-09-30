@@ -58,6 +58,16 @@ def assign_verdict(page: dict) -> Tuple[str, str]:
     if st >= 65 and sf < 25:
         return "UPDATE", "Good scores but content is stale — refresh to maintain rankings."
 
+    # Rule 5b (Pasul 15 of docs/superpowers/plans/2026-09-30-next-steps.md): a
+    # page whose static scores look fine can still be measurably losing real
+    # traffic -- that must not read as a clean KEEP. content_decay is None
+    # when it was never measured (gsc_page_history too short, or GSC
+    # disconnected) -- only a real, measured decay changes the verdict here,
+    # matching the "missing != zero" rule the DELETE rule above already follows.
+    if page.get("content_decay") is True and st >= 65 and sf >= 40:
+        return "UPDATE", ("Static scores look strong, but real traffic is measurably decaying "
+                          "(gsc_page_history) -- refresh before rankings slip further.")
+
     # Rule 6: KEEP
     if st >= 65 and sf >= 40:
         return "KEEP", "Strong scores across all dimensions. Performing well."
