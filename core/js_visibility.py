@@ -270,6 +270,10 @@ async def backfill_js_visibility(html_dir: str, sitemap_url: str, max_pages: Opt
             except Exception as exc:
                 logger.warning("JS-visibility backfill failed for %s: %s", url, exc)
                 return False
+            # compare_visibility() itself is pure and has no url to attach --
+            # stamped on here so the recommendations UI can save a "fix this
+            # page" action against a real URL, not just the local filename.
+            facts["url"] = url
             write_js_visibility_facts(html_path, facts)
             return True
 

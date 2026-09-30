@@ -17,6 +17,7 @@ from .draft_optimizer import router as _draft_optimizer_router
 from .clusteriq_views import router as _clusteriq_router
 from .serpiq_views import router as _serpiq_router
 from .status_views import router as _status_router
+from .recommendations_views import router as _recommendations_router
 
 router = APIRouter()
 router.include_router(_dashboard_router)
@@ -33,3 +34,4 @@ router.include_router(_draft_optimizer_router)
 router.include_router(_clusteriq_router)
 router.include_router(_serpiq_router)
 router.include_router(_status_router)
+router.include_router(_recommendations_router)

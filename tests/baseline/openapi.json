@@ -5910,16 +5910,39 @@
     },
     "/api/action-cards": {
       "get": {
-        "description": "List action cards for an audit with optional filters.",
+        "description": "List action cards. audit_id is now optional (Pasul 18: audit_id is\nnullable, since pasii 12-17's recommendations aren't tied to one) --\nbut every existing caller (api/templates/action_cards.html) always\npassed it, so the historical per-audit behaviour is unchanged. `source`\nis the new filter the /recommendations page uses to list a specific\nengine's saved recommendations (including audit_id=None ones).",
         "operationId": "list_action_cards_api_action_cards_get",
         "parameters": [
           {
             "in": "query",
             "name": "audit_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "title": "Audit Id",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Audit Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source"
             }
           },
           {
@@ -22660,6 +22683,24 @@
           }
         },
         "summary": "Project Dashboard Page"
+      }
+    },
+    "/recommendations": {
+      "get": {
+        "operationId": "recommendations_page_recommendations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Recommendations Page"
       }
     },
     "/schedules": {

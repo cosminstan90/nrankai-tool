@@ -78,6 +78,14 @@ class TestSaveRecommendation(unittest.TestCase):
         second = self._save(source="decay")
         self.assertNotEqual(first.json()["id"], second.json()["id"])
 
+    def test_listing_by_source_with_no_audit_id_finds_the_card(self):
+        saved = self._save(source="fanout_gap")
+        body = self.client.get("/api/action-cards", params={"source": "fanout_gap"}).json()
+        ids = {c["id"] for c in body["cards"]}
+        self.assertIn(saved.json()["id"], ids)
+        for card in body["cards"]:
+            self.assertEqual(card["source"], "fanout_gap")
+
 
 class TestMarkApplied(unittest.TestCase):
     def setUp(self):
@@ -200,6 +208,75 @@ class TestLearningReport(unittest.TestCase):
     def test_a_source_below_the_sample_threshold_reports_insufficient_data(self):
         body = self.client.get("/api/action-cards/learning-report").json()
         self.assertEqual(body["sources"]["citation_gap"]["status"], "insufficient_data")
+
+
+class TestGscCtrRemeasurement(unittest.TestCase):
+    """
+    gsc_ctr (clicks / impressions over the window, not an average of daily
+    ratios) is the metric api/templates/recommendations.html attaches to a
+    saved weak-CTR opportunity -- confirms it's actually auto-remeasured,
+    not silently stuck at not_yet_remeasured forever.
+    """
+    def setUp(self):
+        from api.main import app
+        self.client = TestClient(app)
+        self.property_id = str(uuid.uuid4())
+        self.card_ids = []
+        url = "https://gsc-ctr-remeasure-test.example/page"
+        applied_at = datetime.now(timezone.utc) - timedelta(days=40)
+
+        async def seed():
+            async with AsyncSessionLocal() as db:
+                db.add(GscProperty(id=self.property_id, name="ctr-remeasure-test",
+                                    site_url="https://gsc-ctr-remeasure-test.example"))
+                await db.flush()
+                for i in range(5):
+                    card = ActionCard(
+                        id=str(uuid.uuid4()), audit_id=None, page_url=url,
+                        source="gsc_opportunity", status="completed", applied_at=applied_at,
+                        metric_baseline='{"metric": "gsc_ctr", "value": 0.01, "higher_is_better": true}',
+                        actions_json="[]", total_actions=0, completed_actions=0,
+                    )
+                    db.add(card)
+                    self.card_ids.append(card.id)
+                period_start = (datetime.now(timezone.utc) - timedelta(days=10)).date().isoformat()
+                # clicks/impressions = 10/100 = 0.10 -- well above the 0.01 baseline
+                db.add(GscPageHistory(
+                    property_id=self.property_id, page=url, clicks=10, impressions=100,
+                    ctr=0.1, position=5.0, period_start=period_start, period_end=period_start,
+                    source="api",
+                ))
+                await db.commit()
+
+        import asyncio
+        asyncio.run(seed())
+
+    def tearDown(self):
+        import asyncio
+
+        async def clean():
+            async with AsyncSessionLocal() as db:
+                for cid in self.card_ids:
+                    card = await db.get(ActionCard, cid)
+                    if card:
+                        await db.delete(card)
+                rows = (await db.execute(
+                    select(GscPageHistory).where(GscPageHistory.property_id == self.property_id)
+                )).scalars().all()
+                for r in rows:
+                    await db.delete(r)
+                prop = await db.get(GscProperty, self.property_id)
+                if prop:
+                    await db.delete(prop)
+                await db.commit()
+
+        asyncio.run(clean())
+
+    def test_gsc_ctr_is_remeasured_from_stored_history(self):
+        body = self.client.get("/api/action-cards/learning-report").json()
+        self.assertEqual(body["sources"]["gsc_opportunity"]["status"], "ok")
+        self.assertEqual(body["sources"]["gsc_opportunity"]["improved"], 5)
+        self.assertEqual(body["sources"]["gsc_opportunity"]["not_yet_remeasured"], 0)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ Pasul 12 of docs/superpowers/plans/2026-09-30-next-steps.md.
 core.js_visibility.backfill_js_visibility, with the sitemap fetch and the
 bot-UA HTTP fetch both mocked -- no real network, no real site touched.
 """
+import json
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -86,6 +87,28 @@ class TestBackfillJsVisibility(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(result["measured"], 0)
             self.assertEqual(result["failed"], 1)
+
+    async def test_the_stored_sidecar_carries_the_page_url(self):
+        """
+        compare_visibility() itself has no url to attach -- the recommendations
+        UI (Pasul 18) needs a real page_url to save a "fix this page" action
+        against, so backfill_js_visibility stamps it on before writing.
+        """
+        with self._tmp_html_dir() as html_dir:
+            url = "https://example.test/a"
+            path = self._write_html(html_dir, url)
+
+            async def _fake_fetch_as_bot(url, user_agent=None):
+                from core.js_visibility import BotFetchResult
+                return BotFetchResult(status_code=200, html="<html><body>" + "y" * 200 + "</body></html>")
+
+            with patch("core.web_scraper.fetch_sitemap_urls", return_value=[SitemapEntry(url=url)]), \
+                 patch("core.js_visibility.fetch_as_bot", AsyncMock(side_effect=_fake_fetch_as_bot)):
+                await backfill_js_visibility(str(html_dir), "https://example.test/sitemap.xml")
+
+            with open(raw_text_sidecar_path(str(path)), encoding="utf-8") as fh:
+                facts = json.load(fh)
+            self.assertEqual(facts["url"], url)
 
     class _tmp_html_dir:
         def __enter__(self):

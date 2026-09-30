@@ -1,0 +1,520 @@
+{% extends "base.html" %}
+
+{% block title %}Recommendations - Website LLM Analyzer{% endblock %}
+
+{% block content %}
+<div x-data="recsApp()" x-init="init()" class="space-y-6">
+    <div>
+        <h1 class="text-3xl font-bold text-gray-900">💡 Recommendations</h1>
+        <p class="text-gray-600 mt-1">Pasii 12-18: what to fix, where, and whether it worked afterwards.</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+        <template x-for="t in tabs" :key="t.id">
+            <button @click="tab = t.id; if (t.id === 'learning') loadLearning()" class="px-3 py-1.5 rounded-md text-sm font-medium"
+                    :class="tab === t.id ? 'bg-slate-700 text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border'">
+                <span x-text="t.icon"></span> <span x-text="t.label"></span>
+            </button>
+        </template>
+    </div>
+
+    <div x-show="saveNotice" x-text="saveNotice" class="bg-green-50 border border-green-200 text-green-800 rounded-lg px-4 py-2 text-sm"></div>
+
+    <!-- ============ JS VISIBILITY (Pasul 12) ============ -->
+    <div x-show="tab === 'js_visibility'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Website (as scraped, e.g. ing.ro)</label>
+                <input x-model="jsv.website" type="text" placeholder="example.com" class="border rounded-md px-3 py-1.5 text-sm w-64">
+            </div>
+            <button @click="loadJsVisibility()" class="px-4 py-1.5 rounded-md bg-slate-700 text-white text-sm font-medium">Load</button>
+        </div>
+        <div x-show="jsv.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="jsv.error" x-text="jsv.error" class="text-red-600 text-sm"></div>
+        <div x-show="jsv.data" class="bg-white rounded-lg shadow divide-y">
+            <div class="p-4 text-sm text-gray-500" x-text="jsv.data ? jsv.data.pages_measured + ' page(s) measured' : ''"></div>
+            <template x-for="p in (jsv.data ? jsv.data.pages : [])" :key="p.file">
+                <div class="p-4 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="font-medium text-gray-900 truncate" x-text="p.url || p.file"></div>
+                        <div class="text-sm text-gray-600">
+                            visibility ratio: <span class="font-mono" x-text="p.text_visibility_ratio ?? 'n/a'"></span>
+                            (<span x-text="p.raw_word_count"></span> / <span x-text="p.rendered_word_count"></span> words to a bot)
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1" x-show="p.missing_elements && p.missing_elements.length">
+                            Missing to bots: <span x-text="p.missing_elements.map(m => m.element).join(', ')"></span>
+                        </div>
+                        <div class="text-xs text-red-600 mt-1" x-show="p.bot_blocked_or_errored">Bot fetch blocked/errored: <span x-text="p.bot_fetch_error"></span></div>
+                    </div>
+                    <button @click="saveAction('js_visibility', p.url || p.file, jsvDescription(p), {metric:'js_visibility_ratio', value: p.text_visibility_ratio, higher_is_better: true})"
+                            class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                </div>
+            </template>
+            <div class="p-4 text-sm text-gray-500" x-show="jsv.data && jsv.data.pages.length === 0">No measured pages yet -- run an audit on this site first.</div>
+        </div>
+    </div>
+
+    <!-- ============ GSC OPPORTUNITIES (Pasul 13) ============ -->
+    <div x-show="tab === 'gsc_opportunity'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">GSC property</label>
+                <select x-model="gscOpp.propertyId" class="border rounded-md px-3 py-1.5 text-sm w-64">
+                    <option value="">— select —</option>
+                    <template x-for="p in properties" :key="p.id">
+                        <option :value="p.id" x-text="p.name + ' (' + p.site_url + ')'"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Window (days)</label>
+                <input x-model.number="gscOpp.days" type="number" min="7" max="90" class="border rounded-md px-3 py-1.5 text-sm w-24">
+            </div>
+            <div class="flex gap-2">
+                <button @click="loadGscOpportunities('weak-ctr')" class="px-4 py-1.5 rounded-md text-sm font-medium" :class="gscOpp.kind==='weak-ctr' ? 'bg-slate-700 text-white' : 'bg-white border text-gray-700'">Weak CTR</button>
+                <button @click="loadGscOpportunities('striking-distance')" class="px-4 py-1.5 rounded-md text-sm font-medium" :class="gscOpp.kind==='striking-distance' ? 'bg-slate-700 text-white' : 'bg-white border text-gray-700'">Striking distance</button>
+            </div>
+        </div>
+        <div x-show="gscOpp.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="gscOpp.error" x-text="gscOpp.error" class="text-red-600 text-sm"></div>
+        <div x-show="gscOpp.data && gscOpp.data.insufficient_data" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-4 py-2 text-sm">
+            Not enough history yet for a reliable CTR curve (needs at least 3 position buckets with data).
+        </div>
+        <div x-show="gscOpp.data" class="bg-white rounded-lg shadow divide-y">
+            <template x-for="o in (gscOpp.data ? gscOpp.data.opportunities : [])" :key="o.page + (o.query||'')">
+                <div class="p-4 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="font-medium text-gray-900 truncate" x-text="o.page"></div>
+                        <div class="text-sm text-gray-600" x-show="o.query">query: <span class="italic" x-text="o.query"></span></div>
+                        <div class="text-sm text-gray-600">
+                            position <span x-text="o.position"></span> · actual CTR <span x-text="(o.actual_ctr*100).toFixed(1)"></span>%
+                            <template x-if="o.expected_ctr != null"> · expected <span x-text="(o.expected_ctr*100).toFixed(1)"></span>%</template>
+                            <template x-if="o.estimated_extra_clicks != null"> · ~<span x-text="o.estimated_extra_clicks"></span> extra clicks/day est.</template>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1" x-text="o.assumption"></div>
+                    </div>
+                    <button @click="saveAction('gsc_opportunity', o.page, gscOppDescription(o), gscOppBaseline(o))"
+                            class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                </div>
+            </template>
+            <div class="p-4 text-sm text-gray-500" x-show="gscOpp.data && gscOpp.data.opportunities.length === 0 && !gscOpp.data.insufficient_data">No opportunities found in this window.</div>
+        </div>
+    </div>
+
+    <!-- ============ INTERNAL LINKS (Pasul 14) ============ -->
+    <div x-show="tab === 'internal_link'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Website (must have a Screaming Frog crawl imported)</label>
+                <input x-model="il.website" type="text" placeholder="example.com" class="border rounded-md px-3 py-1.5 text-sm w-64">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">GSC property (optional, for real-query anchors)</label>
+                <select x-model="il.propertyId" class="border rounded-md px-3 py-1.5 text-sm w-64">
+                    <option value="">— none —</option>
+                    <template x-for="p in properties" :key="p.id">
+                        <option :value="p.id" x-text="p.name"></option>
+                    </template>
+                </select>
+            </div>
+            <button @click="loadInternalLinks()" class="px-4 py-1.5 rounded-md bg-slate-700 text-white text-sm font-medium">Load</button>
+        </div>
+        <div x-show="il.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="il.error" x-text="il.error" class="text-red-600 text-sm"></div>
+        <div x-show="il.data" class="bg-white rounded-lg shadow divide-y">
+            <div class="p-4 text-sm text-gray-500" x-show="il.data" x-text="il.data ? il.data.targets_considered + ' target(s) considered, ' + il.data.pages_embedded + ' page(s) embedded' : ''"></div>
+            <template x-for="s in (il.data ? il.data.suggestions : [])" :key="s.target_url">
+                <div class="p-4 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="font-medium text-gray-900 truncate" x-text="s.target_url"></div>
+                        <div class="text-sm text-gray-600" x-text="s.reason"></div>
+                        <div class="text-sm text-gray-600">Sources: <span x-text="s.candidate_sources.map(c => c.url + ' (' + c.similarity + ')').join(', ')"></span></div>
+                        <div class="text-xs text-gray-400 mt-1" x-show="s.anchor">Suggested anchor (real GSC query): "<span x-text="s.anchor"></span>"</div>
+                    </div>
+                    <button @click="saveAction('internal_link', s.target_url, ilDescription(s), null)"
+                            class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                </div>
+            </template>
+            <div class="p-4 text-sm text-gray-500" x-show="il.data && il.data.suggestions.length === 0">No qualifying suggestions found.</div>
+        </div>
+    </div>
+
+    <!-- ============ CONTENT DECAY (Pasul 15) ============ -->
+    <div x-show="tab === 'decay'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">GSC property</label>
+                <select x-model="decay.propertyId" class="border rounded-md px-3 py-1.5 text-sm w-64">
+                    <option value="">— select —</option>
+                    <template x-for="p in properties" :key="p.id">
+                        <option :value="p.id" x-text="p.name"></option>
+                    </template>
+                </select>
+            </div>
+            <button @click="loadDecay()" class="px-4 py-1.5 rounded-md bg-slate-700 text-white text-sm font-medium">Load</button>
+        </div>
+        <div x-show="decay.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="decay.error" x-text="decay.error" class="text-red-600 text-sm"></div>
+        <div x-show="decay.data" class="bg-white rounded-lg shadow divide-y">
+            <template x-for="r in (decay.data ? decay.data.results.filter(r => r.is_decaying) : [])" :key="r.page">
+                <div class="p-4 flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                        <div class="font-medium text-gray-900 truncate" x-text="r.page"></div>
+                        <div class="text-sm text-gray-600">
+                            drop from peak: <span x-text="(r.drop_from_peak_pct*100).toFixed(0)"></span>% ·
+                            cause: <span x-text="r.cause || 'unclassified'"></span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1" x-show="r.seasonality_checked">Seasonality: <span x-text="r.seasonality_note"></span></div>
+                    </div>
+                    <button @click="saveAction('decay', r.page, decayDescription(r), null)"
+                            class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                </div>
+            </template>
+            <div class="p-4 text-sm text-gray-500" x-show="decay.data">
+                <span x-text="decay.data ? decay.data.pages_checked : 0"></span> page(s) checked ·
+                <span x-text="decay.data ? decay.data.results.filter(r => r.insufficient_history).length : 0"></span> with insufficient history (need 12+ weeks) ·
+                <span x-text="decay.data ? decay.data.results.filter(r => r.is_decaying).length : 0"></span> decaying
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ CITATION COMPARISON (Pasul 16) ============ -->
+    <div x-show="tab === 'citation_gap'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Citation tracker</label>
+                <select x-model="cc.trackerId" class="border rounded-md px-3 py-1.5 text-sm w-64">
+                    <option value="">— select —</option>
+                    <template x-for="t in trackers" :key="t.id">
+                        <option :value="t.id" x-text="t.name"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Query</label>
+                <input x-model="cc.query" type="text" placeholder="tracked query" class="border rounded-md px-3 py-1.5 text-sm w-64">
+            </div>
+            <label class="text-xs text-gray-600 flex items-center gap-1">
+                <input type="checkbox" x-model="cc.withRecommendation"> LLM recommendation (real, paid call)
+            </label>
+            <button @click="loadCitationComparison()" class="px-4 py-1.5 rounded-md bg-slate-700 text-white text-sm font-medium">Load</button>
+        </div>
+        <div x-show="cc.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="cc.error" x-text="cc.error" class="text-red-600 text-sm"></div>
+        <div x-show="cc.data && cc.data.note" x-text="cc.data ? cc.data.note : ''" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-4 py-2 text-sm"></div>
+        <div x-show="cc.data && cc.data.report" class="bg-white rounded-lg shadow p-4 space-y-3">
+            <div class="text-sm text-gray-500" x-text="cc.data && cc.data.report ? cc.data.report.sample_size + ' cited page(s) compared against ' + cc.data.own_url : ''"></div>
+            <div x-show="cc.data && cc.data.report && cc.data.report.recommendation" class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900" x-text="cc.data && cc.data.report ? cc.data.report.recommendation : ''"></div>
+            <template x-for="f in (cc.data && cc.data.report ? cc.data.report.findings : [])" :key="f.feature">
+                <div class="border rounded-lg p-3 flex items-start justify-between gap-4">
+                    <div class="text-sm text-gray-800" x-text="f.label"></div>
+                    <button @click="saveAction('citation_gap', cc.data.own_url, f.label, ccBaseline())"
+                            class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ============ FAN-OUT COVERAGE (Pasul 17) ============ -->
+    <div x-show="tab === 'fanout_gap'" class="space-y-4">
+        <div class="bg-white rounded-lg shadow p-4 flex flex-wrap items-end gap-3">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">Fan-Out session</label>
+                <select x-model="fo.sessionId" class="border rounded-md px-3 py-1.5 text-sm w-96">
+                    <option value="">— select —</option>
+                    <template x-for="s in sessions" :key="s.id">
+                        <option :value="s.id" x-text="(s.target_url || 'no target') + ' — ' + s.prompt.slice(0, 60)"></option>
+                    </template>
+                </select>
+            </div>
+            <button @click="loadFanoutCoverage()" class="px-4 py-1.5 rounded-md bg-slate-700 text-white text-sm font-medium">Load</button>
+        </div>
+        <div x-show="fo.loading" class="text-gray-500 text-sm">Loading…</div>
+        <div x-show="fo.error" x-text="fo.error" class="text-red-600 text-sm"></div>
+        <div x-show="fo.data && fo.data.note" x-text="fo.data ? fo.data.note : ''" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-4 py-2 text-sm"></div>
+        <div x-show="fo.data && fo.data.report" class="space-y-4">
+            <div class="bg-white rounded-lg shadow p-4 text-sm text-gray-600" x-show="fo.data && fo.data.report">
+                <span x-text="fo.data && fo.data.report ? fo.data.report.covered_count : 0"></span> covered · <span x-text="fo.data && fo.data.report ? fo.data.report.weak_count : 0"></span> weak · <span x-text="fo.data && fo.data.report ? fo.data.report.uncovered_count : 0"></span> uncovered
+                (<span x-text="fo.data ? fo.data.pages_embedded : 0"></span> page(s), <span x-text="fo.data ? fo.data.passages_embedded : 0"></span> passage(s) embedded)
+            </div>
+            <template x-for="(items, cluster) in (fo.data && fo.data.report ? fo.data.report.gaps_by_cluster : {})" :key="cluster">
+                <div class="bg-white rounded-lg shadow p-4">
+                    <h3 class="font-semibold text-gray-900 mb-2 capitalize" x-text="cluster.replace(/_/g, ' ')"></h3>
+                    <div class="divide-y">
+                        <template x-for="q in items" :key="q.query">
+                            <div class="py-2 flex items-start justify-between gap-4">
+                                <div class="min-w-0">
+                                    <div class="text-sm text-gray-800" x-text="q.query"></div>
+                                    <div class="text-xs text-gray-500">
+                                        status: <span x-text="q.status"></span>
+                                        <template x-if="q.similarity != null"> · closest similarity <span x-text="q.similarity"></span> (<span x-text="q.closest_url"></span>)</template>
+                                    </div>
+                                </div>
+                                <button @click="saveAction('fanout_gap', fo.data.target_url, foDescription(q), {metric:'fanout_similarity', value: q.similarity, higher_is_better: true})"
+                                        class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- ============ LEARNING LOOP (Pasul 18) ============ -->
+    <div x-show="tab === 'learning'" class="space-y-6">
+        <div class="flex justify-end">
+            <button @click="loadLearning()" class="px-4 py-1.5 rounded-md bg-white border text-sm font-medium text-gray-700 hover:bg-gray-50">↻ Refresh</button>
+        </div>
+
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-semibold text-gray-900 mb-1">Learning report</h2>
+            <p class="text-xs text-gray-500 mb-4">Per source: whether the metric moved the right way <em>after</em> an action was applied 28+ days ago. Never a claim of "because of" -- and fewer than 5 eligible actions reports insufficient_data rather than a misleadingly confident percentage.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <template x-for="(r, source) in learning.report" :key="source">
+                    <div class="border rounded-lg p-3">
+                        <div class="font-medium text-gray-900 capitalize" x-text="source.replace(/_/g, ' ')"></div>
+                        <template x-if="r.status === 'insufficient_data'">
+                            <div class="text-xs text-gray-500 mt-1">Not enough data yet (<span x-text="r.eligible_count"></span>/<span x-text="r.min_sample_required"></span> eligible actions applied 28+ days ago)</div>
+                        </template>
+                        <template x-if="r.status === 'ok'">
+                            <div class="text-sm text-gray-700 mt-1">
+                                ✅ <span x-text="r.improved"></span> improved · ⚠️ <span x-text="r.worse"></span> worse · ➖ <span x-text="r.unchanged"></span> unchanged
+                                <span class="text-xs text-gray-400 block" x-show="r.not_yet_remeasured">(<span x-text="r.not_yet_remeasured"></span> not yet re-measured)</span>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <div class="text-sm text-gray-500" x-show="!Object.keys(learning.report).length">No applied actions yet.</div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow">
+            <h2 class="text-lg font-semibold text-gray-900 p-6 pb-0">Saved recommendations</h2>
+            <div class="divide-y">
+                <template x-for="c in learning.cards" :key="c.id">
+                    <div class="p-4 flex items-start justify-between gap-4">
+                        <div class="min-w-0">
+                            <div class="text-xs font-medium text-slate-500 uppercase" x-text="c.source"></div>
+                            <div class="font-medium text-gray-900 truncate" x-text="c.page_url"></div>
+                            <div class="text-sm text-gray-600" x-text="(c.actions[0] && c.actions[0].text) || ''"></div>
+                            <div class="text-xs text-gray-400 mt-1">
+                                <template x-if="c.applied_at">Applied <span x-text="relTime(c.applied_at)"></span></template>
+                                <template x-if="!c.applied_at">Saved <span x-text="relTime(c.created_at)"></span>, not yet applied</template>
+                            </div>
+                        </div>
+                        <button x-show="!c.applied_at" @click="applyAction(c.id)" class="shrink-0 px-3 py-1 rounded-md bg-slate-700 text-white text-xs font-medium">✓ Mark applied</button>
+                    </div>
+                </template>
+                <div class="p-4 text-sm text-gray-500" x-show="!learning.cards.length">No saved recommendations yet -- use the tabs above to save one.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function recsApp() {
+    return {
+        tab: 'js_visibility',
+        tabs: [
+            {id: 'js_visibility', icon: '🤖', label: 'JS Visibility'},
+            {id: 'gsc_opportunity', icon: '📈', label: 'GSC Opportunities'},
+            {id: 'internal_link', icon: '🔗', label: 'Internal Links'},
+            {id: 'decay', icon: '📉', label: 'Content Decay'},
+            {id: 'citation_gap', icon: '🔎', label: 'Citation Comparison'},
+            {id: 'fanout_gap', icon: '⚡', label: 'Fan-Out Coverage'},
+            {id: 'learning', icon: '🎯', label: 'Learning Loop'},
+        ],
+        properties: [], trackers: [], sessions: [],
+        saveNotice: null,
+
+        jsv: {website: '', loading: false, error: null, data: null},
+        gscOpp: {propertyId: '', days: 28, kind: 'weak-ctr', loading: false, error: null, data: null},
+        il: {website: '', propertyId: '', loading: false, error: null, data: null},
+        decay: {propertyId: '', loading: false, error: null, data: null},
+        cc: {trackerId: '', query: '', withRecommendation: false, loading: false, error: null, data: null},
+        fo: {sessionId: '', loading: false, error: null, data: null},
+        learning: {report: {}, cards: []},
+
+        async init() {
+            try {
+                this.properties = await (await fetch('/api/gsc/properties')).json();
+            } catch (e) { this.properties = []; }
+            try {
+                const t = await (await fetch('/api/citations/trackers')).json();
+                this.trackers = t.trackers || [];
+            } catch (e) { this.trackers = []; }
+            try {
+                const s = await (await fetch('/api/fanout/sessions?limit=100')).json();
+                this.sessions = s.sessions || [];
+            } catch (e) { this.sessions = []; }
+            await this.loadLearning();
+        },
+
+        async loadJsVisibility() {
+            if (!this.jsv.website) return;
+            this.jsv.loading = true; this.jsv.error = null; this.jsv.data = null;
+            try {
+                const res = await fetch('/api/js-visibility/pages?website=' + encodeURIComponent(this.jsv.website));
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.jsv.data = await res.json();
+            } catch (e) { this.jsv.error = 'Failed: ' + e.message; }
+            finally { this.jsv.loading = false; }
+        },
+        jsvDescription(p) {
+            const ratio = p.text_visibility_ratio;
+            const pct = ratio != null ? Math.round((1 - ratio) * 100) : null;
+            const missing = (p.missing_elements || []).map(m => m.element).join(', ');
+            return `Fix AI-crawler visibility${pct != null ? ' (~' + pct + '% of content invisible to bots)' : ''}${missing ? ': missing ' + missing : ''}`;
+        },
+
+        async loadGscOpportunities(kind) {
+            this.gscOpp.kind = kind;
+            if (!this.gscOpp.propertyId) return;
+            this.gscOpp.loading = true; this.gscOpp.error = null; this.gscOpp.data = null;
+            try {
+                const res = await fetch(`/api/gsc/properties/${this.gscOpp.propertyId}/opportunities/${kind}?days=${this.gscOpp.days}`);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.gscOpp.data = await res.json();
+            } catch (e) { this.gscOpp.error = 'Failed: ' + e.message; }
+            finally { this.gscOpp.loading = false; }
+        },
+        gscOppDescription(o) {
+            if (this.gscOpp.kind === 'striking-distance') {
+                return `Push "${o.query}" from position ${o.position} toward the top 3${o.estimated_extra_clicks != null ? ' (~' + o.estimated_extra_clicks + ' extra clicks/day est.)' : ''}`;
+            }
+            return `Improve CTR at position ${o.position} (${(o.actual_ctr*100).toFixed(1)}% actual${o.expected_ctr != null ? ' vs ' + (o.expected_ctr*100).toFixed(1) + '% expected' : ''})`;
+        },
+        gscOppBaseline(o) {
+            if (this.gscOpp.kind === 'striking-distance') {
+                return {metric: 'gsc_position', value: o.position, higher_is_better: false};
+            }
+            return {metric: 'gsc_ctr', value: o.actual_ctr, higher_is_better: true};
+        },
+
+        async loadInternalLinks() {
+            if (!this.il.website) return;
+            this.il.loading = true; this.il.error = null; this.il.data = null;
+            try {
+                const latest = await fetch(`/api/crawl/site/${encodeURIComponent(this.il.website)}/latest`);
+                if (!latest.ok) throw new Error('No Screaming Frog crawl imported for this site yet');
+                const crawl = await latest.json();
+                let url = `/api/internal-links/suggestions?crawl_id=${crawl.id}`;
+                if (this.il.propertyId) url += `&property_id=${this.il.propertyId}`;
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.il.data = await res.json();
+            } catch (e) { this.il.error = 'Failed: ' + e.message; }
+            finally { this.il.loading = false; }
+        },
+        ilDescription(s) {
+            const sources = s.candidate_sources.slice(0, 3).map(c => c.url).join(', ');
+            return `Add internal link(s) to ${s.target_url} from: ${sources}${s.anchor ? ' (suggested anchor: "' + s.anchor + '")' : ''}`;
+        },
+
+        async loadDecay() {
+            if (!this.decay.propertyId) return;
+            this.decay.loading = true; this.decay.error = null; this.decay.data = null;
+            try {
+                const res = await fetch(`/api/gsc/properties/${this.decay.propertyId}/decay`);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.decay.data = await res.json();
+            } catch (e) { this.decay.error = 'Failed: ' + e.message; }
+            finally { this.decay.loading = false; }
+        },
+        decayDescription(r) {
+            return `Refresh/update this page -- content decay detected (${(r.drop_from_peak_pct*100).toFixed(0)}% drop from peak${r.cause ? ', likely cause: ' + r.cause : ''})`;
+        },
+
+        async loadCitationComparison() {
+            if (!this.cc.trackerId || !this.cc.query) return;
+            this.cc.loading = true; this.cc.error = null; this.cc.data = null;
+            try {
+                let url = `/api/citations/trackers/${this.cc.trackerId}/citation-comparison?query=${encodeURIComponent(this.cc.query)}`;
+                if (this.cc.withRecommendation) url += '&with_recommendation=true';
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.cc.data = await res.json();
+            } catch (e) { this.cc.error = 'Failed: ' + e.message; }
+            finally { this.cc.loading = false; }
+        },
+        ccBaseline() {
+            const t = this.trackers.find(t => t.id === this.cc.trackerId);
+            if (!t || t.latest_citation_rate == null) return null;
+            return {metric: 'citation_rate', value: t.latest_citation_rate, higher_is_better: true};
+        },
+
+        async loadFanoutCoverage() {
+            if (!this.fo.sessionId) return;
+            this.fo.loading = true; this.fo.error = null; this.fo.data = null;
+            try {
+                const res = await fetch(`/api/fanout/sessions/${this.fo.sessionId}/coverage-gaps`);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.fo.data = await res.json();
+            } catch (e) { this.fo.error = 'Failed: ' + e.message; }
+            finally { this.fo.loading = false; }
+        },
+        foDescription(q) {
+            return `Add content answering: "${q.query}"${q.similarity != null ? ' (closest existing similarity ' + q.similarity + ')' : ' (nothing on-site matches at all)'}`;
+        },
+
+        async saveAction(source, pageUrl, description, metricBaseline) {
+            if (!pageUrl) return;
+            try {
+                const body = {source, page_url: pageUrl, description, metric_baseline: metricBaseline || null};
+                const res = await fetch('/api/action-cards/from-recommendation', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+                });
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                this.saveNotice = '✅ Saved as an action card.';
+                setTimeout(() => this.saveNotice = null, 3000);
+                if (this.tab === 'learning') await this.loadLearning();
+            } catch (e) {
+                this.saveNotice = '❌ Could not save: ' + e.message;
+            }
+        },
+
+        async applyAction(cardId) {
+            try {
+                await fetch(`/api/action-cards/${cardId}/apply`, {method: 'PATCH'});
+                await this.loadLearning();
+            } catch (e) { this.saveNotice = '❌ Could not mark applied: ' + e.message; }
+        },
+
+        async loadLearning() {
+            try {
+                const rep = await (await fetch('/api/action-cards/learning-report')).json();
+                this.learning.report = rep.sources || {};
+            } catch (e) { this.learning.report = {}; }
+
+            const sources = ['js_visibility', 'gsc_opportunity', 'internal_link', 'decay', 'citation_gap', 'fanout_gap'];
+            try {
+                const results = await Promise.all(sources.map(s =>
+                    fetch(`/api/action-cards?source=${s}`).then(r => r.ok ? r.json() : {cards: []})
+                ));
+                this.learning.cards = results.flatMap(r => r.cards || [])
+                    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            } catch (e) { this.learning.cards = []; }
+        },
+
+        relTime(iso) {
+            if (!iso) return '';
+            // The API always writes UTC, but SQLite hands datetimes back
+            // naive -- isoformat() then has no 'Z'/offset, and `new Date()`
+            // on a bare "YYYY-MM-DDTHH:MM:SS" string parses it as the
+            // BROWSER's local time, not UTC. A naive string here is always
+            // UTC, so force it explicitly rather than showing "3h ago" for
+            // something that just happened.
+            const iso_utc = /[Z+]|-\d\d:\d\d$/.test(iso) ? iso : iso + 'Z';
+            const d = new Date(iso_utc);
+            const diffMin = Math.round((Date.now() - d.getTime()) / 60000);
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return diffMin + 'm ago';
+            const diffH = Math.round(diffMin / 60);
+            if (diffH < 24) return diffH + 'h ago';
+            return Math.round(diffH / 24) + 'd ago';
+        },
+    };
+}
+</script>
+{% endblock %}

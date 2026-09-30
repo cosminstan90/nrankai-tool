@@ -128,6 +128,7 @@ RECOMMENDATION_SOURCES = {
 _GSC_AUTO_REMEASURED_METRICS = {
     "gsc_clicks": True,      # higher_is_better
     "gsc_position": False,   # lower position number is better
+    "gsc_ctr": True,         # clicks / impressions over the window, not an average of daily ratios
 }
 
 
@@ -637,29 +638,39 @@ async def generate_action_cards(
 
 @router.get("")
 async def list_action_cards(
-    audit_id: str,
+    audit_id: Optional[str] = None,
+    source: Optional[str] = None,
     status: Optional[str] = None,
     priority: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """List action cards for an audit with optional filters."""
-    
-    query = select(ActionCard).where(ActionCard.audit_id == audit_id)
-    
+    """
+    List action cards. audit_id is now optional (Pasul 18: audit_id is
+    nullable, since pasii 12-17's recommendations aren't tied to one) --
+    but every existing caller (api/templates/action_cards.html) always
+    passed it, so the historical per-audit behaviour is unchanged. `source`
+    is the new filter the /recommendations page uses to list a specific
+    engine's saved recommendations (including audit_id=None ones).
+    """
+    query = select(ActionCard)
+
+    if audit_id:
+        query = query.where(ActionCard.audit_id == audit_id)
+    if source:
+        query = query.where(ActionCard.source == source)
     if status:
         query = query.where(ActionCard.status == status)
-    
     if priority:
         query = query.where(ActionCard.priority == priority)
-    
+
     query = query.order_by(
         ActionCard.priority.desc(),
-        ActionCard.current_score.asc()
+        ActionCard.created_at.desc()
     )
-    
+
     result = await db.execute(query)
     cards = result.scalars().all()
-    
+
     return {
         "cards": [card.to_dict() for card in cards],
         "total": len(cards)
@@ -769,6 +780,9 @@ async def _current_gsc_value(db: AsyncSession, page_url: str, metric: str) -> Op
         return None
     if metric == "gsc_clicks":
         return sum(r.clicks for r in rows) / len(rows)
+    if metric == "gsc_ctr":
+        total_impressions = sum(r.impressions for r in rows)
+        return (sum(r.clicks for r in rows) / total_impressions) if total_impressions else None
     positions = [r.position for r in rows if r.position is not None]
     return sum(positions) / len(positions) if positions else None
 
