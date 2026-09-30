@@ -1,0 +1,22 @@
+# Pasul 11 of docs/superpowers/plans/2026-09-30-next-steps.md
+#
+# raw_axe.json is the real axe-core measurement from tests/fixtures/axe/
+# ing_persoane_fizice.json (also used by tests/test_axe_injection.py), which
+# has exactly one WCAG success-criterion failure: insufficient contrast on a
+# #ff6200-on-white button. scripts/run_eval.py summarizes it and writes the
+# sidecar the real accessibility pipeline reads (core/axe_runner.py), so this
+# fixture exercises the actual fact-injection path, not a hand-written stand-in.
+
+audit_type: ACCESSIBILITY_AUDIT
+website: null
+
+description: >
+  A button with measured insufficient color contrast (#ff6200 text/background
+  combination). The prompt itself admits it "cannot evaluate computed color
+  contrast values" -- axe-core can, and the facts block is supposed to carry
+  that measurement into the model's context.
+
+issues:
+  - id: contrast_violation
+    description: "The #ff6200 button fails a WCAG contrast success criterion"
+    keywords: ["ff6200", "contrast", "kontrast"]

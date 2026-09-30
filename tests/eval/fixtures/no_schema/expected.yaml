@@ -1,0 +1,33 @@
+# Pasul 11 of docs/superpowers/plans/2026-09-30-next-steps.md
+#
+# TECHNICAL_SEO reads JSON-LD structured data from the ORIGINAL page.html
+# (core/technical_facts.py:extract_structured_data_types), since
+# html2llm_converter strips <script> tags before page.txt is produced. This
+# page.html has zero <script type="application/ld+json"> blocks, so the
+# facts block injected ahead of the page text should say so explicitly.
+#
+# website is left null on purpose: DirectAnalyzer only fetches robots.txt/
+# llms.txt facts when a real website is given, and a fixture has no real
+# site to fetch from. The facts block degrades to "could not be checked"
+# for those two facts, which is the correct, honest behaviour being relied
+# on here -- this fixture only tests the schema-detection axis.
+
+audit_type: TECHNICAL_SEO
+website: null
+
+description: >
+  An otherwise reasonable page (title, meta description, headings, body
+  content) with zero JSON-LD anywhere -- FinancialProduct/Product schema
+  would be a natural fit here and is entirely absent.
+
+issues:
+  - id: missing_schema
+    description: "No structured data (JSON-LD) detected anywhere on the page"
+    keywords:
+      - "no schema"
+      - "no structured data"
+      - "missing schema"
+      - "lacks structured data"
+      - "structured data: none"
+      - "json-ld"
+      - "no json-ld"

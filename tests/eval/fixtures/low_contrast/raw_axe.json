@@ -1,0 +1,1157 @@
+{
+ "incomplete": [
+  {
+   "id": "aria-hidden-focus",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 1
+  }
+ ],
+ "testEngine": {
+  "name": "axe-core",
+  "version": "4.13.0"
+ },
+ "timestamp": "2026-09-29T20:15:36.126Z",
+ "url": "https://ing.ro/persoane-fizice",
+ "violations": [
+  {
+   "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=axeAPI",
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": [
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ff6200",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ffffff",
+        "fontSize": "10.5pt (14px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<a class=\"nav-link bg-orange\" href=\"https://homebank.ro/hb/hb\">\n            <span class=\"title\">Home'Bank</span>\n        </a>",
+         "target": [
+          ".bg-orange.nav-link[href=\"https://homebank.ro/hb/hb\"]"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<span class=\"title\">Home'Bank</span>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      ".bg-orange.nav-link[href=\"https://homebank.ro/hb/hb\"] > .title"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ffffff",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ff6200",
+        "fontSize": "16.5pt (22px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<body class=\"persoane-fizice home  \n\n\n\" style=\"opacity: 1;\">",
+         "target": [
+          "body"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<h3 class=\"product-title\">Pe scurt, cum îți poți actualiza datele?</h3>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#slick-slide00 > .icon-box-item-image > .product-title"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ffffff",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ff6200",
+        "fontSize": "16.5pt (22px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<body class=\"persoane-fizice home  \n\n\n\" style=\"opacity: 1;\">",
+         "target": [
+          "body"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<h3 class=\"product-title\">Cum emit un card?</h3>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#slick-slide01 > .icon-box-item-image > .product-title"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ffffff",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ff6200",
+        "fontSize": "16.5pt (22px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<body class=\"persoane-fizice home  \n\n\n\" style=\"opacity: 1;\">",
+         "target": [
+          "body"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 16.5pt (22px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<h3 class=\"product-title\">Ai uitat parola? O resetezi din Home’Bank.</h3>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#slick-slide02 > .icon-box-item-image > .product-title"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ff6200",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ffffff",
+        "fontSize": "12.0pt (16px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<button type=\"button\" id=\"backToTop\" class=\"back-to-top btn-pill bg-orange\">Înapoi sus</button>",
+         "target": [
+          "#backToTop"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<button type=\"button\" id=\"backToTop\" class=\"back-to-top btn-pill bg-orange\">Înapoi sus</button>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#backToTop"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ffffff",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ff6200",
+        "fontSize": "9.8pt (13.008px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<button id=\"onetrust-pc-btn-handler\" aria-label=\"Setări cookie-uri, Deschide dialogul din centrul preferințelor\" aria-haspopup=\"dialog\">Setări cookie-uri</button>",
+         "target": [
+          "#onetrust-pc-btn-handler"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ff6200, background color: #ffffff, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<button id=\"onetrust-pc-btn-handler\" aria-label=\"Setări cookie-uri, Deschide dialogul din centrul preferințelor\" aria-haspopup=\"dialog\">Setări cookie-uri</button>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#onetrust-pc-btn-handler"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ff6200",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ffffff",
+        "fontSize": "9.8pt (13.008px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<button id=\"onetrust-reject-all-handler\">Respinge toate</button>",
+         "target": [
+          "#onetrust-reject-all-handler"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<button id=\"onetrust-reject-all-handler\">Respinge toate</button>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#onetrust-reject-all-handler"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "bgColor": "#ff6200",
+        "contrastRatio": 3,
+        "expectedContrastRatio": "4.5:1",
+        "fgColor": "#ffffff",
+        "fontSize": "9.8pt (13.008px)",
+        "fontWeight": "normal",
+        "messageKey": null
+       },
+       "id": "color-contrast",
+       "impact": "serious",
+       "message": "Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+       "relatedNodes": [
+        {
+         "html": "<button id=\"onetrust-accept-btn-handler\">✓ Acceptă toate</button>",
+         "target": [
+          "#onetrust-accept-btn-handler"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 3 (foreground color: #ffffff, background color: #ff6200, font size: 9.8pt (13.008px), font weight: normal). Expected contrast ratio of 4.5:1",
+     "html": "<button id=\"onetrust-accept-btn-handler\">✓ Acceptă toate</button>",
+     "impact": "serious",
+     "none": [],
+     "target": [
+      "#onetrust-accept-btn-handler"
+     ]
+    }
+   ],
+   "tags": [
+    "cat.color",
+    "wcag2aa",
+    "wcag143",
+    "TTv5",
+    "TT13.c",
+    "EN-301-549",
+    "EN-9.1.4.3",
+    "ACT",
+    "RGAAv4",
+    "RGAA-3.2.1"
+   ]
+  },
+  {
+   "description": "Ensure the order of headings is semantically correct",
+   "help": "Heading levels should only increase by one",
+   "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/heading-order?application=axeAPI",
+   "id": "heading-order",
+   "impact": "moderate",
+   "nodes": [
+    {
+     "all": [],
+     "any": [
+      {
+       "data": null,
+       "id": "heading-order",
+       "impact": "moderate",
+       "message": "Heading order invalid",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Heading order invalid",
+     "html": "<h4>Deschide-ți cont 100% online prin aplicația ING Home’Bank.</h4>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".flex-center-v > h4"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": null,
+       "id": "heading-order",
+       "impact": "moderate",
+       "message": "Heading order invalid",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Heading order invalid",
+     "html": "<h4 class=\"footer-column-heading\">\nDespre noi    </h4>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".footer-column:nth-child(1) > .footer-column-heading"
+     ]
+    }
+   ],
+   "tags": [
+    "cat.semantics",
+    "best-practice"
+   ]
+  },
+  {
+   "description": "Ensure that every form element has a visible label and is not solely labeled using hidden labels, or the title or aria-describedby attributes",
+   "help": "Form elements should have a visible label",
+   "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/label-title-only?application=axeAPI",
+   "id": "label-title-only",
+   "impact": "serious",
+   "nodes": [
+    {
+     "all": [],
+     "any": [],
+     "failureSummary": "Fix all of the following:\n  Only title used to generate label for form element",
+     "html": "<input type=\"search\" name=\"search-input\" autocomplete=\"off\" class=\"ing-search-input__field a8n-search-input\" title=\"Scurtătură: Cmd+K (Mac) sau Ctrl+K (Windows/Linux)\" data-testid=\"search-input-field\" placeholder=\"Caută\">",
+     "impact": "serious",
+     "none": [
+      {
+       "data": null,
+       "id": "title-only",
+       "impact": "serious",
+       "message": "Only title used to generate label for form element",
+       "relatedNodes": []
+      }
+     ],
+     "target": [
+      ".search-box-container > ing-search-input > .ing-search-input[role=\"region\"][data-testid=\"search-input\"] > .ing-search-input__container.a8n-search-input-container[role=\"group\"] > .ing-search-input__wrapper[role=\"search\"] > input"
+     ]
+    }
+   ],
+   "tags": [
+    "cat.forms",
+    "best-practice"
+   ]
+  },
+  {
+   "description": "Ensure landmarks are unique",
+   "help": "Landmarks should have a unique role or role/label/title (i.e. accessible name) combination",
+   "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/landmark-unique?application=axeAPI",
+   "id": "landmark-unique",
+   "impact": "moderate",
+   "nodes": [
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "accessibleText": null,
+        "role": "navigation"
+       },
+       "id": "landmark-is-unique",
+       "impact": "moderate",
+       "message": "The landmark must have a unique aria-label, aria-labelledby, or title to make landmarks distinguishable",
+       "relatedNodes": [
+        {
+         "html": "<nav class=\"internal-link-navigation\">",
+         "target": [
+          ".secondary-navigation-wrapper > .internal-link-navigation-wrapper > .internal-link-navigation"
+         ]
+        },
+        {
+         "html": "<nav class=\"navbar navbar-main\">",
+         "target": [
+          ".navbar-main"
+         ]
+        },
+        {
+         "html": "<nav class=\"footer-nav contact-nav\">",
+         "target": [
+          ".footer-column:nth-child(1) > .footer-nav.contact-nav"
+         ]
+        },
+        {
+         "html": "<nav class=\"footer-nav contact-nav\">",
+         "target": [
+          ".footer-column:nth-child(2) > .footer-nav.contact-nav"
+         ]
+        },
+        {
+         "html": "<nav class=\"footer-nav contact-nav\">",
+         "target": [
+          ".footer-column:nth-child(3) > .footer-nav.contact-nav"
+         ]
+        },
+        {
+         "html": "<nav class=\"bottom-navigation\">",
+         "target": [
+          ".bottom-navigation"
+         ]
+        }
+       ]
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  The landmark must have a unique aria-label, aria-labelledby, or title to make landmarks distinguishable",
+     "html": "<nav class=\"internal-link-navigation\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "header > .internal-link-navigation-wrapper > .internal-link-navigation"
+     ]
+    }
+   ],
+   "tags": [
+    "cat.semantics",
+    "best-practice"
+   ]
+  },
+  {
+   "description": "Ensure all page content is contained by landmarks",
+   "help": "All page content should be contained by landmarks",
+   "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/region?application=axeAPI",
+   "id": "region",
+   "impact": "moderate",
+   "nodes": [
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h1>\nAdu-ți prietenii și primești până la 2.000 de lei.                </h1>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "h1"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<p style=\"font-size: 2rem;line-height: 1.2;margin: 0;\">Hei, psssst! Acum e cel mai bun moment să vii la ING:</p>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".description > p"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div>\n                    <a href=\"/lp/cont-bancar-online\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"btn-blob trk_btn-blob trk_hero-link\">\n                            Vezi detalii\n                    </a>\n                </div>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".hero-pop-content > div:nth-child(3)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h2 class=\"ing-heading ing-heading--h2\" data-heading-id=\"hero-title\" style=\"text-align: center; padding-left: 0px; padding-right: 0px; padding-top: 48px; padding-bottom: 48px; box-sizing: border-box;\">\nDescoperă ce poți face cu ING</h2>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-heading--h2"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nDobânzi reduse la credite și premii la asigurări.    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(2) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nInvestiții? Da, poți! Cu&nbsp;0&nbsp;comisioane&nbsp;până&nbsp;la finalul&nbsp;anului.    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(3) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nLiber să economisești și să investești în același timp    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(4) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nLiber să cutreieri lumea și să primești până la 300 lei    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(5) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nLiber să vezi ce pachet ți se potrivește.    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(6) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nLiber să tot fii ambițios cu afacerea ta.    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(7) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nCopilul tău are între 10 și 18 ani? Lasă-l pe cont propriu!    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(8) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h3 class=\"ing-card__title ing-heading ing-heading--h3\">\nPlăteşte instant prin RoPay, cu 0 comisioane.    </h3>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".ing-card.ing-card--elevated.ing-card--align-bottom-left:nth-child(9) > .ing-card__inner > .ing-card__content > .ing-card__title.ing-heading--h3.ing-heading"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"item\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".item-row > .item:nth-child(1)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"rating\">4,8</div>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".rating"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h2 style=\"text-align: center;\">Curs valutar - Persoane fizice</h2>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".gray-bg > h2"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div style=\"display: flex; align-items: center; column-gap: 15px;\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".tag-list > div:nth-child(1)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div style=\"display: flex; align-items: center; column-gap: 15px;\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".tag-list > div:nth-child(2)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div style=\"display: flex; align-items: center; column-gap: 15px;\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".tag-list > div:nth-child(3)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div style=\"display: flex; align-items: center; column-gap: 15px;\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".tag-list > div:nth-child(4)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div style=\"text-align: center;\">\n        <p style=\"margin-bottom: 30px;\">Cursul afișat este cursul personalizat oferit clienților ING Bank.</p>\n        <a class=\"purple-text\" href=\"https://ing.ro/persoane-fizice/curs-valutar\">Vezi lista completă</a>\n    </div>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".gray-bg > div:nth-child(3)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h2 class=\"section-title\" style=\"margin-bottom: 45px;\">Ai întrebări? Găsești răspunsuri</h2>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".section-title"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"box-video-col item slick-slide slick-current slick-active\" data-slick-index=\"0\" aria-hidden=\"false\" style=\"width: 393px;\" tabindex=\"0\" role=\"tabpanel\" id=\"slick-slide00\" aria-describedby=\"slick-slide-control00\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#slick-slide00"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"box-video-col item slick-slide slick-active\" data-slick-index=\"1\" aria-hidden=\"false\" style=\"width: 393px;\" tabindex=\"0\" role=\"tabpanel\" id=\"slick-slide01\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#slick-slide01"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"box-video-col item slick-slide slick-active\" data-slick-index=\"2\" aria-hidden=\"false\" style=\"width: 393px;\" tabindex=\"0\" role=\"tabpanel\" id=\"slick-slide02\" aria-describedby=\"slick-slide-control01\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#slick-slide02"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<ul class=\"slick-dots\" style=\"\" role=\"tablist\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".slick-dots"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<p style=\"padding-bottom: 15px;\">Nu ai găsit ce ai nevoie? Găsești mai multe răspunsuri în paginile de produs sau ne poți scrie pe chat, direct din aplicația Home’Bank, secțiunea Mai Multe-&gt; Contact ING.</p>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".custom-content-container:nth-child(3) > p"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<h2>Extra de la ING</h2>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".tabsLists > h2"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<p class=\"txtEllipsis3\">ING Bank caută noi ONG-uri și proiecte de impact</p>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#Sustenabilitate > div > .linkListHorizontal.listContainer.type-article > .icon-box-item.visible-all.item:nth-child(1) > .icon-box-container.has-link > a > .icon-box-item-excerpt2.poza > .subPoza > .txtEllipsis3:nth-child(1)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<p class=\"txtEllipsis3\">Toate opțiunile de finanțare, într-un singur loc</p>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#Sustenabilitate > div > .linkListHorizontal.listContainer.type-article > .icon-box-item.visible-all.item:nth-child(2) > .icon-box-container.has-link > a > .icon-box-item-excerpt2.poza > .subPoza > .txtEllipsis3:nth-child(1)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<p class=\"txtEllipsis3\">Peste 300.000 de euro mobilizați pentru cauze sociale prin campania „Donează în Home’Bank”</p>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#Sustenabilitate > div > .linkListHorizontal.listContainer.type-article > .icon-box-item.visible-all.item:nth-child(3) > .icon-box-container.has-link > a > .icon-box-item-excerpt2.poza > .subPoza > .txtEllipsis3:nth-child(1)"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<a href=\"/informatii-utile/sustenabilitate\">Citeste toate articolele</a>",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      "#citestetot > a"
+     ]
+    },
+    {
+     "all": [],
+     "any": [
+      {
+       "data": {
+        "isIframe": false
+       },
+       "id": "region",
+       "impact": "moderate",
+       "message": "Some page content is not contained by landmarks",
+       "relatedNodes": []
+      }
+     ],
+     "failureSummary": "Fix any of the following:\n  Some page content is not contained by landmarks",
+     "html": "<div class=\"full-width-content\">",
+     "impact": "moderate",
+     "none": [],
+     "target": [
+      ".full-width-content"
+     ]
+    }
+   ],
+   "tags": [
+    "cat.keyboard",
+    "best-practice",
+    "RGAAv4",
+    "RGAA-9.2.1"
+   ]
+  }
+ ]
+}

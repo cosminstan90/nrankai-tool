@@ -1,0 +1,36 @@
+# Pasul 11 of docs/superpowers/plans/2026-09-30-next-steps.md
+#
+# CONTENT_QUALITY reads page.txt directly with no fact injection (see the
+# dispatch list in core/direct_analyzer.py's _process_single_page), so this
+# fixture is self-contained: no page.html, no sidecars needed.
+
+audit_type: CONTENT_QUALITY
+website: null
+
+description: >
+  ~35 words, generic filler with zero specifics (no rates, terms, examples,
+  or actual credit types named) repeating the word "credite" without adding
+  information. A page that exists but says almost nothing.
+
+issues:
+  - id: thin_content
+    description: "Very low word count / no real depth or specifics"
+    # Broad on purpose -- this is a guess at plausible phrasings before a
+    # real run has shown how the model actually describes it. Narrow this
+    # list after the first real run, not before.
+    # "thin" alone is deliberately excluded: it's a substring of ordinary
+    # words like "everything", "nothing", "something", so a bare "thin"
+    # keyword would false-match almost any model output. score_matches()
+    # is pure substring matching with no word-boundary awareness -- keep
+    # every keyword here multi-word for that reason.
+    keywords:
+      - "thin content"
+      - "lacks depth"
+      - "lack of depth"
+      - "low word count"
+      - "word count is low"
+      - "insufficient depth"
+      - "superficial"
+      - "generic"
+      - "no specific"
+      - "vague"
