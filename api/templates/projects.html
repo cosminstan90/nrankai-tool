@@ -2,7 +2,7 @@
 {% block title %}{% if page == 'dashboard' %}Project Dashboard{% else %}Projects{% endif %}{% endblock %}
 
 {% block content %}
-<div x-data="projectsApp()" x-init="init()">
+<div x-data="projectsApp()">
 
 {% if page == 'list' %}
 <!-- ═══════════════════════════════════════════════════════════════════════════

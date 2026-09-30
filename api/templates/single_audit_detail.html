@@ -3,7 +3,7 @@
 {% block title %}Single Page Audit: {{ audit.website }}{% endblock %}
 
 {% block content %}
-<div x-data="singleAuditViewer()" x-init="init()" class="space-y-6">
+<div x-data="singleAuditViewer()" class="space-y-6">
     <!-- Header -->
     <div class="flex justify-between items-start">
         <div>
@@ -193,7 +193,7 @@
 </div>
 
 <!-- html2pdf -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.1/dist/html2pdf.bundle.min.js"></script>
 
 <script>
     function singleAuditViewer() {

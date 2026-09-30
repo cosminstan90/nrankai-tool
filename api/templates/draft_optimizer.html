@@ -3,7 +3,7 @@
 {% block title %}Draft Optimizer{% endblock %}
 
 {% block content %}
-<div x-data="draftApp()" x-init="init()" class="space-y-6">
+<div x-data="draftApp()" class="space-y-6">
 
     <!-- Header -->
     <div class="flex items-center justify-between">
@@ -127,9 +127,9 @@
                         <label class="block text-sm font-medium text-slate-700 mb-1">Provider</label>
                         <select x-model="form.provider" @change="updateModels()"
                                 class="w-full rounded-lg border-slate-300 shadow-sm text-sm focus:border-primary-500 focus:ring-primary-500">
-                            {% for p in providers_ui %}
-                            <option value="{{ p.id }}" {% if not providers[p.id] %}disabled{% endif %}>
-                                {{ p.name }}{% if not providers[p.id] %} (no key){% endif %}
+                            {% for pid, p in providers_ui.items() %}
+                            <option value="{{ pid }}" {% if not providers[pid] %}disabled{% endif %}>
+                                {{ p.name }}{% if not providers[pid] %} (no key){% endif %}
                             </option>
                             {% endfor %}
                         </select>
@@ -601,8 +601,8 @@ function draftApp() {
         ],
 
         providerModels: {
-            {% for p in providers_ui %}
-            '{{ p.id }}': [{% for m in p.models %}{ id: '{{ m.id }}', name: '{{ m.name }}' }{% if not loop.last %},{% endif %}{% endfor %}],
+            {% for pid, p in providers_ui.items() %}
+            '{{ pid }}': [{% for m in p.models %}{ id: '{{ m.id }}', name: '{{ m.name }}' }{% if not loop.last %},{% endif %}{% endfor %}],
             {% endfor %}
         },
 
@@ -610,10 +610,10 @@ function draftApp() {
 
         init() {
             // pick first available provider
-            {% for p in providers_ui %}
-            {% if providers[p.id] %}
+            {% for pid, p in providers_ui.items() %}
+            {% if providers[pid] %}
             if (!this.form.provider) {
-                this.form.provider = '{{ p.id }}';
+                this.form.provider = '{{ pid }}';
             }
             {% endif %}
             {% endfor %}
