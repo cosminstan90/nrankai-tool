@@ -99,6 +99,29 @@ class TestStatusWorkerTransitions(unittest.IsolatedAsyncioTestCase):
             result = await status_worker.run_status_check_once(self.state_path)   # must not raise
         self.assertFalse(result["webhook_sent"])
 
+    async def test_a_failing_system_still_records_a_successful_worker_run(self):
+        """
+        Regression: recording overall==fail as a failed run was self-latching --
+        the next check_workers() saw status_check itself failing, so /status
+        could never return to ok even after every real problem was fixed.
+        """
+        failing = {"overall": "fail", "checks": {"gsc_oauth": {"status": "fail"}}}
+        record = AsyncMock()
+        with patch("api.routes.status.run_all_checks", AsyncMock(return_value=failing)), \
+             patch.object(status_worker, "_send_n8n_alert", AsyncMock(return_value=False)), \
+             patch("api.workers.worker_run.record_worker_run", record):
+            await status_worker.run_status_check_once(self.state_path)
+        self.assertTrue(record.call_args.args[2])   # ok=True: the worker ran fine
+        self.assertIn("overall=fail", record.call_args.args[3])
+
+    async def test_a_check_run_that_raises_records_a_failed_run(self):
+        record = AsyncMock()
+        with patch("api.routes.status.run_all_checks", AsyncMock(side_effect=RuntimeError("boom"))), \
+             patch("api.workers.worker_run.record_worker_run", record):
+            result = await status_worker.run_status_check_once(self.state_path)   # must not raise
+        self.assertFalse(record.call_args.args[2])
+        self.assertEqual(result["transitions"], {})
+
 
 class TestSendN8nAlert(unittest.IsolatedAsyncioTestCase):
     async def test_no_webhook_url_returns_false_without_calling_httpx(self):

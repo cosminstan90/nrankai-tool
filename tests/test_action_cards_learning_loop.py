@@ -65,13 +65,50 @@ class TestSaveRecommendation(unittest.TestCase):
         self.assertIsNone(body["audit_id"])
         self.assertEqual(body["source"], "gsc_opportunity")
         self.assertIsNone(body["applied_at"])
-        self.assertEqual(body["metric_baseline"], {"metric": "gsc_clicks", "value": 12.0, "higher_is_better": True})
+        # gsc_clicks is re-measurable, so the value comes from gsc_page_history
+        # (none for this URL), not from the client's 12.0.
+        self.assertEqual(body["metric_baseline"]["metric"], "gsc_clicks")
+        self.assertIsNone(body["metric_baseline"]["value"])
 
-    def test_saving_twice_for_the_same_page_updates_instead_of_duplicating(self):
-        first = self._save(description="First version")
-        second = self._save(description="Updated version")
+    def test_saving_the_same_recommendation_twice_updates_instead_of_duplicating(self):
+        """Same dedup_key -- a re-run whose description numbers changed is still the same recommendation."""
+        first = self._save(description="Push q from 7.2 (~40 clicks)", dedup_key="striking:q")
+        second = self._save(description="Push q from 6.8 (~45 clicks)", dedup_key="striking:q")
         self.assertEqual(first.json()["id"], second.json()["id"])
-        self.assertEqual(second.json()["actions"][0]["text"], "Updated version")
+        self.assertEqual(second.json()["actions"][0]["text"], "Push q from 6.8 (~45 clicks)")
+
+    def test_different_recommendations_for_the_same_page_are_separate_cards(self):
+        """
+        Regression: dedup was (source, page_url) only, so every Fan-Out gap
+        (all sharing the session's target_url) or every citation finding
+        (all sharing own_url) overwrote the previous one -- 3 saves, 1 card.
+        """
+        ids = {self._save(source="fanout_gap", description=f"Answer q{i}", dedup_key=f"fanout:q{i}").json()["id"]
+               for i in range(3)}
+        self.assertEqual(len(ids), 3)
+
+    def test_without_a_dedup_key_the_description_is_the_key(self):
+        first = self._save(description="Same text")
+        second = self._save(description="Same text")
+        third = self._save(description="Other text")
+        self.assertEqual(first.json()["id"], second.json()["id"])
+        self.assertNotEqual(first.json()["id"], third.json()["id"])
+
+    def test_a_gsc_baseline_is_computed_server_side_not_trusted_from_the_client(self):
+        """
+        No gsc_page_history for PAGE_URL: the client's value (here one query's
+        position) must not be stored -- the report would later compare it
+        against a page-level average, which measures something else.
+        """
+        resp = self._save(metric_baseline={"metric": "gsc_position", "value": 7.2, "higher_is_better": True})
+        baseline = resp.json()["metric_baseline"]
+        self.assertIsNone(baseline["value"])
+        self.assertFalse(baseline["higher_is_better"])   # lower position is better, whatever the client said
+
+    def test_a_non_gsc_baseline_keeps_the_client_value(self):
+        resp = self._save(source="fanout_gap",
+                          metric_baseline={"metric": "fanout_similarity", "value": 0.41, "higher_is_better": True})
+        self.assertEqual(resp.json()["metric_baseline"]["value"], 0.41)
 
     def test_a_different_source_for_the_same_page_creates_a_separate_card(self):
         first = self._save(source="gsc_opportunity")
@@ -271,6 +308,15 @@ class TestGscCtrRemeasurement(unittest.TestCase):
                 await db.commit()
 
         asyncio.run(clean())
+
+    def test_saving_computes_the_baseline_from_the_same_history_the_report_uses(self):
+        resp = self.client.post("/api/action-cards/from-recommendation", json={
+            "source": "gsc_opportunity", "page_url": "https://gsc-ctr-remeasure-test.example/page",
+            "description": "Improve CTR", "dedup_key": "weak_ctr",
+            "metric_baseline": {"metric": "gsc_ctr", "value": 0.99},
+        })
+        self.card_ids.append(resp.json()["id"])
+        self.assertAlmostEqual(resp.json()["metric_baseline"]["value"], 0.10)   # 10 clicks / 100 impressions
 
     def test_gsc_ctr_is_remeasured_from_stored_history(self):
         body = self.client.get("/api/action-cards/learning-report").json()

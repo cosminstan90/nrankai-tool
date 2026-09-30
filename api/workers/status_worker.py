@@ -105,7 +105,12 @@ async def run_status_check_once(state_path: Optional[str] = None) -> dict:
     state_path = state_path or _default_state_path()
     started_at = datetime.now(timezone.utc)
 
-    result = await run_all_checks()
+    try:
+        result = await run_all_checks()
+    except Exception as exc:
+        logger.error("Status check run failed: %s", exc)
+        await record_worker_run("status_check", started_at, False, f"check run raised: {exc}")
+        return {"overall": "unknown", "transitions": {}, "webhook_sent": False}
     current = _flatten(result["checks"])
     previous = _load_previous(state_path)
 
@@ -118,8 +123,12 @@ async def run_status_check_once(state_path: Optional[str] = None) -> dict:
     webhook_sent = await _send_n8n_alert(transitions, result["overall"]) if transitions else False
     _save_state(state_path, current, result["overall"])
 
+    # ok means "this worker ran", not "the system is healthy". Recording
+    # overall==fail as a failed run made it self-latching: the next run's
+    # check_workers saw status_check itself failing, so overall stayed
+    # "fail" forever even after every real problem was fixed.
     await record_worker_run(
-        "status_check", started_at, result["overall"] != "fail",
+        "status_check", started_at, True,
         f"overall={result['overall']}, {len(transitions)} transition(s), webhook_sent={webhook_sent}",
     )
 

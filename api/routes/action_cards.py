@@ -132,6 +132,17 @@ _GSC_AUTO_REMEASURED_METRICS = {
 }
 
 
+def _card_key(card: "ActionCard") -> Optional[str]:
+    """A saved recommendation's dedup key -- its stored "key", or its text for cards saved before keys existed."""
+    try:
+        actions = json.loads(card.actions_json) if card.actions_json else []
+    except ValueError:
+        return None
+    if not actions:
+        return None
+    return actions[0].get("key") or actions[0].get("text")
+
+
 class MetricBaseline(BaseModel):
     """What the relevant metric looked like when the action was recorded."""
     metric: str
@@ -152,6 +163,14 @@ class SaveRecommendationRequest(BaseModel):
     page_title: Optional[str] = None
     priority: str = "medium"
     description: str
+    # Stable identity of WHICH recommendation this is, within one page --
+    # e.g. "fanout:<query>" or "citation:<query>:<feature>". Several distinct
+    # recommendations routinely share a page_url (every Fan-Out gap uses the
+    # session's target_url), so (source, page_url) alone collapsed them into
+    # one card. Not the description itself: it embeds measured numbers that
+    # change on every re-run, which would turn a re-save into a duplicate.
+    # Omitted -> the description is used as the key.
+    dedup_key: Optional[str] = None
     metric_baseline: Optional[MetricBaseline] = None
     provider: Optional[str] = None
     model: Optional[str] = None
@@ -686,26 +705,41 @@ async def save_recommendation(
 ):
     """
     Saves one of pasii 12-17's recommendations as an action card, with no
-    audit_id (Pasul 18). Idempotent per (source, page_url): a second save for
-    the same page while the first is still pending updates that card's
-    description/baseline instead of creating a duplicate -- a recommendation
+    audit_id (Pasul 18). Idempotent per (source, page_url, dedup_key): a
+    second save of the same recommendation while the first is still pending
+    updates that card instead of creating a duplicate -- a recommendation
     endpoint can be called repeatedly (e.g. the user re-runs the analysis)
-    without piling up copies of the same suggestion.
+    without piling up copies. Different recommendations for the same page
+    are separate cards.
+
+    For GSC metrics the learning report can re-measure, the baseline value
+    is computed here from gsc_page_history -- the exact same computation
+    the report uses for "current" -- rather than trusted from the client.
+    A client-side value (e.g. one query's position on a page) measures
+    something different from the page-level value re-measured later, and
+    comparing the two would be meaningless.
     """
     if request.source not in RECOMMENDATION_SOURCES:
         raise_bad_request(f"Unknown source '{request.source}' -- must be one of {sorted(RECOMMENDATION_SOURCES)}")
 
-    existing = (await db.execute(
+    key = request.dedup_key or request.description
+    candidates = (await db.execute(
         select(ActionCard).where(
             ActionCard.source == request.source,
             ActionCard.page_url == request.page_url,
             ActionCard.status == "pending",
             ActionCard.applied_at.is_(None),
         )
-    )).scalar_one_or_none()
+    )).scalars().all()
+    existing = next((c for c in candidates if _card_key(c) == key), None)
 
-    baseline_json = request.metric_baseline.model_dump_json() if request.metric_baseline else None
-    actions = [{"id": 1, "text": request.description, "completed": False}]
+    baseline = request.metric_baseline.model_dump() if request.metric_baseline else None
+    if baseline and baseline["metric"] in _GSC_AUTO_REMEASURED_METRICS:
+        baseline["value"] = await _current_gsc_value(db, request.page_url, baseline["metric"])
+        baseline["higher_is_better"] = _GSC_AUTO_REMEASURED_METRICS[baseline["metric"]]
+        baseline["computed_from"] = f"gsc_page_history, trailing {MIN_DAYS_BEFORE_REPORT} days"
+    baseline_json = json.dumps(baseline) if baseline else None
+    actions = [{"id": 1, "text": request.description, "key": key, "completed": False}]
 
     if existing:
         existing.page_title = request.page_title or existing.page_title

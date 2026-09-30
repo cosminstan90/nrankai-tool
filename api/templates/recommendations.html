@@ -3,7 +3,7 @@
 {% block title %}Recommendations - Website LLM Analyzer{% endblock %}
 
 {% block content %}
-<div x-data="recsApp()" x-init="init()" class="space-y-6">
+<div x-data="recsApp()" class="space-y-6"><!-- no x-init: Alpine v3 already calls init() itself; x-init="init()" ran every fetch twice -->
     <div>
         <h1 class="text-3xl font-bold text-gray-900">💡 Recommendations</h1>
         <p class="text-gray-600 mt-1">Pasii 12-18: what to fix, where, and whether it worked afterwards.</p>
@@ -47,7 +47,7 @@
                         </div>
                         <div class="text-xs text-red-600 mt-1" x-show="p.bot_blocked_or_errored">Bot fetch blocked/errored: <span x-text="p.bot_fetch_error"></span></div>
                     </div>
-                    <button @click="saveAction('js_visibility', p.url || p.file, jsvDescription(p), {metric:'js_visibility_ratio', value: p.text_visibility_ratio, higher_is_better: true})"
+                    <button @click="saveAction('js_visibility', p.url || p.file, jsvDescription(p), {metric:'js_visibility_ratio', value: p.text_visibility_ratio, higher_is_better: true}, 'js_visibility')"
                             class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                 </div>
             </template>
@@ -94,7 +94,7 @@
                         </div>
                         <div class="text-xs text-gray-400 mt-1" x-text="o.assumption"></div>
                     </div>
-                    <button @click="saveAction('gsc_opportunity', o.page, gscOppDescription(o), gscOppBaseline(o))"
+                    <button @click="saveAction('gsc_opportunity', o.page, gscOppDescription(o), gscOppBaseline(o), gscOppKey(o))"
                             class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                 </div>
             </template>
@@ -132,7 +132,7 @@
                         <div class="text-sm text-gray-600">Sources: <span x-text="s.candidate_sources.map(c => c.url + ' (' + c.similarity + ')').join(', ')"></span></div>
                         <div class="text-xs text-gray-400 mt-1" x-show="s.anchor">Suggested anchor (real GSC query): "<span x-text="s.anchor"></span>"</div>
                     </div>
-                    <button @click="saveAction('internal_link', s.target_url, ilDescription(s), null)"
+                    <button @click="saveAction('internal_link', s.target_url, ilDescription(s), null, 'internal_link')"
                             class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                 </div>
             </template>
@@ -167,7 +167,7 @@
                         </div>
                         <div class="text-xs text-gray-400 mt-1" x-show="r.seasonality_checked">Seasonality: <span x-text="r.seasonality_note"></span></div>
                     </div>
-                    <button @click="saveAction('decay', r.page, decayDescription(r), null)"
+                    <button @click="saveAction('decay', r.page, decayDescription(r), null, 'decay')"
                             class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                 </div>
             </template>
@@ -205,11 +205,12 @@
         <div x-show="cc.data && cc.data.note" x-text="cc.data ? cc.data.note : ''" class="bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-4 py-2 text-sm"></div>
         <div x-show="cc.data && cc.data.report" class="bg-white rounded-lg shadow p-4 space-y-3">
             <div class="text-sm text-gray-500" x-text="cc.data && cc.data.report ? cc.data.report.sample_size + ' cited page(s) compared against ' + cc.data.own_url : ''"></div>
-            <div x-show="cc.data && cc.data.report && cc.data.report.recommendation" class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900" x-text="cc.data && cc.data.report ? cc.data.report.recommendation : ''"></div>
+            <div x-show="cc.data && cc.data.recommendation" class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900 whitespace-pre-line" x-text="cc.data ? cc.data.recommendation : ''"></div>
+            <div x-show="cc.data && cc.data.recommendation_error" class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800" x-text="cc.data && cc.data.recommendation_error ? 'LLM recommendation failed: ' + cc.data.recommendation_error + ' (the measured findings below are still valid)' : ''"></div>
             <template x-for="f in (cc.data && cc.data.report ? cc.data.report.findings : [])" :key="f.feature">
                 <div class="border rounded-lg p-3 flex items-start justify-between gap-4">
                     <div class="text-sm text-gray-800" x-text="f.label"></div>
-                    <button @click="saveAction('citation_gap', cc.data.own_url, f.label, ccBaseline())"
+                    <button @click="saveAction('citation_gap', cc.data.own_url, f.label, ccBaseline(), 'citation:' + cc.data.query + ':' + f.feature)"
                             class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                 </div>
             </template>
@@ -251,7 +252,7 @@
                                         <template x-if="q.similarity != null"> · closest similarity <span x-text="q.similarity"></span> (<span x-text="q.closest_url"></span>)</template>
                                     </div>
                                 </div>
-                                <button @click="saveAction('fanout_gap', fo.data.target_url, foDescription(q), {metric:'fanout_similarity', value: q.similarity, higher_is_better: true})"
+                                <button @click="saveAction('fanout_gap', fo.data.target_url, foDescription(q), {metric:'fanout_similarity', value: q.similarity, higher_is_better: true}, 'fanout:' + q.query)"
                                         class="shrink-0 px-3 py-1 rounded-md border text-xs font-medium text-slate-700 hover:bg-slate-50">💾 Save as action</button>
                             </div>
                         </template>
@@ -386,10 +387,17 @@ function recsApp() {
             return `Improve CTR at position ${o.position} (${(o.actual_ctr*100).toFixed(1)}% actual${o.expected_ctr != null ? ' vs ' + (o.expected_ctr*100).toFixed(1) + '% expected' : ''})`;
         },
         gscOppBaseline(o) {
+            // Only the metric name matters for GSC metrics: the server computes
+            // the page-level baseline from gsc_page_history itself, the same way
+            // the learning report re-measures it later. o.position here is one
+            // QUERY's position on the page -- not comparable to that.
             if (this.gscOpp.kind === 'striking-distance') {
-                return {metric: 'gsc_position', value: o.position, higher_is_better: false};
+                return {metric: 'gsc_position', higher_is_better: false};
             }
-            return {metric: 'gsc_ctr', value: o.actual_ctr, higher_is_better: true};
+            return {metric: 'gsc_ctr', higher_is_better: true};
+        },
+        gscOppKey(o) {
+            return this.gscOpp.kind === 'striking-distance' ? 'striking:' + o.query : 'weak_ctr';
         },
 
         async loadInternalLinks() {
@@ -458,10 +466,11 @@ function recsApp() {
             return `Add content answering: "${q.query}"${q.similarity != null ? ' (closest existing similarity ' + q.similarity + ')' : ' (nothing on-site matches at all)'}`;
         },
 
-        async saveAction(source, pageUrl, description, metricBaseline) {
+        async saveAction(source, pageUrl, description, metricBaseline, dedupKey) {
             if (!pageUrl) return;
             try {
-                const body = {source, page_url: pageUrl, description, metric_baseline: metricBaseline || null};
+                const body = {source, page_url: pageUrl, description, dedup_key: dedupKey || null,
+                              metric_baseline: metricBaseline || null};
                 const res = await fetch('/api/action-cards/from-recommendation', {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
                 });

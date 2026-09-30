@@ -11,6 +11,7 @@ is available via ?with_recommendation=true, but never runs by default
 (a real, paid call).
 """
 import json
+import logging
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -24,6 +25,8 @@ from api.utils.errors import raise_not_found
 from core.citation_comparison import build_recommendation_prompt, compare_to_citations
 from core.citation_features import extract_features
 from core.citation_fetch import fetch_and_cache
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/citations", tags=["citations"])
 
@@ -133,23 +136,34 @@ async def get_citation_comparison(
     report = compare_to_citations(own_features, cited_features)
 
     recommendation = None
+    recommendation_error = None
     if with_recommendation and report["findings"]:
         prompt = build_recommendation_prompt(query, report)
         from api.utils.llm_json_client import call_llm_for_summary
 
-        text, in_tok, out_tok = await call_llm_for_summary(
-            provider=provider, model=model,
-            system_prompt="You are a GEO (generative engine optimization) analyst. "
-                         "You only see a table of measured features, never any page's actual content.",
-            user_content=prompt,
-        )
-        from api.routes.costs import track_cost
-        await track_cost(source="citation_comparison", provider=provider, model=model,
-                         input_tokens=in_tok, output_tokens=out_tok)
-        recommendation = text
+        # CLAUDE.md rule 4. Not re-raised as a 502: the deterministic report
+        # above (real fetches, real measurements) is still valid on its own,
+        # and throwing it away because the optional phrasing step failed would
+        # waste the work already done. The failure is reported, never hidden.
+        try:
+            text, in_tok, out_tok = await call_llm_for_summary(
+                provider=provider, model=model,
+                system_prompt="You are a GEO (generative engine optimization) analyst. "
+                             "You only see a table of measured features, never any page's actual content.",
+                user_content=prompt,
+            )
+        except Exception as e:
+            logger.error(f"Citation-comparison recommendation LLM call failed ({provider}/{model}): {e}")
+            recommendation_error = "AI service unavailable"
+        else:
+            from api.routes.costs import track_cost
+            await track_cost(source="citation_comparison", provider=provider, model=model,
+                             input_tokens=in_tok, output_tokens=out_tok)
+            recommendation = text
 
     return {
         "tracker_id": tracker_id, "query": query, "own_url": own_url,
         "cited_urls_considered": len(cited_features), "cited_urls_requested": len(cited_urls),
         "report": report, "recommendation": recommendation,
+        "recommendation_error": recommendation_error,
     }

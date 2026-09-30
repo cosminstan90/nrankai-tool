@@ -145,6 +145,27 @@ class TestCitationComparisonEndpoint(unittest.TestCase):
         self.assertNotIn(_cited_html_rich(), captured["user_content"])   # never given raw page content
         self.assertIn("comparison table", captured["user_content"])   # the human-readable label, not the raw feature key
 
+    def test_an_llm_failure_keeps_the_measured_report_and_says_why(self):
+        """CLAUDE.md rule 4: the provider call is wrapped -- no 500, report kept, no cost tracked."""
+        html_by_url = {OWN_URL: _own_html(), CITED_URL_1: _cited_html_rich(), CITED_URL_2: _cited_html_rich()}
+
+        async def _failing_llm(provider, model, system_prompt, user_content, **kw):
+            raise RuntimeError("provider down")
+
+        track = AsyncMock()
+        with patch("api.routes.citation_comparison.fetch_and_cache", self._fake_fetch(html_by_url)), \
+             patch("api.utils.llm_json_client.call_llm_for_summary", _failing_llm), \
+             patch("api.routes.costs.track_cost", track):
+            resp = self.client.get("/api/citations/trackers/" + self.tracker_id + "/citation-comparison",
+                                   params={"query": QUERY, "with_recommendation": "true"})
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertIsNone(body["recommendation"])
+        self.assertEqual(body["recommendation_error"], "AI service unavailable")
+        self.assertTrue(body["report"]["findings"])
+        track.assert_not_called()
+
     def test_unknown_tracker_is_404(self):
         resp = self.client.get(f"/api/citations/trackers/{uuid.uuid4()}/citation-comparison",
                                params={"query": QUERY})
