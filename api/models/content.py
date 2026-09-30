@@ -110,6 +110,12 @@ class CitationTracker(Base):
     # "RO"). NULL means derive it: country-code TLD first, then language. The
     # override exists for sites on a generic TLD that compete in one market.
     serp_location = Column(String(8), nullable=True)
+    # Pasul 9 of docs/superpowers/plans/2026-09-30-next-steps.md: how many
+    # times to ask each provider the same query in one scan. NULL/1 (the
+    # default) is today's behaviour, unchanged cost. Not a providers_config
+    # key -- that field is a plain {provider: bool} map read as `if enabled`,
+    # so a sibling int key would be silently treated as a truthy "provider".
+    samples_per_query = Column(Integer, nullable=True, default=1)
 
     # Relationship to scans
     scans = relationship("CitationScan", back_populates="tracker", cascade="all, delete-orphan")

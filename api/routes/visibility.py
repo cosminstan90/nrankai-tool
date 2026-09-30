@@ -72,6 +72,7 @@ from core.direct_analyzer import AsyncLLMClient
 from api.workers.rank_tracking import record_observation
 from core import serp_client
 from core.dataforseo_locations import resolve_serp_location
+from core.wilson import wilson_interval
 
 logger = logging.getLogger(__name__)
 
@@ -673,6 +674,19 @@ async def _run_visibility_scan(
                 logger.error("No providers enabled for tracker %s", tracker_id)
                 return
 
+            # Pasul 9 of docs/superpowers/plans/2026-09-30-next-steps.md: a
+            # single call per query is mostly noise (LLM answers vary between
+            # runs), so 1/5 vs 2/5 citations was rarely a real signal. N
+            # samples per query gives a Wilson interval instead of an
+            # over-precise percentage. Defaults to 1 (today's behaviour,
+            # unchanged cost) unless a tracker opts in. Cost scales linearly
+            # with this, google_aio included -- each sample is a full
+            # DataForSEO SERP fetch, not a free re-read. A dedicated column
+            # (not a providers_config key) because that field is a plain
+            # {provider: bool} map read as `if enabled` -- a sibling int key
+            # would be silently treated as a truthy "provider" to query.
+            samples_per_query = max(1, min(10, tracker.samples_per_query or 1))
+
             scan_result = await db.execute(select(CitationScan).where(CitationScan.id == scan_id))
             scan = scan_result.scalar_one_or_none()
             if scan is None:
@@ -699,114 +713,156 @@ async def _run_visibility_scan(
                 query_result = {"query": query, "query_index": query_idx + 1, "providers": {}}
 
                 for provider in enabled_providers:
-                    await asyncio.sleep(1)  # spread out same-provider requests
+                    # Pasul 9: samples_per_query independent calls, each
+                    # analysed exactly as the single call used to be. One
+                    # sample is today's behaviour byte-for-byte.
+                    samples: List[dict] = []
 
-                    provider_error = None
-                    aio_failed = False
-                    if provider == "google_aio":
-                        # One DataForSEO call answers both questions: the AI
-                        # Overview feeds the citation pipeline below exactly as
-                        # before, and the organic results in the same response
-                        # become a rank observation (Etapa 8). They used to be
-                        # fetched and thrown away.
-                        response, in_tok, out_tok, model_name = "", 0, 0, "dataforseo-serp"
-                        aio_failed = True     # until a SERP actually comes back
-                        if aio_billing_error:
-                            # Every further call would be refused for the same
-                            # reason; don't keep asking.
-                            provider_error = aio_billing_error
-                        elif serp_client.dfs_configured():
-                            serp = None
-                            try:
-                                serp = await serp_client.fetch_serp(
-                                    query, serp_location.location_code, serp_location.language_code)
-                            except serp_client.DataForSEOBillingError as exc:
-                                # Without this an exhausted balance read exactly
-                                # like "Google showed no AI Overview".
-                                aio_billing_error = str(exc)
+                    for _sample_idx in range(samples_per_query):
+                        await asyncio.sleep(1)  # spread out same-provider requests
+
+                        provider_error = None
+                        aio_failed = False
+                        if provider == "google_aio":
+                            # One DataForSEO call answers both questions: the AI
+                            # Overview feeds the citation pipeline below exactly as
+                            # before, and the organic results in the same response
+                            # become a rank observation (Etapa 8). They used to be
+                            # fetched and thrown away.
+                            response, in_tok, out_tok, model_name = "", 0, 0, "dataforseo-serp"
+                            aio_failed = True     # until a SERP actually comes back
+                            if aio_billing_error:
+                                # Every further call would be refused for the same
+                                # reason; don't keep asking.
                                 provider_error = aio_billing_error
-                                logger.error(
-                                    "Visibility scan %s: %s -- google_aio skipped for the rest of this scan",
-                                    scan_id, exc,
-                                )
-                            response = _aio_text(serp)
-                            if serp is not None:
-                                aio_failed = False
-                                await record_observation(tracker.id, scan_id, tracker.website, query, serp)
-                                if not response:
-                                    # A SERP came back and Google showed no AI
-                                    # Overview: a measurement, not an error.
-                                    provider_error = "No AI Overview shown"
-                    else:
-                        response, in_tok, out_tok, model_name = await _query_provider(provider, query)
-                    if in_tok or out_tok:
-                        # Awaited, not fire-and-forget via asyncio.create_task: track_cost()
-                        # opens its own AsyncSessionLocal(), and firing it concurrently while
-                        # this function's own long-lived `db` session is mid-scan caused the
-                        # final "completed" commit below to silently not persist -- all
-                        # sessions shared one physical SQLite connection (StaticPool, since
-                        # removed -- see api/models/_base.py). Reproduced live
-                        # during Etapa 3 testing; the original citation_tracker.py /
-                        # geo_monitor.py had the same fire-and-forget pattern, so this was a
-                        # latent bug, not something introduced by the unification.
-                        await track_cost(
-                            source="visibility_scan", provider=provider, model=model_name,
-                            input_tokens=in_tok, output_tokens=out_tok,
-                            source_id=scan_id, website=tracker.website,
-                        )
+                            elif serp_client.dfs_configured():
+                                serp = None
+                                try:
+                                    serp = await serp_client.fetch_serp(
+                                        query, serp_location.location_code, serp_location.language_code)
+                                except serp_client.DataForSEOBillingError as exc:
+                                    # Without this an exhausted balance read exactly
+                                    # like "Google showed no AI Overview".
+                                    aio_billing_error = str(exc)
+                                    provider_error = aio_billing_error
+                                    logger.error(
+                                        "Visibility scan %s: %s -- google_aio skipped for the rest of this scan",
+                                        scan_id, exc,
+                                    )
+                                response = _aio_text(serp)
+                                if serp is not None:
+                                    aio_failed = False
+                                    await record_observation(tracker.id, scan_id, tracker.website, query, serp)
+                                    if not response:
+                                        # A SERP came back and Google showed no AI
+                                        # Overview: a measurement, not an error.
+                                        provider_error = "No AI Overview shown"
+                        else:
+                            response, in_tok, out_tok, model_name = await _query_provider(provider, query)
+                        if in_tok or out_tok:
+                            # Awaited, not fire-and-forget via asyncio.create_task: track_cost()
+                            # opens its own AsyncSessionLocal(), and firing it concurrently while
+                            # this function's own long-lived `db` session is mid-scan caused the
+                            # final "completed" commit below to silently not persist -- all
+                            # sessions shared one physical SQLite connection (StaticPool, since
+                            # removed -- see api/models/_base.py). Reproduced live
+                            # during Etapa 3 testing; the original citation_tracker.py /
+                            # geo_monitor.py had the same fire-and-forget pattern, so this was a
+                            # latent bug, not something introduced by the unification.
+                            await track_cost(
+                                source="visibility_scan", provider=provider, model=model_name,
+                                input_tokens=in_tok, output_tokens=out_tok,
+                                source_id=scan_id, website=tracker.website,
+                            )
 
-                    if not response:
-                        genuinely_failed = aio_failed if provider == "google_aio" else True
-                        if genuinely_failed:
-                            provider_stats[provider]["failed"] += 1
+                        if not response:
+                            genuinely_failed = aio_failed if provider == "google_aio" else True
+                            samples.append({
+                                "cited": False, "mentioned": False, "cited_urls": [],
+                                "context": "", "sentiment": None, "position": None,
+                                "error": provider_error or "No response", "failed": genuinely_failed,
+                            })
+                            continue
+
+                        # Citation analysis (URL-pattern based)
+                        cited_urls: List[str] = []
+                        for pattern in url_patterns:
+                            cited_urls.extend(extract_cited_urls(response, pattern))
+                        cited_urls = list(set(cited_urls))
+                        is_cited = len(cited_urls) > 0
+                        for url in cited_urls:
+                            url_citation_counts[url] = url_citation_counts.get(url, 0) + 1
+                        citation_context = extract_citation_context(response, cited_urls[0]) if cited_urls else ""
+
+                        # Mention analysis (keyword based)
+                        analysis = analyze_mentions(response, brand_keywords, tracker.website)
+
+                        samples.append({
+                            "cited": is_cited,
+                            "mentioned": analysis["mentioned"],
+                            "cited_urls": cited_urls,
+                            "context": citation_context or analysis["context"],
+                            "sentiment": analysis["sentiment"],
+                            "position": analysis["position"],
+                            "error": None, "failed": False,
+                        })
+
+                        # Competitor mentions in the same response
+                        for comp in competitors:
+                            comp_website = comp.get("website", "")
+                            comp_keywords = comp.get("brand_keywords", [])
+                            if not comp_keywords or not comp_website:
+                                continue
+                            comp_analysis = analyze_mentions(response, comp_keywords, comp_website)
+                            bucket = competitor_results.setdefault(
+                                comp_website, {"name": comp.get("name", comp_website), "mention_count": 0, "total": 0}
+                            )
+                            bucket["total"] += 1
+                            if comp_analysis["mentioned"]:
+                                bucket["mention_count"] += 1
+
+                    # Aggregate the samples into one entry, keeping the exact
+                    # shape a single sample always had (so a scan with
+                    # samples_per_query=1 is byte-identical to before this),
+                    # plus the raw samples for anyone computing a rate/CI.
+                    valid_samples = [s for s in samples if not s["failed"]]
+                    if valid_samples:
+                        first = valid_samples[0]
+                        any_cited = any(s["cited"] for s in valid_samples)
+                        any_mentioned = any(s["mentioned"] for s in valid_samples)
+                        all_cited_urls = sorted({u for s in valid_samples for u in s["cited_urls"]})
+                        entry = {
+                            "cited": any_cited,
+                            "mentioned": any_mentioned,
+                            "cited_urls": all_cited_urls,
+                            "context": first["context"],
+                            "sentiment": first["sentiment"],
+                            "position": first["position"],
+                            "samples": samples,
+                        }
+                        if not any_cited and not any_mentioned:
+                            # Nothing else happened this query -- surface an
+                            # informational note (e.g. google_aio's "No AI
+                            # Overview shown") if a valid sample carried one.
+                            # A real citation/mention from another sample
+                            # always takes priority over the note.
+                            error_notes = [s["error"] for s in valid_samples if s.get("error")]
+                            if error_notes:
+                                entry["error"] = error_notes[-1]
+                        query_result["providers"][provider] = entry
+                    else:
                         query_result["providers"][provider] = {
                             "cited": False, "mentioned": False, "cited_urls": [],
-                            "error": provider_error or "No response",
+                            "error": samples[-1]["error"] if samples else "No response",
+                            "samples": samples,
                         }
-                        continue
 
-                    # Citation analysis (URL-pattern based)
-                    cited_urls: List[str] = []
-                    for pattern in url_patterns:
-                        cited_urls.extend(extract_cited_urls(response, pattern))
-                    cited_urls = list(set(cited_urls))
-                    is_cited = len(cited_urls) > 0
-                    for url in cited_urls:
-                        url_citation_counts[url] = url_citation_counts.get(url, 0) + 1
-                    citation_context = extract_citation_context(response, cited_urls[0]) if cited_urls else ""
-
-                    # Mention analysis (keyword based)
-                    analysis = analyze_mentions(response, brand_keywords, tracker.website)
-
-                    query_result["providers"][provider] = {
-                        "cited": is_cited,
-                        "mentioned": analysis["mentioned"],
-                        "cited_urls": cited_urls,
-                        "context": citation_context or analysis["context"],
-                        "sentiment": analysis["sentiment"],
-                        "position": analysis["position"],
-                    }
-
-                    provider_stats[provider]["queries"] += 1
-                    provider_stats[provider]["responses"] += 1
-                    if is_cited:
-                        provider_stats[provider]["citations"] += 1
-                    if analysis["mentioned"]:
-                        provider_stats[provider]["mentions"] += 1
-
-                    # Competitor mentions in the same response
-                    for comp in competitors:
-                        comp_website = comp.get("website", "")
-                        comp_keywords = comp.get("brand_keywords", [])
-                        if not comp_keywords or not comp_website:
-                            continue
-                        comp_analysis = analyze_mentions(response, comp_keywords, comp_website)
-                        bucket = competitor_results.setdefault(
-                            comp_website, {"name": comp.get("name", comp_website), "mention_count": 0, "total": 0}
-                        )
-                        bucket["total"] += 1
-                        if comp_analysis["mentioned"]:
-                            bucket["mention_count"] += 1
+                    provider_stats[provider]["failed"] += sum(1 for s in samples if s["failed"])
+                    if valid_samples:
+                        provider_stats[provider]["queries"] += 1
+                        provider_stats[provider]["responses"] += len(valid_samples)
+                        provider_stats[provider]["citations"] += sum(1 for s in valid_samples if s["cited"])
+                        provider_stats[provider]["mentions"] += sum(1 for s in valid_samples if s["mentioned"])
 
                 all_results.append(query_result)
 
@@ -822,12 +878,26 @@ async def _run_visibility_scan(
             ]
 
             for provider, stats in provider_stats.items():
-                if stats["queries"] > 0:
-                    stats["citation_rate"] = (stats["citations"] / stats["queries"]) * 100
-                    stats["mention_rate"] = (stats["mentions"] / stats["queries"]) * 100
+                # Rate = citations / valid SAMPLES, not queries: with
+                # samples_per_query > 1, "queries" (how many distinct
+                # tracking queries got at least one valid response) and
+                # "responses" (total valid samples) diverge on purpose --
+                # citations/mentions are counted per sample, so the rate
+                # needs the same denominator. With samples_per_query == 1
+                # (the default) responses == queries, so this is identical
+                # to before. Pasul 9 of docs/superpowers/plans/2026-09-30-next-steps.md.
+                if stats["responses"] > 0:
+                    stats["citation_rate"] = (stats["citations"] / stats["responses"]) * 100
+                    stats["mention_rate"] = (stats["mentions"] / stats["responses"]) * 100
+                    cit_low, cit_high = wilson_interval(stats["citations"], stats["responses"])
+                    men_low, men_high = wilson_interval(stats["mentions"], stats["responses"])
+                    stats["citation_rate_ci"] = {"low": cit_low, "high": cit_high}
+                    stats["mention_rate_ci"] = {"low": men_low, "high": men_high}
                 else:
                     stats["citation_rate"] = 0
                     stats["mention_rate"] = 0
+                    stats["citation_rate_ci"] = {"low": None, "high": None}
+                    stats["mention_rate_ci"] = {"low": None, "high": None}
 
             # Persisted with the scan, so the rankings endpoint and anyone
             # reading scan history can tell "out of credit" from "no data".
