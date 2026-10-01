@@ -12,7 +12,7 @@ import json
 import shutil
 import hashlib
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 # Import logger
@@ -390,7 +390,7 @@ def archive_current_run(
         return None
     
     # Generate run ID and timestamp
-    timestamp = datetime.utcnow()
+    timestamp = datetime.now(timezone.utc)
     run_id = f"{timestamp.strftime('%Y-%m-%d')}_{audit_type.lower()}"
     
     # Check if run already exists today, append counter if needed

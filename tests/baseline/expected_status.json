@@ -3,7 +3,7 @@
   "/action-cards": 200,
   "/ads": 200,
   "/ai-visibility": 200,
-  "/api/action-cards": 422,
+  "/api/action-cards": 200,
   "/api/ads/accounts": 200,
   "/api/ai-visibility/recent-scans": 200,
   "/api/ai-visibility/summary": 200,

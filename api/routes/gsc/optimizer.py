@@ -11,6 +11,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
+from api.utils.task_runner import create_tracked_task
 from api.utils.errors import raise_not_found, raise_bad_request
 from api.utils.url_validator import validate_external_url
 from pydantic import BaseModel
@@ -437,7 +438,7 @@ async def page_optimize(property_id: str, req: PageOptimizeRequest):
                     g.updated_at = datetime.now(timezone.utc)
                     await db.commit()
 
-    asyncio.create_task(_guarded(guide_id, property_id, req))
+    create_tracked_task(_guarded(guide_id, property_id, req), name=f"gsc-guide-{guide_id}")
     return {"guide_id": guide_id, "status": "pending"}
 
 
@@ -667,5 +668,5 @@ async def standalone_optimize(req: StandaloneOptimizeRequest):
                     g.updated_at = datetime.now(timezone.utc)
                     await db.commit()
 
-    asyncio.create_task(_guarded_standalone(guide_id, inner_req))
+    create_tracked_task(_guarded_standalone(guide_id, inner_req), name=f"gsc-guide-standalone-{guide_id}")
     return {"guide_id": guide_id, "status": "pending"}

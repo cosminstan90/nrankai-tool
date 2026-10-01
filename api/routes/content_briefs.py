@@ -12,6 +12,8 @@ import yaml
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from api.utils.errors import raise_not_found
 from pydantic import BaseModel, Field, field_validator
@@ -23,6 +25,7 @@ from api.routes.summary import call_llm_for_summary, clean_json_response
 from api.routes.costs import track_cost
 
 router = APIRouter(prefix="/api/briefs", tags=["content_briefs"])
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -837,13 +840,18 @@ EXISTING FAQPage schema to review:
 Review every question/answer and fill in "existing_faq_review"."""
 
         # ── Call LLM ─────────────────────────────────────────────────────────
-        response_text, input_tokens, output_tokens = await call_llm_for_summary(
-            provider=provider,
-            model=model,
-            system_prompt=system_prompt,
-            user_content=user_content,
-            max_tokens=3000
-        )
+        # CLAUDE.md rule 4: a provider failure is a 502, not an unhandled 500.
+        try:
+            response_text, input_tokens, output_tokens = await call_llm_for_summary(
+                provider=provider,
+                model=model,
+                system_prompt=system_prompt,
+                user_content=user_content,
+                max_tokens=3000
+            )
+        except Exception as e:
+            logger.error(f"FAQ generation LLM call failed ({provider}/{model}): {e}")
+            raise HTTPException(status_code=502, detail="AI service unavailable")
 
         # Awaited, not fire-and-forget via asyncio.create_task: see comment on the other
         # track_cost() call in this file (generate_single_brief) / api/routes/visibility.py
@@ -860,7 +868,13 @@ Review every question/answer and fill in "existing_faq_review"."""
 
         # ── Parse & save ──────────────────────────────────────────────────────
         cleaned = clean_json_response(response_text)
-        faq_data = json.loads(cleaned)
+        try:
+            faq_data = json.loads(cleaned)
+        except json.JSONDecodeError as e:
+            # The call succeeded (and was paid for, cost tracked above) but the
+            # model returned something that isn't JSON -- say so, don't 500.
+            logger.error(f"FAQ generation returned invalid JSON ({provider}/{model}): {e}")
+            raise HTTPException(status_code=502, detail="AI service returned an invalid response")
         faq_data["generated_at"] = datetime.now(timezone.utc).isoformat()
         faq_data["has_existing_schema"] = faq_schema is not None
 

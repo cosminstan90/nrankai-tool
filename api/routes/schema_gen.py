@@ -14,6 +14,7 @@ from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
+from api.utils.task_runner import create_tracked_task
 from api.utils.errors import raise_not_found, raise_bad_request
 from api.limiter import limiter
 from pydantic import BaseModel, Field
@@ -597,11 +598,12 @@ async def generate_schemas(http_request: Request, request: GenerateSchemaRequest
         estimated_cost = pages_count * cost_per_page
         
         # Launch background task
-        asyncio.create_task(
+        create_tracked_task(
             _generate_schemas_background(
                 audit, results, provider, model,
                 request.website_type, request.schema_types_hint
-            )
+            ),
+            name=f"schema-batch-{audit.id}",
         )
         
         return {

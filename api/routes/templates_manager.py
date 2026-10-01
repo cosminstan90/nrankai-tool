@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from api.utils.task_runner import create_tracked_task
 from api.utils.errors import raise_not_found
 from sqlalchemy import select, func, desc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -237,7 +238,7 @@ async def launch_audit_from_template(
     
     # Start polling for auto-actions if configured
     if template.auto_summary or template.auto_briefs or template.auto_schemas:
-        asyncio.create_task(
+        create_tracked_task(
             _poll_and_run_auto_actions(
                 audit_id=audit_id,
                 auto_summary=bool(template.auto_summary),
@@ -246,7 +247,8 @@ async def launch_audit_from_template(
                 summary_provider=template.summary_provider,
                 summary_model=template.summary_model,
                 language=template.language or "English"
-            )
+            ),
+            name=f"template-auto-actions-{audit_id}",
         )
     
     return {

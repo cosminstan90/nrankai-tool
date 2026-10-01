@@ -807,7 +807,7 @@ async def export_dev_brief_txt(
 
     lines: list[str] = []
     lines.append(f"ClusterIQ Dev Brief — {project.domain}")
-    lines.append(f"Generated: {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append(f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     lines.append("=" * 60)
     lines.append("")
 
