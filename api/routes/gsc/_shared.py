@@ -127,10 +127,13 @@ async def _get_gsc_credentials():
     )
     if token_row.token_expiry:
         expiry = token_row.token_expiry
-        # Ensure timezone-aware — google-auth compares expiry against utcnow()
-        # which is tz-aware; a naive expiry causes a TypeError comparison failure.
-        if expiry.tzinfo is None:
-            expiry = expiry.replace(tzinfo=timezone.utc)
+        # google-auth wants a NAIVE UTC expiry: its Credentials.expired compares
+        # against google.auth._helpers.utcnow(), which deliberately strips
+        # tzinfo. This used to do the opposite (make it aware), so .expired
+        # always raised TypeError, the except below treated that as "expired",
+        # and every GSC call forced a token refresh round-trip.
+        if expiry.tzinfo is not None:
+            expiry = expiry.astimezone(timezone.utc).replace(tzinfo=None)
         creds.expiry = expiry
 
     try:
