@@ -56,10 +56,10 @@
                     <div class="text-xs text-slate-500 mt-1">Pages Analyzed</div>
                 </div>
                 <div class="text-center p-4 rounded-lg
-                    {% if audit.average_score >= 85 %}bg-green-50{% elif audit.average_score >= 70 %}bg-emerald-50{% elif audit.average_score >= 50 %}bg-yellow-50{% else %}bg-red-50{% endif %}">
+                    {% if audit.average_score is none %}bg-slate-50{% elif audit.average_score >= 85 %}bg-green-50{% elif audit.average_score >= 70 %}bg-emerald-50{% elif audit.average_score >= 50 %}bg-yellow-50{% else %}bg-red-50{% endif %}">
                     <div class="text-3xl font-bold
-                        {% if audit.average_score >= 85 %}text-green-600{% elif audit.average_score >= 70 %}text-emerald-600{% elif audit.average_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
-                        {{ audit.average_score | round(1) if audit.average_score else '—' }}
+                        {% if audit.average_score is none %}text-slate-400{% elif audit.average_score >= 85 %}text-green-600{% elif audit.average_score >= 70 %}text-emerald-600{% elif audit.average_score >= 50 %}text-yellow-600{% else %}text-red-600{% endif %}">
+                        {{ audit.average_score | round(1) if audit.average_score is not none else '—' }}
                     </div>
                     <div class="text-xs text-slate-500 mt-1">Average Score</div>
                 </div>

@@ -9,13 +9,14 @@ import uuid
 
 logger = logging.getLogger(__name__)
 import json
+import re
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from api.utils.errors import raise_not_found, raise_bad_request
 from api.limiter import limiter
 from sqlalchemy import select, func, desc
@@ -697,17 +698,16 @@ async def export_audit(audit_id: str, db: AsyncSession = Depends(get_db)):
         df.to_excel(writer, sheet_name='Results', index=False)
     output.seek(0)
     
-    # Save to temp file (cross-platform)
-    import tempfile
-    filename = f"{audit.website}_{audit.audit_type}_{audit_id[:8]}.xlsx"
-    temp_path = os.path.join(tempfile.gettempdir(), filename)
-    with open(temp_path, "wb") as f:
-        f.write(output.getvalue())
-    
-    return FileResponse(
-        temp_path,
+    # Served straight from memory. This used to write a temp file named from
+    # audit.website -- "https://bestetic.ro" put ':' and '/' in the path, so
+    # export 500'd for every audit saved with a scheme (71 of 84), and the temp
+    # files that did get written were never deleted.
+    safe_site = re.sub(r"[^A-Za-z0-9._-]+", "_", re.sub(r"^https?://", "", audit.website or "site")).strip("_")
+    filename = f"{safe_site}_{audit.audit_type}_{audit_id[:8]}.xlsx"
+    return Response(
+        content=output.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename=filename
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

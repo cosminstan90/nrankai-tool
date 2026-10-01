@@ -19,10 +19,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import desc, select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from api.limiter import limiter
 from api.models.database import get_db
-from app.modules.serpiq.models import SiqSnapshot, SiqSerpItem
+from app.modules.serpiq.models import SiqSnapshot
 from app.modules.serpiq.schemas import (
     SerpiqAnalyzeRequest,
     SnapshotListItem,
@@ -137,17 +138,17 @@ async def get_snapshot(
     db:          AsyncSession = Depends(get_db),
 ):
     """Return full snapshot including all SERP items."""
-    snapshot = await db.get(SiqSnapshot, snapshot_id)
+    # Eager-load the items (the relationship is already ordered by position).
+    # This used to assign `snapshot.serp_items = ...`, and assigning to a
+    # relationship first lazy-loads the old collection -- synchronous IO in an
+    # async session -> MissingGreenlet, so every snapshot detail was a 500.
+    snapshot = (await db.execute(
+        select(SiqSnapshot)
+        .where(SiqSnapshot.id == snapshot_id)
+        .options(selectinload(SiqSnapshot.serp_items))
+    )).scalar_one_or_none()
     if not snapshot:
         raise HTTPException(status_code=404, detail="Snapshot not found")
-
-    # Load items
-    items_result = await db.execute(
-        select(SiqSerpItem)
-        .where(SiqSerpItem.snapshot_id == snapshot_id)
-        .order_by(SiqSerpItem.position)
-    )
-    snapshot.serp_items = items_result.scalars().all()
 
     return snapshot.to_dict(include_items=True)
 
