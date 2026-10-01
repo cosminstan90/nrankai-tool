@@ -8,7 +8,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 
 class CluProject(Base):
@@ -22,8 +22,8 @@ class CluProject(Base):
     status                  = Column(String(20),  default="pending", index=True)  # pending/crawling/clustering/done/error
     gsc_property            = Column(String(512), nullable=True)
     dataforseo_credits_used = Column(Integer,     default=0)
-    created_at              = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    updated_at              = Column(DateTime,    default=lambda: datetime.now(timezone.utc),
+    created_at              = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at              = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc),
                                                   onupdate=lambda: datetime.now(timezone.utc))
 
     urls       = relationship("CluUrl",       back_populates="project", cascade="all, delete-orphan")
@@ -59,7 +59,7 @@ class CluUrl(Base):
     canonical_url = Column(String(2048), nullable=True)
     title         = Column(String(512),  nullable=True)
     word_count    = Column(Integer,      nullable=True)
-    crawled_at    = Column(DateTime,     nullable=True)
+    crawled_at    = Column(UTCDateTime,     nullable=True)
 
     project         = relationship("CluProject",   back_populates="urls")
     url_clusters    = relationship("CluUrlCluster", back_populates="url", cascade="all, delete-orphan")
@@ -99,7 +99,7 @@ class CluSerpData(Base):
     clicks      = Column(Integer,      nullable=True)
     serp_urls   = Column(JSON,         nullable=True)   # top-20 SERP URLs for this keyword
     data_source = Column(String(20),   nullable=False)  # gsc/dataforseo
-    fetched_at  = Column(DateTime,     default=lambda: datetime.now(timezone.utc))
+    fetched_at  = Column(UTCDateTime,     default=lambda: datetime.now(timezone.utc))
 
     project = relationship("CluProject", back_populates="serp_data")
 
@@ -132,7 +132,7 @@ class CluCluster(Base):
     url_count               = Column(Integer,      default=0)
     search_demand_confirmed = Column(Boolean,      default=False)
     louvain_community_id    = Column(Integer,      nullable=True)
-    created_at              = Column(DateTime,     default=lambda: datetime.now(timezone.utc))
+    created_at              = Column(UTCDateTime,     default=lambda: datetime.now(timezone.utc))
 
     project      = relationship("CluProject",    back_populates="clusters")
     url_clusters = relationship("CluUrlCluster", back_populates="cluster", cascade="all, delete-orphan")
@@ -195,7 +195,7 @@ class CluDecision(Base):
     generated_by = Column(String(10),   default="kucd")  # kucd/llm
     notes        = Column(Text,         nullable=True)   # free-text notes / LLM brief
     brief_id     = Column(Integer,      nullable=True)   # FK to content_briefs.id (no constraint)
-    created_at   = Column(DateTime,     default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime,     default=lambda: datetime.now(timezone.utc))
 
     cluster = relationship("CluCluster", back_populates="decisions")
     url     = relationship("CluUrl",     back_populates="decisions")
@@ -269,7 +269,7 @@ class CluCompetitorCache(Base):
     competitor_url    = Column(String(2048), nullable=True)
     position          = Column(Float,        nullable=True)
     volume            = Column(Integer,      nullable=True)
-    fetched_at        = Column(DateTime,     default=lambda: datetime.now(timezone.utc))
+    fetched_at        = Column(UTCDateTime,     default=lambda: datetime.now(timezone.utc))
 
     project = relationship("CluProject")
 
@@ -305,9 +305,9 @@ class CluCompetitorJob(Base):
     create_decisions_added  = Column(Integer,     default=0)
     cost_estimate_credits   = Column(Float,       nullable=True)
     error_message           = Column(Text,        nullable=True)
-    started_at              = Column(DateTime,    nullable=True)
-    completed_at            = Column(DateTime,    nullable=True)
-    created_at              = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    started_at              = Column(UTCDateTime,    nullable=True)
+    completed_at            = Column(UTCDateTime,    nullable=True)
+    created_at              = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
 
     project = relationship("CluProject")
 

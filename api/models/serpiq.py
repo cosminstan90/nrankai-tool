@@ -13,7 +13,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 
 class SiqSnapshot(Base):
@@ -44,7 +44,7 @@ class SiqSnapshot(Base):
     llm_brief           = Column(Text,         nullable=True)               # Claude-generated brief (optional)
     position_found      = Column(Integer,      nullable=True)               # rank of the input URL in SERP (1-based)
     processing_time_ms  = Column(Integer,      nullable=True)
-    created_at          = Column(DateTime,     default=lambda: datetime.now(timezone.utc), index=True)
+    created_at          = Column(UTCDateTime,     default=lambda: datetime.now(timezone.utc), index=True)
 
     serp_items = relationship(
         "SiqSerpItem", back_populates="snapshot", cascade="all, delete-orphan",

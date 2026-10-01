@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 
 class SiteCrawl(Base):
@@ -30,8 +30,8 @@ class SiteCrawl(Base):
     id = Column(String(36), primary_key=True)
     website = Column(String(255), nullable=False, index=True)
     status = Column(String(20), default="pending")  # pending|running|completed|failed
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
+    started_at = Column(UTCDateTime, nullable=True)
+    completed_at = Column(UTCDateTime, nullable=True)
     pages_crawled = Column(Integer, default=0)
     content_edges = Column(Integer, default=0)
     # Kept as a number rather than as rows -- see the module docstring.
@@ -39,7 +39,7 @@ class SiteCrawl(Base):
     sf_version = Column(String(20), nullable=True)
     config_name = Column(String(255), nullable=True)
     error = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     pages = relationship("CrawlPage", back_populates="crawl", cascade="all, delete-orphan")
     links = relationship("CrawlLink", back_populates="crawl", cascade="all, delete-orphan")

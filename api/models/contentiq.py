@@ -9,7 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 
 class CiqAudit(Base):
@@ -25,8 +25,8 @@ class CiqAudit(Base):
     scored_urls  = Column(Integer,     default=0)
     triggered_by = Column(String(20),  default="manual")                # manual|scheduled|api
     notes        = Column(Text,        nullable=True)
-    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    finished_at  = Column(DateTime,    nullable=True)
+    created_at   = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    finished_at  = Column(UTCDateTime,    nullable=True)
 
     pages       = relationship("CiqPage",       back_populates="audit", cascade="all, delete-orphan")
     competitors = relationship("CiqCompetitor", back_populates="audit", cascade="all, delete-orphan")
@@ -91,8 +91,8 @@ class CiqPage(Base):
     brief_content   = Column(Text,       nullable=True)
     # Meta
     competitor_gap = Column(Boolean,     default=False)
-    crawled_at     = Column(DateTime,    nullable=True)
-    scored_at      = Column(DateTime,    nullable=True)
+    crawled_at     = Column(UTCDateTime,    nullable=True)
+    scored_at      = Column(UTCDateTime,    nullable=True)
 
     audit = relationship("CiqAudit", back_populates="pages")
 
@@ -143,7 +143,7 @@ class CiqCompetitor(Base):
     audit_id = Column(Integer,     ForeignKey("ciq_audits.id", ondelete="CASCADE"), nullable=False, index=True)
     domain   = Column(String(512), nullable=False)
     label    = Column(String(255), nullable=True)
-    added_at = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    added_at = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
 
     audit = relationship("CiqAudit", back_populates="competitors")
 
@@ -164,8 +164,8 @@ class CiqGscToken(Base):
     audit_id      = Column(Integer,     ForeignKey("ciq_audits.id", ondelete="CASCADE"), primary_key=True)
     access_token  = Column(Text,        nullable=True)
     refresh_token = Column(Text,        nullable=True)
-    expires_at    = Column(DateTime,    nullable=True)
+    expires_at    = Column(UTCDateTime,    nullable=True)
     property_url  = Column(String(512), nullable=True)
-    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at    = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     audit = relationship("CiqAudit", back_populates="gsc_token")

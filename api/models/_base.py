@@ -8,12 +8,48 @@ import logging
 import os
 import time
 
-from sqlalchemy import create_engine, event
+from datetime import timezone
+
+from sqlalchemy import DateTime, create_engine, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import NullPool
+from sqlalchemy.types import TypeDecorator
 
 logger = logging.getLogger(__name__)
+
+
+class UTCDateTime(TypeDecorator):
+    """
+    A DateTime column that always comes back timezone-aware (UTC).
+
+    SQLite has no timezone storage, so a plain DateTime column returns a
+    NAIVE datetime even though the app only ever writes
+    datetime.now(timezone.utc). That caused two whole bug classes:
+      - Python: `datetime.now(timezone.utc) - row.last_run_at` raised
+        "can't subtract offset-naive and offset-aware datetimes" (scheduled
+        audits and scheduled citation scans ran once, then never again;
+        the action-cards learning report crashed the same way).
+      - Browser: `.isoformat()` of a naive value has no "Z"/offset, and
+        `new Date("2026-09-30T14:40:27")` parses it as the BROWSER's local
+        time -- every timestamp in the UI was shifted by the local offset.
+
+    Storage format is unchanged (naive UTC wall-clock text, exactly what the
+    rows already hold), so no migration: an aware value is converted to UTC
+    and stripped on the way in, and UTC is re-attached on the way out.
+    """
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None and value.tzinfo is not None:
+            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value
 
 # Database file location
 DATABASE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")

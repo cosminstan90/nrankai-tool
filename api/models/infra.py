@@ -11,7 +11,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 class BenchmarkProject(Base):
     """Project for competitor benchmarking across multiple audits."""
@@ -27,8 +27,8 @@ class BenchmarkProject(Base):
     # Analysis lifecycle: "pending" → "generating" → "completed" | "failed"
     analysis_status = Column(String(20), nullable=False, default="pending", server_default="pending")
     analysis_error  = Column(Text, nullable=True)     # Error message when status == "failed"
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -75,9 +75,21 @@ class ScheduledAudit(Base):
     model = Column(String(100), nullable=False)
     schedule_cron = Column(String(100), nullable=False)  # "0 9 * * 1" (Monday 9AM)
     is_active = Column(Integer, default=1)
-    last_run_at = Column(DateTime, nullable=True)
-    next_run_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_run_at = Column(UTCDateTime, nullable=True)
+    next_run_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    # Everything below was always read and written by api/routes/schedules.py
+    # but never existed on this model or in the table (migration 0027), so
+    # creating a schedule raised "'language' is an invalid keyword argument"
+    # and the scheduler could never have run one.
+    language = Column(String(50), nullable=False, default="English", server_default="English")
+    use_perplexity = Column(Integer, nullable=False, default=0, server_default="0")
+    concurrency = Column(Integer, nullable=False, default=5, server_default="5")
+    summary_provider = Column(String(20), nullable=True)
+    summary_model = Column(String(100), nullable=True)
+    run_count = Column(Integer, nullable=False, default=0, server_default="0")
+    last_audit_id = Column(String(36), nullable=True)
+    updated_at = Column(UTCDateTime, nullable=True)
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -91,9 +103,17 @@ class ScheduledAudit(Base):
             "model": self.model,
             "schedule_cron": self.schedule_cron,
             "is_active": bool(self.is_active),
+            "language": self.language,
+            "use_perplexity": bool(self.use_perplexity),
+            "concurrency": self.concurrency,
+            "summary_provider": self.summary_provider,
+            "summary_model": self.summary_model,
+            "run_count": self.run_count or 0,
+            "last_audit_id": self.last_audit_id,
             "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
             "next_run_at": self.next_run_at.isoformat() if self.next_run_at else None,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 
@@ -109,8 +129,8 @@ class GeoMonitorProject(Base):
     providers_config = Column(Text, nullable=False)  # JSON: {"chatgpt": true, "perplexity": true, ...}
     schedule_cron = Column(String(100), nullable=True)  # "0 10 * * 1" (weekly)
     is_active = Column(Integer, default=1)
-    last_scan_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_scan_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
     alert_threshold = Column(Float, default=15.0, nullable=True)
     alert_webhook_url = Column(String(500), nullable=True)
     competitors = Column(JSON, nullable=True, default=list)
@@ -165,9 +185,9 @@ class GeoMonitorScan(Base):
     visibility_score = Column(Float, nullable=True)  # (mentioned / total) * 100
     results_json = Column(Text, nullable=True)  # Full results per query per provider
     provider_breakdown = Column(Text, nullable=True)  # JSON: {"chatgpt": {mentioned: 5, total: 10}, ...}
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(UTCDateTime, nullable=True)
+    completed_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
     competitor_scores = Column(JSON, nullable=True, default=dict)
     # Format: {"brand-a.com": {"name": "Competitor A", "mention_rate": 72.0}}
 
@@ -224,7 +244,7 @@ class CostRecord(Base):
     input_tokens = Column(Integer, default=0)
     output_tokens = Column(Integer, default=0)
     estimated_cost_usd = Column(Float, default=0.0)  # Calculated from token counts × price per million
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), index=True)
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -254,8 +274,8 @@ class ClientBilling(Base):
     monthly_fee_eur = Column(Float, nullable=True)  # What you charge the client
     currency = Column(String(3), default="EUR")
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         """Convert to dictionary for JSON serialization."""
@@ -288,8 +308,8 @@ class BrandingConfig(Base):
     contact_email = Column(String(255), nullable=True)
     contact_website = Column(String(255), nullable=True)
     is_default = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     def to_dict(self):
         return {
@@ -322,14 +342,14 @@ class TrackingProject(Base):
     description = Column(Text, nullable=True)
     baseline_audit_id = Column(String(36), ForeignKey("audits.id", ondelete="SET NULL"), nullable=True)
     baseline_score = Column(Float, nullable=True)
-    baseline_date = Column(DateTime, nullable=True)
+    baseline_date = Column(UTCDateTime, nullable=True)
     current_audit_id = Column(String(36), ForeignKey("audits.id", ondelete="SET NULL"), nullable=True)
     current_score = Column(Float, nullable=True)
-    current_date = Column(DateTime, nullable=True)
+    current_date = Column(UTCDateTime, nullable=True)
     score_delta = Column(Float, nullable=True)  # current - baseline
     status = Column(String(20), default="active")  # active, archived
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     snapshots = relationship("TrackingSnapshot", back_populates="project", cascade="all, delete-orphan",
                             order_by="TrackingSnapshot.created_at")
@@ -370,7 +390,7 @@ class TrackingSnapshot(Base):
     delta_from_baseline = Column(Float, nullable=True)
     page_scores_json = Column(Text, nullable=True)  # JSON: per-page scores for drill-down
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
     
     project = relationship("TrackingProject", back_populates="snapshots")
     
@@ -451,7 +471,7 @@ class PerformanceSnapshot(Base):
     period_end   = Column(String(10), nullable=False)   # == period_start for a live PSI/CrUX-current check;
                                                           # wider for a CrUX History backfill entry
     raw_json     = Column(Text, nullable=True)           # full API response, for reprocessing without a re-fetch
-    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("url", "strategy", "source", "period_start", "period_end",
@@ -505,11 +525,11 @@ class WorkerRun(Base):
 
     id          = Column(Integer, primary_key=True, autoincrement=True)
     worker      = Column(String(50), nullable=False)
-    started_at  = Column(DateTime, nullable=False)
-    finished_at = Column(DateTime, nullable=False)
+    started_at  = Column(UTCDateTime, nullable=False)
+    finished_at = Column(UTCDateTime, nullable=False)
     ok          = Column(Boolean, nullable=False)
     detail      = Column(Text, nullable=True)
-    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at  = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_worker_runs_worker_finished_at", "worker", "finished_at"),

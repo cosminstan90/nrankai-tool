@@ -10,7 +10,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 class KeywordSession(Base):
     """A keyword research session — seeds in, expanded keywords + questions out."""
@@ -31,8 +31,8 @@ class KeywordSession(Base):
     progress_message = Column(String(500), nullable=True)
     total_keywords   = Column(Integer,     nullable=False, default=0)
     total_questions  = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    completed_at     = Column(DateTime,    nullable=True)
+    created_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    completed_at     = Column(UTCDateTime,    nullable=True)
     error            = Column(Text,        nullable=True)
 
 
@@ -52,7 +52,7 @@ class KeywordResult(Base):
     intent         = Column(String(30), nullable=True)   # informational|commercial|transactional|navigational
     cluster        = Column(String(200),nullable=True)   # topic cluster label
     priority_score = Column(Float,      nullable=True)   # 1–10
-    created_at     = Column(DateTime,   default=lambda: datetime.now(timezone.utc))
+    created_at     = Column(UTCDateTime,   default=lambda: datetime.now(timezone.utc))
 
 
 # ── Google Search Console models ─────────────────────────────────────────────
@@ -69,15 +69,15 @@ class GscProperty(Base):
     date_range_end   = Column(String(10),  nullable=True)
     total_queries    = Column(Integer,     nullable=False, default=0)
     total_pages      = Column(Integer,     nullable=False, default=0)
-    last_synced_at   = Column(DateTime,    nullable=True)   # last OAuth API sync
+    last_synced_at   = Column(UTCDateTime,    nullable=True)   # last OAuth API sync
     sync_type        = Column(String(10),  nullable=False, default="csv", server_default="csv")  # csv|api
     # Fetch-coverage cursor for the daily archive worker (api/workers/gsc_archive_worker.py):
     # the last day (YYYY-MM-DD) successfully archived into gsc_page_history/
     # gsc_query_history. NULL means "never archived". See migration 0020 for
     # why this can't be inferred from what's already stored.
     history_synced_through = Column(String(10), nullable=True)
-    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    updated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 
@@ -139,7 +139,7 @@ class GscQueryHistory(Base):
     period_end   = Column(String(10), nullable=False)   # YYYY-MM-DD, inclusive
                                                           # (== period_start for one API day)
     source       = Column(String(10), nullable=False)   # "csv" | "api"
-    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         # Re-syncing the same day/period is an update, not a duplicate; kept
@@ -168,7 +168,7 @@ class GscPageHistory(Base):
     period_start = Column(String(10), nullable=False)
     period_end   = Column(String(10), nullable=False)
     source       = Column(String(10), nullable=False)
-    created_at   = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("property_id", "page", "period_start", "period_end", "source",
@@ -215,13 +215,13 @@ class UrlInspection(Base):
     google_canonical      = Column(String(2000), nullable=True)  # what Google actually picked
     user_canonical        = Column(String(2000), nullable=True)  # what the page declares
     sitemaps_json          = Column(Text, nullable=True)          # JSON list of sitemap URLs this page was found in
-    last_crawl_time        = Column(DateTime, nullable=True)
+    last_crawl_time        = Column(UTCDateTime, nullable=True)
 
     mobile_usability_verdict = Column(String(20), nullable=True)
     rich_results_verdict     = Column(String(20), nullable=True)
 
     raw_json     = Column(Text, nullable=True)
-    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         UniqueConstraint("property_id", "page_url", "checked_date",
@@ -265,7 +265,7 @@ class UrlInspectionQuotaLog(Base):
     id           = Column(Integer, primary_key=True, autoincrement=True)
     property_id  = Column(String(36), ForeignKey("gsc_properties.id", ondelete="CASCADE"), nullable=False)
     checked_date = Column(String(10), nullable=False)
-    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
         Index("ix_url_inspection_quota_prop_date", "property_id", "checked_date"),
@@ -288,8 +288,8 @@ class Ga4Property(Base):
     date_range_end   = Column(String(10),  nullable=True)
     total_pages      = Column(Integer,     nullable=False, default=0)
     total_channels   = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    updated_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     page_rows     = relationship("Ga4PageRow",    back_populates="property", cascade="all, delete-orphan")
     channel_rows  = relationship("Ga4ChannelRow", back_populates="property", cascade="all, delete-orphan")
@@ -347,8 +347,8 @@ class AdsAccount(Base):
     currency        = Column(String(10),  nullable=True)
     total_terms     = Column(Integer,     nullable=False, default=0)
     total_campaigns = Column(Integer,     nullable=False, default=0)
-    created_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    updated_at      = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at      = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at      = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     search_term_rows = relationship("AdsSearchTermRow", back_populates="account", cascade="all, delete-orphan")
     campaign_rows    = relationship("AdsCampaignRow",   back_populates="account", cascade="all, delete-orphan")
@@ -415,7 +415,7 @@ class InsightRun(Base):
     progress         = Column(Integer,     nullable=False, default=0)
     progress_message = Column(Text,        nullable=True)
     total_cards      = Column(Integer,     nullable=False, default=0)
-    created_at       = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
+    created_at       = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
 
     cards = relationship("InsightCard", back_populates="run", cascade="all, delete-orphan")
 
@@ -465,9 +465,9 @@ class GoogleOAuthToken(Base):
     email         = Column(String(255), nullable=True)    # Google account email
     access_token  = Column(Text,        nullable=False)
     refresh_token = Column(Text,        nullable=False)
-    token_expiry  = Column(DateTime,    nullable=True)    # UTC expiry of access_token
-    created_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc))
-    updated_at    = Column(DateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    token_expiry  = Column(UTCDateTime,    nullable=True)    # UTC expiry of access_token
+    created_at    = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc))
+    updated_at    = Column(UTCDateTime,    default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from api.models._base import Base
+from api.models._base import Base, UTCDateTime
 
 
 class SnapshotRun(Base):
@@ -30,9 +30,9 @@ class SnapshotRun(Base):
     pages_captured = Column(Integer, default=0)
     source_dir = Column(String(500), nullable=True)  # where the HTML was read from
     error = Column(Text, nullable=True)
-    started_at = Column(DateTime, nullable=True)
-    completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(UTCDateTime, nullable=True)
+    completed_at = Column(UTCDateTime, nullable=True)
+    created_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     pages = relationship("PageSnapshot", back_populates="run", cascade="all, delete-orphan")
 
@@ -82,7 +82,7 @@ class PageSnapshot(Base):
     schema_types = Column(JSON, nullable=True, default=list)
     content_hash = Column(String(80), nullable=True, index=True)
 
-    captured_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    captured_at = Column(UTCDateTime, default=lambda: datetime.now(timezone.utc))
 
     run = relationship("SnapshotRun", back_populates="pages")
 

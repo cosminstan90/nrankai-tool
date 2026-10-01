@@ -8,6 +8,7 @@ with automatic execution based on cron schedules.
 import uuid
 import json
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
@@ -26,6 +27,7 @@ from api.workers.audit_worker import start_audit_pipeline
 
 
 router = APIRouter(prefix="/api/schedules", tags=["schedules"])
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -235,6 +237,76 @@ def _cron_to_human(cron: str) -> str:
 # SCHEDULER ENGINE
 # ============================================================================
 
+async def _run_schedule_if_due(db, schedule, now) -> bool:
+    """One schedule. Returns True if it started an audit. Raises on failure --
+    the caller isolates each schedule so one bad row can't stop the rest."""
+    # Check if cron matches current time
+    if not _cron_matches(schedule.schedule_cron, now):
+        return False
+    
+    # Prevent double-run (must be at least 30 minutes since last run)
+    if schedule.last_run_at:
+        time_since_last = now - schedule.last_run_at
+        if time_since_last < timedelta(minutes=30):
+            return False
+    
+    # Create new audit
+    audit_id = str(uuid.uuid4())
+    audit = Audit(
+        id=audit_id,
+        website=schedule.website,
+        sitemap_url=schedule.sitemap_url,
+        audit_type=schedule.audit_type,
+        provider=schedule.provider,
+        model=schedule.model or "default",
+        status="pending",
+        current_step=f"scheduled_{schedule.id}"
+    )
+    db.add(audit)
+    
+    # Update schedule metadata
+    schedule.last_run_at = now
+    schedule.last_audit_id = audit_id
+    schedule.run_count += 1
+    
+    await db.commit()
+    
+    print(f"🕐 Scheduler: Running '{schedule.name}' (audit {audit_id})")
+    
+    # Start audit pipeline in background
+    create_tracked_task(
+        start_audit_pipeline(
+            audit_id=audit_id,
+            website=schedule.website,
+            sitemap_url=schedule.sitemap_url,
+            audit_type=schedule.audit_type,
+            provider=schedule.provider,
+            model=schedule.model or "default",
+            max_chars=30000,
+            use_direct_mode=True,
+            concurrency=schedule.concurrency,
+            use_perplexity=bool(schedule.use_perplexity),
+            language=schedule.language
+        ),
+        name=f"schedule-audit-pipeline-{audit_id}",
+        timeout=14400,
+    )
+
+    # If auto-summary is enabled, start polling task
+    if schedule.summary_provider and schedule.summary_model:
+        create_tracked_task(
+            _poll_and_generate_summary(
+                audit_id,
+                schedule.summary_provider,
+                schedule.summary_model,
+                schedule.language
+            ),
+            name=f"schedule-summary-{audit_id}",
+            timeout=14400,
+        )
+    return True
+
+
 async def check_and_run_schedules():
     """
     Main scheduler loop - checks all active schedules and runs matching ones.
@@ -252,74 +324,23 @@ async def check_and_run_schedules():
             
             now = datetime.now(timezone.utc)
             
-            for schedule in schedules:
-                # Check if cron matches current time
-                if not _cron_matches(schedule.schedule_cron, now):
-                    continue
-                
-                # Prevent double-run (must be at least 30 minutes since last run)
-                if schedule.last_run_at:
-                    time_since_last = now - schedule.last_run_at
-                    if time_since_last < timedelta(minutes=30):
-                        continue
-                
-                # Create new audit
-                audit_id = str(uuid.uuid4())
-                audit = Audit(
-                    id=audit_id,
-                    website=schedule.website,
-                    sitemap_url=schedule.sitemap_url,
-                    audit_type=schedule.audit_type,
-                    provider=schedule.provider,
-                    model=schedule.model or "default",
-                    status="pending",
-                    current_step=f"scheduled_{schedule.id}"
-                )
-                db.add(audit)
-                
-                # Update schedule metadata
-                schedule.last_run_at = now
-                schedule.last_audit_id = audit_id
-                schedule.run_count += 1
-                
-                await db.commit()
-                
-                print(f"🕐 Scheduler: Running '{schedule.name}' (audit {audit_id})")
-                
-                # Start audit pipeline in background
-                create_tracked_task(
-                    start_audit_pipeline(
-                        audit_id=audit_id,
-                        website=schedule.website,
-                        sitemap_url=schedule.sitemap_url,
-                        audit_type=schedule.audit_type,
-                        provider=schedule.provider,
-                        model=schedule.model or "default",
-                        max_chars=30000,
-                        use_direct_mode=True,
-                        concurrency=schedule.concurrency,
-                        use_perplexity=bool(schedule.use_perplexity),
-                        language=schedule.language
-                    ),
-                    name=f"schedule-audit-pipeline-{audit_id}",
-                    timeout=14400,
-                )
+            # Isolated per schedule: this whole loop used to sit inside one try,
+            # so a single failing schedule silently skipped every schedule after
+            # it in the same tick. Iterate by id and re-load each one: a
+            # rollback expires every ORM object in the session, and touching an
+            # expired object from the earlier list would lazy-load it
+            # synchronously (MissingGreenlet) on the next iteration.
+            for schedule_id in [s.id for s in schedules]:
+                try:
+                    schedule = await db.get(ScheduledAudit, schedule_id)
+                    if schedule is not None:
+                        await _run_schedule_if_due(db, schedule, now)
+                except Exception as e:
+                    logger.error(f"Scheduler: schedule {schedule_id} failed: {e}")
+                    await db.rollback()
 
-                # If auto-summary is enabled, start polling task
-                if schedule.summary_provider and schedule.summary_model:
-                    create_tracked_task(
-                        _poll_and_generate_summary(
-                            audit_id,
-                            schedule.summary_provider,
-                            schedule.summary_model,
-                            schedule.language
-                        ),
-                        name=f"schedule-summary-{audit_id}",
-                        timeout=14400,
-                    )
-                
         except Exception as e:
-            print(f"❌ Scheduler error: {e}")
+            logger.error(f"Scheduler error: {e}")
 
 
 async def _poll_and_generate_summary(
@@ -414,7 +435,9 @@ async def create_schedule(
         sitemap_url=request.sitemap_url,
         audit_type=request.audit_type,
         provider=request.provider,
-        model=request.model,
+        # model is optional in the request but NOT NULL in the table; the
+        # scheduler already treats a missing model as "default" (provider's own).
+        model=request.model or "default",
         language=request.language,
         use_perplexity=1 if request.use_perplexity else 0,
         concurrency=request.concurrency,

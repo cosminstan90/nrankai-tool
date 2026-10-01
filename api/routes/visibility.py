@@ -68,6 +68,7 @@ from api.models.database import (
 from api.provider_registry import get_default_model
 from api.routes.costs import track_cost
 from api.utils.errors import raise_bad_request, raise_not_found
+from api.utils.task_runner import create_tracked_task
 from core.direct_analyzer import AsyncLLMClient
 from api.workers.rank_tracking import record_observation
 from core import serp_client
@@ -1523,18 +1524,35 @@ async def check_and_run_citation_scans():
                 select(CitationTracker).where(CitationTracker.is_active == 1)
                 .where(CitationTracker.schedule_cron.isnot(None))
             )
-            for tracker in result.scalars().all():
-                if not _cron_matches(tracker.schedule_cron, now):
-                    continue
-                if tracker.last_scan_at and (now - tracker.last_scan_at).total_seconds() < 3600:
-                    continue
-                running_result = await db.execute(
-                    select(CitationScan).where(CitationScan.tracker_id == tracker.id)
-                    .where(CitationScan.status == "running")
-                )
-                if running_result.scalar_one_or_none():
-                    continue
-                logger.info("Starting scheduled visibility scan for tracker: %s", tracker.name)
-                asyncio.create_task(_run_visibility_scan(tracker.id))
+            # Isolated per tracker -- one failing tracker used to abort the
+            # whole loop, skipping every tracker after it in this tick. By id,
+            # re-loaded each time: after a rollback, objects from the earlier
+            # list are expired and would lazy-load synchronously.
+            for tracker_id in [t.id for t in result.scalars().all()]:
+                try:
+                    tracker = await db.get(CitationTracker, tracker_id)
+                    if tracker is None:
+                        continue
+                    if not _cron_matches(tracker.schedule_cron, now):
+                        continue
+                    if tracker.last_scan_at and (now - tracker.last_scan_at).total_seconds() < 3600:
+                        continue
+                    running_result = await db.execute(
+                        select(CitationScan.id).where(CitationScan.tracker_id == tracker.id)
+                        .where(CitationScan.status == "running").limit(1)
+                    )
+                    # .first(), not scalar_one_or_none(): two scans stuck in
+                    # "running" (e.g. a crash mid-scan) raised MultipleResultsFound.
+                    if running_result.first():
+                        continue
+                    logger.info("Starting scheduled visibility scan for tracker: %s", tracker.name)
+                    # Tracked, not bare asyncio.create_task: the event loop only
+                    # holds a weak reference to tasks, so an unreferenced one can
+                    # be garbage-collected mid-scan.
+                    create_tracked_task(_run_visibility_scan(tracker.id),
+                                        name=f"scheduled-visibility-scan-{tracker.id}")
+                except Exception as e:
+                    logger.error("Visibility scan scheduler: tracker %s failed: %s", tracker_id, e)
+                    await db.rollback()
         except Exception as e:
             logger.error("Error in visibility scan scheduler: %s", e)
